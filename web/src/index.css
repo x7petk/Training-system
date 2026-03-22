@@ -1,0 +1,35 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+
+  --color-canvas: #050508;
+  --color-surface: #0f1016;
+  --color-surface-raised: #161822;
+  --color-border: color-mix(in oklab, white 12%, transparent);
+  --color-border-strong: color-mix(in oklab, white 22%, transparent);
+  --color-muted: #8b8c9a;
+  --color-fg: #f4f4f8;
+  --color-accent: #5eead4;
+  --color-accent-dim: color-mix(in oklab, #5eead4 18%, transparent);
+  --color-danger: #fb7185;
+  --shadow-glow: 0 0 80px -20px color-mix(in oklab, #5eead4 35%, transparent);
+}
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply min-h-svh bg-canvas text-fg font-sans;
+    background-image:
+      radial-gradient(ellipse 120% 80% at 50% -40%, color-mix(in oklab, #5eead4 12%, transparent), transparent),
+      radial-gradient(ellipse 60% 50% at 100% 0%, color-mix(in oklab, #818cf8 10%, transparent), transparent);
+  }
+
+  #root {
+    @apply min-h-svh;
+  }
+}

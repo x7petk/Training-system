@@ -1,0 +1,12 @@
+{
+  "name": "skill-matrix",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "supabase:bootstrap": "node scripts/supabase-bootstrap.mjs",
+    "supabase:bootstrap:promote": "node scripts/supabase-bootstrap.mjs --promote-admin"
+  },
+  "devDependencies": {
+    "supabase": "^2.83.0"
+  }
+}
