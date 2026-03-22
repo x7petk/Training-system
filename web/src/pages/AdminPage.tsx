@@ -1,5 +1,6 @@
 import { Shield } from 'lucide-react'
 import { AccountsSummary } from '../features/admin/AccountsSummary'
+import { CatalogManager } from '../features/admin/CatalogManager'
 import { PeopleRoster } from '../features/admin/PeopleRoster'
 
 export function AdminPage() {
@@ -12,12 +13,14 @@ export function AdminPage() {
         <div>
           <h1 className="font-display text-3xl font-semibold tracking-tight">Admin</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            Manage who appears on the matrix: link Supabase logins to <strong>people</strong>, then assign job{' '}
-            <strong>roles</strong>. Catalog edits (skills / requirements) can follow in a later pass.
+            Edit the <strong>skill catalog</strong> and <strong>role requirements</strong>, manage{' '}
+            <strong>people</strong> on the matrix, and review <strong>accounts</strong>. All catalog changes are enforced
+            by Row Level Security (admins only).
           </p>
         </div>
       </header>
 
+      <CatalogManager />
       <PeopleRoster />
       <AccountsSummary />
     </div>
