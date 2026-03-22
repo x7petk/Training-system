@@ -1,89 +1,201 @@
-import { useEffect, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Filter, Search } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { classifyCell, type SkillKind } from '../features/matrix/gapLogic'
+import { MatrixGrid, type MatrixRowModel, type MatrixSkillColumn } from '../features/matrix/MatrixGrid'
 
-type Counts = {
-  skills: number | null
-  roles: number | null
-  people: number | null
-  requirements: number | null
+type SkillRaw = {
+  id: string
+  name: string
+  kind: SkillKind
+  sort_order: number
+  skill_groups: { name: string } | { name: string }[] | null
+}
+
+type PersonRaw = {
+  id: string
+  display_name: string
+  person_roles: { role_id: string }[] | null
+}
+
+type RsrRaw = { role_id: string; skill_id: string; required_level: number }
+type PsRaw = {
+  person_id: string
+  skill_id: string
+  actual_level: number | null
+  is_extra: boolean
+}
+
+type RoleRaw = { id: string; name: string }
+
+function groupName(s: SkillRaw): string {
+  const g = s.skill_groups
+  if (g == null) return ''
+  return Array.isArray(g) ? (g[0]?.name ?? '') : g.name
 }
 
 export function MatrixPage() {
-  const [counts, setCounts] = useState<Counts>({
-    skills: null,
-    roles: null,
-    people: null,
-    requirements: null,
-  })
+  const [skillsRaw, setSkillsRaw] = useState<SkillRaw[]>([])
+  const [peopleRaw, setPeopleRaw] = useState<PersonRaw[]>([])
+  const [rsr, setRsr] = useState<RsrRaw[]>([])
+  const [psRows, setPsRows] = useState<PsRaw[]>([])
+  const [roles, setRoles] = useState<RoleRaw[]>([])
+  const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [personQuery, setPersonQuery] = useState('')
+  const [skillQuery, setSkillQuery] = useState('')
 
   useEffect(() => {
     let cancelled = false
 
-    void (async () => {
-      const run = async (table: string) => {
-        const { error, count } = await supabase.from(table).select('*', { count: 'exact', head: true })
-        if (error) throw new Error(`${table}: ${error.message}`)
-        return count ?? 0
+    void Promise.all([
+      supabase
+        .from('skills')
+        .select('id, name, kind, sort_order, skill_groups(name)')
+        .order('sort_order', { ascending: true }),
+      supabase.from('people').select('id, display_name, person_roles(role_id)').order('display_name'),
+      supabase.from('role_skill_requirements').select('role_id, skill_id, required_level'),
+      supabase.from('person_skills').select('person_id, skill_id, actual_level, is_extra'),
+      supabase.from('roles').select('id, name').order('sort_order', { ascending: true }),
+    ]).then(([sk, pe, rs, ps, ro]) => {
+      if (cancelled) return
+      if (sk.error) {
+        setLoadError(sk.error.message)
+        setSkillsRaw([])
+      } else {
+        setSkillsRaw((sk.data ?? []) as SkillRaw[])
       }
-
-      try {
-        const [skills, roles, people, requirements] = await Promise.all([
-          run('skills'),
-          run('roles'),
-          run('people'),
-          run('role_skill_requirements'),
-        ])
-        if (!cancelled) {
-          setCounts({ skills, roles, people, requirements })
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setLoadError(e instanceof Error ? e.message : 'Failed to load matrix data')
-          setCounts({ skills: null, roles: null, people: null, requirements: null })
-        }
+      if (pe.error) {
+        setLoadError(pe.error.message)
+        setPeopleRaw([])
+      } else {
+        setPeopleRaw((pe.data ?? []) as PersonRaw[])
       }
-    })()
+      if (!rs.error && rs.data) setRsr(rs.data as RsrRaw[])
+      if (!ps.error && ps.data) setPsRows(ps.data as PsRaw[])
+      if (!ro.error && ro.data) setRoles(ro.data as RoleRaw[])
+      setLoading(false)
+    })
 
     return () => {
       cancelled = true
     }
   }, [])
 
-  const hasData =
-    counts.skills !== null &&
-    counts.roles !== null &&
-    (counts.skills > 0 || counts.roles > 0 || (counts.people ?? 0) > 0)
+  const roleNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const r of roles) m.set(r.id, r.name)
+    return m
+  }, [roles])
+
+  const rsrMap = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const row of rsr) {
+      m.set(`${row.role_id}\0${row.skill_id}`, row.required_level)
+    }
+    return m
+  }, [rsr])
+
+  const psMap = useMemo(() => {
+    const m = new Map<string, { actual: number | null; isExtra: boolean }>()
+    for (const row of psRows) {
+      m.set(`${row.person_id}\0${row.skill_id}`, {
+        actual: row.actual_level,
+        isExtra: row.is_extra,
+      })
+    }
+    return m
+  }, [psRows])
+
+  const sortedSkills = useMemo(() => {
+    const copy = [...skillsRaw]
+    copy.sort((a, b) => {
+      const ga = groupName(a)
+      const gb = groupName(b)
+      if (ga !== gb) return ga.localeCompare(gb)
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
+      return a.name.localeCompare(b.name)
+    })
+    return copy
+  }, [skillsRaw])
+
+  const skillColumns: MatrixSkillColumn[] = useMemo(() => {
+    const q = skillQuery.trim().toLowerCase()
+    return sortedSkills
+      .filter((s) => !q || s.name.toLowerCase().includes(q))
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        kind: s.kind,
+        groupName: groupName(s) || 'Skills',
+      }))
+  }, [sortedSkills, skillQuery])
+
+  const matrixRows: MatrixRowModel[] = useMemo(() => {
+    function maxRequired(roleIds: string[], skillId: string): number | null {
+      let max: number | null = null
+      for (const rid of roleIds) {
+        const v = rsrMap.get(`${rid}\0${skillId}`)
+        if (v != null) max = max == null ? v : Math.max(max, v)
+      }
+      return max
+    }
+
+    const pq = personQuery.trim().toLowerCase()
+    const people = pq
+      ? peopleRaw.filter((p) => p.display_name.toLowerCase().includes(pq))
+      : peopleRaw
+
+    return people.map((p) => {
+      const roleIds = (p.person_roles ?? []).map((x) => x.role_id)
+      const roleText =
+        roleIds.length === 0
+          ? 'No job roles'
+          : roleIds.map((id) => roleNameById.get(id) ?? '…').join(' · ')
+
+      const cells: MatrixRowModel['cells'] = {}
+      for (const s of skillColumns) {
+        const required = maxRequired(roleIds, s.id)
+        const ps = psMap.get(`${p.id}\0${s.id}`)
+        const actual = ps?.actual ?? null
+        const isExtra = ps?.isExtra ?? false
+        const gap = classifyCell({
+          kind: s.kind,
+          required,
+          actual,
+          isExtra,
+        })
+        cells[s.id] = { gap, kind: s.kind, required, actual }
+      }
+
+      return {
+        personId: p.id,
+        displayName: p.display_name,
+        roleText,
+        cells,
+      }
+    })
+  }, [peopleRaw, personQuery, skillColumns, psMap, rsrMap, roleNameById])
+
+  const counts = useMemo(
+    () => ({
+      skills: skillsRaw.length,
+      roles: roles.length,
+      people: peopleRaw.length,
+      requirements: rsr.length,
+    }),
+    [skillsRaw.length, roles.length, peopleRaw.length, rsr.length],
+  )
 
   return (
     <div className="space-y-8">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">Skill matrix</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted">
-            Compare required vs actual capability, spot gaps, and drill down by team — grid view comes next; data
-            layer is live below.
+          <p className="mt-1 max-w-2xl text-sm text-muted">
+            Wide heatmap: people as rows, skills as columns. Colors follow required vs actual (see legend). Sticky
+            headers for scanning on large monitors.
           </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface-raised px-4 py-2.5 text-sm font-medium text-fg transition-colors hover:border-border-strong"
-          >
-            <Search className="size-4 text-muted" aria-hidden />
-            Quick find
-            <kbd className="ml-1 hidden rounded border border-border bg-canvas px-1.5 py-0.5 font-mono text-[10px] text-muted sm:inline">
-              ⌘K
-            </kbd>
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface-raised px-4 py-2.5 text-sm font-medium text-fg transition-colors hover:border-border-strong"
-          >
-            <Filter className="size-4 text-muted" aria-hidden />
-            Filters
-          </button>
         </div>
       </header>
 
@@ -101,50 +213,67 @@ export function MatrixPage() {
             className="rounded-2xl border border-border bg-surface-raised/50 px-4 py-3 backdrop-blur-sm"
           >
             <p className="text-xs font-medium uppercase tracking-wider text-muted">{label}</p>
-            <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-fg">
-              {n === null ? '—' : n}
-            </p>
+            <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-fg">{n}</p>
           </div>
         ))}
+      </div>
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-surface-raised px-3 py-2">
+          <Search className="size-4 shrink-0 text-muted" aria-hidden />
+          <input
+            type="search"
+            value={personQuery}
+            onChange={(e) => setPersonQuery(e.target.value)}
+            placeholder="Filter people…"
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted/60"
+          />
+        </label>
+        <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-surface-raised px-3 py-2">
+          <Filter className="size-4 shrink-0 text-muted" aria-hidden />
+          <input
+            type="search"
+            value={skillQuery}
+            onChange={(e) => setSkillQuery(e.target.value)}
+            placeholder="Filter skills…"
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted/60"
+          />
+        </label>
       </div>
 
       {loadError ? (
         <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           {loadError}
-          <span className="mt-1 block text-xs text-amber-100/80">
-            Run <code className="font-mono">npm run supabase:push</code> from the repo root if migrations are not
-            applied yet.
-          </span>
         </p>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-surface-raised/40 shadow-inner backdrop-blur-sm">
-        <div className="grid grid-cols-[repeat(6,minmax(0,1fr))] gap-px bg-border text-xs font-medium uppercase tracking-wider text-muted">
-          {['Person', 'Role', 'Skill', 'Required', 'Actual', 'Gap'].map((h) => (
-            <div key={h} className="bg-surface px-3 py-2.5">
-              {h}
-            </div>
-          ))}
-        </div>
-        <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
-          {hasData ? (
-            <>
-              <p className="font-medium text-fg/90">Data connected</p>
-              <p className="max-w-md text-sm text-muted">
-                Seeded skills and role requirements are in Supabase. Add <strong>people</strong> and{' '}
-                <strong>person_skills</strong> (Admin tooling next) to populate this grid.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="font-medium text-fg/90">No matrix rows yet</p>
-              <p className="max-w-sm text-sm text-muted">
-                After <code className="rounded bg-canvas px-1.5 py-0.5 font-mono text-xs">npm run supabase:push</code>,
-                you should see non-zero skill and role counts above. People start empty until you add roster records.
-              </p>
-            </>
-          )}
-        </div>
+      <MatrixGrid
+        skills={skillColumns}
+        rows={matrixRows}
+        loading={loading}
+        emptyMessage="Add people in Admin and assign job roles to see rows here."
+      />
+
+      <div className="flex flex-wrap gap-3 text-[11px] text-muted">
+        <span className="font-medium uppercase tracking-wider text-muted">Legend</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm bg-rose-500/50 ring-1 ring-rose-400/40" /> Critical gap
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm bg-amber-500/40 ring-1 ring-amber-400/35" /> Minor gap
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm bg-emerald-500/35 ring-1 ring-emerald-400/30" /> Meets
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm bg-teal-600/35 ring-1 ring-teal-400/35" /> Exceeds
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm bg-sky-500/25 ring-1 ring-sky-400/25" /> Extra skill
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm bg-white/10" /> N/A
+        </span>
       </div>
     </div>
   )
