@@ -49,6 +49,10 @@ export function MatrixPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [personQuery, setPersonQuery] = useState('')
   const [skillQuery, setSkillQuery] = useState('')
+  /** People must have at least one of these job roles (empty = all). */
+  const [filterRoleIds, setFilterRoleIds] = useState<string[]>([])
+  /** Columns limited to these skill groups (empty = all). */
+  const [filterSkillGroups, setFilterSkillGroups] = useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -157,17 +161,40 @@ export function MatrixPage() {
     return copy
   }, [skillsRaw])
 
+  const skillGroupOptions = useMemo(() => {
+    const names = new Set<string>()
+    for (const s of skillsRaw) names.add(groupName(s) || 'Skills')
+    return [...names].sort((a, b) => a.localeCompare(b))
+  }, [skillsRaw])
+
   const skillColumns: MatrixSkillColumn[] = useMemo(() => {
     const q = skillQuery.trim().toLowerCase()
     return sortedSkills
-      .filter((s) => !q || s.name.toLowerCase().includes(q))
+      .filter((s) => {
+        const g = groupName(s) || 'Skills'
+        if (filterSkillGroups.length > 0 && !filterSkillGroups.includes(g)) return false
+        return !q || s.name.toLowerCase().includes(q)
+      })
       .map((s) => ({
         id: s.id,
         name: s.name,
         kind: s.kind,
         groupName: groupName(s) || 'Skills',
       }))
-  }, [sortedSkills, skillQuery])
+  }, [sortedSkills, skillQuery, filterSkillGroups])
+
+  const peopleFiltered = useMemo(() => {
+    const pq = personQuery.trim().toLowerCase()
+    let people = pq
+      ? peopleRaw.filter((p) => p.display_name.toLowerCase().includes(pq))
+      : peopleRaw
+    if (filterRoleIds.length > 0) {
+      people = people.filter((p) =>
+        (p.person_roles ?? []).some((pr) => filterRoleIds.includes(pr.role_id)),
+      )
+    }
+    return people
+  }, [peopleRaw, personQuery, filterRoleIds])
 
   const matrixRows: MatrixRowModel[] = useMemo(() => {
     function maxRequired(roleIds: string[], skillId: string): number | null {
@@ -179,12 +206,7 @@ export function MatrixPage() {
       return max
     }
 
-    const pq = personQuery.trim().toLowerCase()
-    const people = pq
-      ? peopleRaw.filter((p) => p.display_name.toLowerCase().includes(pq))
-      : peopleRaw
-
-    return people.map((p) => {
+    return peopleFiltered.map((p) => {
       const roleIds = (p.person_roles ?? []).map((x) => x.role_id)
       const roleText =
         roleIds.length === 0
@@ -220,7 +242,7 @@ export function MatrixPage() {
         cells,
       }
     })
-  }, [peopleRaw, personQuery, skillColumns, psMap, rsrMap, roleNameById])
+  }, [peopleFiltered, skillColumns, psMap, rsrMap, roleNameById])
 
   const counts = useMemo(
     () => ({
@@ -231,6 +253,27 @@ export function MatrixPage() {
     }),
     [skillsRaw.length, roles.length, peopleRaw.length, rsr.length],
   )
+
+  const filtersActive = filterRoleIds.length > 0 || filterSkillGroups.length > 0
+
+  function toggleRoleFilter(id: string) {
+    setFilterRoleIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  function toggleSkillGroupFilter(name: string) {
+    setFilterSkillGroups((prev) =>
+      prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name],
+    )
+  }
+
+  function clearMatrixFilters() {
+    setFilterRoleIds([])
+    setFilterSkillGroups([])
+  }
+
+  const chipOn =
+    'border-accent/50 bg-accent-dim text-fg shadow-[0_0_12px_-4px_color-mix(in_oklab,var(--color-accent)_40%,transparent)]'
+  const chipOff = 'border-border bg-surface-raised/60 text-muted hover:border-border-strong hover:text-fg/90'
 
   return (
     <div className="space-y-8">
@@ -285,6 +328,80 @@ export function MatrixPage() {
           />
         </label>
       </div>
+
+      <section
+        aria-label="Matrix filters"
+        className="rounded-2xl border border-border bg-surface-raised/40 px-4 py-4 backdrop-blur-sm"
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted">Narrow the grid</p>
+          {filtersActive ? (
+            <button
+              type="button"
+              onClick={clearMatrixFilters}
+              className="text-xs font-medium text-accent underline-offset-2 hover:underline"
+            >
+              Reset filters
+            </button>
+          ) : null}
+        </div>
+        <div className="space-y-4">
+          <fieldset className="min-w-0">
+            <legend className="mb-2 text-[11px] font-medium text-muted">Job role (people)</legend>
+            {roles.length === 0 ? (
+              <p className="text-xs text-muted">No roles in catalog yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {roles.map((r) => {
+                  const on = filterRoleIds.includes(r.id)
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => toggleRoleFilter(r.id)}
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${on ? chipOn : chipOff}`}
+                      aria-pressed={on}
+                    >
+                      {r.name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            <p className="mt-2 text-[11px] text-muted/90">
+              With any role selected, only people assigned that job role appear. Leave all off to show everyone (still
+              respects the people search).
+            </p>
+          </fieldset>
+          <fieldset className="min-w-0 border-t border-border pt-4">
+            <legend className="mb-2 text-[11px] font-medium text-muted">Skill group (columns)</legend>
+            {skillGroupOptions.length === 0 ? (
+              <p className="text-xs text-muted">No skills loaded.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {skillGroupOptions.map((name) => {
+                  const on = filterSkillGroups.includes(name)
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => toggleSkillGroupFilter(name)}
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${on ? chipOn : chipOff}`}
+                      aria-pressed={on}
+                    >
+                      {name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            <p className="mt-2 text-[11px] text-muted/90">
+              With any group selected, only skills in those groups are columns. Leave all off to show every skill (still
+              respects the skill search).
+            </p>
+          </fieldset>
+        </div>
+      </section>
 
       {loadError ? (
         <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
