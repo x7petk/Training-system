@@ -6,6 +6,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminPage } from './pages/AdminPage'
 import { LoginPage } from './pages/LoginPage'
 import { MatrixPage } from './pages/MatrixPage'
+import { MySkillsPage } from './pages/MySkillsPage'
 import { RegisterPage } from './pages/RegisterPage'
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route index element={<MatrixPage />} />
+            <Route path="my-skills" element={<MySkillsPage />} />
             <Route
               path="admin"
               element={

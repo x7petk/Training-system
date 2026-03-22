@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Grid3X3, LayoutDashboard, LogOut, Sparkles } from 'lucide-react'
+import { Grid3X3, LayoutDashboard, LogOut, Sparkles, UserCircle } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
@@ -30,6 +30,10 @@ export function AppLayout() {
           <NavLink to="/" end className={navClass}>
             <Grid3X3 className="size-4 shrink-0 opacity-80" aria-hidden />
             Matrix
+          </NavLink>
+          <NavLink to="/my-skills" className={navClass}>
+            <UserCircle className="size-4 shrink-0 opacity-80" aria-hidden />
+            My skills
           </NavLink>
           {isAdmin ? (
             <NavLink to="/admin" className={navClass}>
