@@ -1,6 +1,7 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 import { Filter, Search } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
 import { classifyCell, type SkillKind } from '../features/matrix/gapLogic'
 import { MatrixGrid, type MatrixRowModel, type MatrixSkillColumn } from '../features/matrix/MatrixGrid'
 
@@ -24,6 +25,7 @@ type PsRaw = {
   skill_id: string
   actual_level: number | null
   is_extra: boolean
+  due_date: string | null
 }
 
 type RoleRaw = { id: string; name: string }
@@ -35,6 +37,9 @@ function groupName(s: SkillRaw): string {
 }
 
 export function MatrixPage() {
+  const { user, isAdmin } = useAuth()
+  const [myPersonId, setMyPersonId] = useState<string | null>(null)
+  const [dataVersion, setDataVersion] = useState(0)
   const [skillsRaw, setSkillsRaw] = useState<SkillRaw[]>([])
   const [peopleRaw, setPeopleRaw] = useState<PersonRaw[]>([])
   const [rsr, setRsr] = useState<RsrRaw[]>([])
@@ -47,6 +52,38 @@ export function MatrixPage() {
 
   useEffect(() => {
     let cancelled = false
+    if (!user?.id) {
+      void Promise.resolve().then(() => {
+        if (!cancelled) setMyPersonId(null)
+      })
+      return () => {
+        cancelled = true
+      }
+    }
+    void supabase
+      .from('people')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (!error && data?.id) setMyPersonId(data.id)
+        else setMyPersonId(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
+  const bumpData = useCallback(() => setDataVersion((v) => v + 1), [])
+
+  const canEditPerson = useCallback(
+    (personId: string) => isAdmin || (myPersonId != null && personId === myPersonId),
+    [isAdmin, myPersonId],
+  )
+
+  useEffect(() => {
+    let cancelled = false
 
     void Promise.all([
       supabase
@@ -55,7 +92,7 @@ export function MatrixPage() {
         .order('sort_order', { ascending: true }),
       supabase.from('people').select('id, display_name, person_roles(role_id)').order('display_name'),
       supabase.from('role_skill_requirements').select('role_id, skill_id, required_level'),
-      supabase.from('person_skills').select('person_id, skill_id, actual_level, is_extra'),
+      supabase.from('person_skills').select('person_id, skill_id, actual_level, is_extra, due_date'),
       supabase.from('roles').select('id, name').order('sort_order', { ascending: true }),
     ]).then(([sk, pe, rs, ps, ro]) => {
       if (cancelled) return
@@ -80,7 +117,7 @@ export function MatrixPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [dataVersion])
 
   const roleNameById = useMemo(() => {
     const m = new Map<string, string>()
@@ -97,11 +134,12 @@ export function MatrixPage() {
   }, [rsr])
 
   const psMap = useMemo(() => {
-    const m = new Map<string, { actual: number | null; isExtra: boolean }>()
+    const m = new Map<string, { actual: number | null; isExtra: boolean; dueDate: string | null }>()
     for (const row of psRows) {
       m.set(`${row.person_id}\0${row.skill_id}`, {
         actual: row.actual_level,
         isExtra: row.is_extra,
+        dueDate: row.due_date,
       })
     }
     return m
@@ -165,7 +203,14 @@ export function MatrixPage() {
           actual,
           isExtra,
         })
-        cells[s.id] = { gap, kind: s.kind, required, actual }
+        cells[s.id] = {
+          gap,
+          kind: s.kind,
+          required,
+          actual,
+          isExtra,
+          dueDate: ps?.dueDate ?? null,
+        }
       }
 
       return {
@@ -193,8 +238,8 @@ export function MatrixPage() {
         <div>
           <h1 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">Skill matrix</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            Wide heatmap: people as rows, skills as columns. Colors follow required vs actual (see legend). Sticky
-            headers for scanning on large monitors.
+            Wide heatmap: people × skills. <strong className="text-fg/90">Click a cell</strong> to set actual level
+            and optional target date (admins: any person; others: only your linked row in Admin).
           </p>
         </div>
       </header>
@@ -252,6 +297,8 @@ export function MatrixPage() {
         rows={matrixRows}
         loading={loading}
         emptyMessage="Add people in Admin and assign job roles to see rows here."
+        canEditPerson={canEditPerson}
+        onDataChanged={bumpData}
       />
 
       <div className="flex flex-wrap gap-3 text-[11px] text-muted">

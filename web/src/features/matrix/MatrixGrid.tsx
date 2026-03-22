@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import type { GapKind, SkillKind } from './gapLogic'
 import { formatLevel, gapKindClasses } from './gapLogic'
+import { MatrixCellEditor, type CellEditorContext } from './MatrixCellEditor'
 
 export type MatrixSkillColumn = {
   id: string
@@ -19,6 +21,8 @@ export type MatrixRowModel = {
       kind: SkillKind
       required: number | null
       actual: number | null
+      isExtra: boolean
+      dueDate: string | null
     }
   >
 }
@@ -28,6 +32,8 @@ type MatrixGridProps = {
   rows: MatrixRowModel[]
   loading: boolean
   emptyMessage: string
+  canEditPerson: (personId: string) => boolean
+  onDataChanged: () => void
 }
 
 function cellTitle(kind: SkillKind, required: number | null, actual: number | null, gap: GapKind): string {
@@ -37,7 +43,8 @@ function cellTitle(kind: SkillKind, required: number | null, actual: number | nu
   return bits.join(' · ')
 }
 
-export function MatrixGrid({ skills, rows, loading, emptyMessage }: MatrixGridProps) {
+export function MatrixGrid({ skills, rows, loading, emptyMessage, canEditPerson, onDataChanged }: MatrixGridProps) {
+  const [editor, setEditor] = useState<CellEditorContext | null>(null)
   if (loading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center rounded-2xl border border-border bg-surface-raised/40 text-sm text-muted">
@@ -63,8 +70,10 @@ export function MatrixGrid({ skills, rows, loading, emptyMessage }: MatrixGridPr
   }
 
   return (
-    <div className="relative max-h-[min(70vh,52rem)] max-w-full overflow-auto rounded-2xl border border-border bg-surface-raised/40 shadow-inner ring-1 ring-white/[0.04]">
-      <table className="w-max min-w-full border-collapse text-left text-xs">
+    <>
+      <MatrixCellEditor ctx={editor} onDismiss={() => setEditor(null)} onSaved={onDataChanged} />
+      <div className="relative max-h-[min(70vh,52rem)] max-w-full overflow-auto rounded-2xl border border-border bg-surface-raised/40 shadow-inner ring-1 ring-white/[0.04]">
+        <table className="w-max min-w-full border-collapse text-left text-xs">
         <thead>
           <tr>
             <th
@@ -105,14 +114,33 @@ export function MatrixGrid({ skills, rows, loading, emptyMessage }: MatrixGridPr
                 const act = c?.actual ?? null
                 const req = c?.required ?? null
                 const k = c?.kind ?? s.kind
+                const editable = canEditPerson(row.personId)
                 return (
                   <td key={s.id} className="p-0.5 align-middle">
-                    <div
-                      className={`flex h-9 min-w-[2.75rem] items-center justify-center rounded-md px-0.5 text-[11px] font-semibold tabular-nums ${cls}`}
-                      title={cellTitle(k, req, act, gap)}
+                    <button
+                      type="button"
+                      disabled={!editable}
+                      onClick={() =>
+                        editable &&
+                        setEditor({
+                          personId: row.personId,
+                          personName: row.displayName,
+                          skillId: s.id,
+                          skillName: s.name,
+                          kind: k,
+                          required: req,
+                          actual: act,
+                          isExtra: c?.isExtra ?? false,
+                          dueDate: c?.dueDate ?? null,
+                        })
+                      }
+                      className={`flex h-9 min-w-[2.75rem] w-full items-center justify-center rounded-md px-0.5 text-[11px] font-semibold tabular-nums transition-[filter,opacity] ${cls} ${editable ? 'cursor-pointer hover:brightness-110 active:brightness-95' : 'cursor-default opacity-90'}`}
+                      title={
+                        (editable ? 'Click to edit · ' : '') + cellTitle(k, req, act, gap)
+                      }
                     >
                       {formatLevel(k, act)}
-                    </div>
+                    </button>
                   </td>
                 )
               })}
@@ -120,6 +148,7 @@ export function MatrixGrid({ skills, rows, loading, emptyMessage }: MatrixGridPr
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   )
 }
