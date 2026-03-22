@@ -25,6 +25,14 @@ export SUPABASE_DB_PASSWORD="..."             # database password
 npm run supabase:bootstrap
 ```
 
+After pulling new migrations, apply them to the linked project:
+
+```bash
+npm run supabase:push
+```
+
+(`supabase:bootstrap` now uses `db push` for migrations; `supabase:push` is link + push only.)
+
 This updates **Auth URL / redirect allow list** for `http://localhost:5173`, **links** the CLI to project `uhwbvwlneenvkldccehq`, and applies [`supabase/migrations/20250323000000_profiles.sql`](./supabase/migrations/20250323000000_profiles.sql).
 
 4. Start the app, **register** (e.g. `x7petk@gmail.com`), then promote admin:

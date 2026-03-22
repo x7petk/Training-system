@@ -12,6 +12,12 @@ comment on table public.profiles is 'App user profile; role drives admin UI acce
 
 alter table public.profiles enable row level security;
 
+drop policy if exists "profiles_select_own" on public.profiles;
+drop policy if exists "profiles_update_own" on public.profiles;
+drop policy if exists "profiles_select_admin" on public.profiles;
+drop policy if exists "profiles_update_admin" on public.profiles;
+drop policy if exists "profiles_no_insert_authenticated" on public.profiles;
+
 -- Users can read their own row.
 create policy "profiles_select_own"
   on public.profiles

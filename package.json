@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "supabase:bootstrap": "node scripts/supabase-bootstrap.mjs",
-    "supabase:bootstrap:promote": "node scripts/supabase-bootstrap.mjs --promote-admin"
+    "supabase:bootstrap:promote": "node scripts/supabase-bootstrap.mjs --promote-admin",
+    "supabase:push": "node scripts/supabase-db-push.mjs"
   },
   "devDependencies": {
     "supabase": "^2.83.0"

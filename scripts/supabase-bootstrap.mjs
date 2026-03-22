@@ -24,7 +24,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 const PROJECT_REF = 'uhwbvwlneenvkldccehq'
 const API = 'https://api.supabase.com/v1'
-const MIGRATION = join(ROOT, 'supabase/migrations/20250323000000_profiles.sql')
 
 /** Load KEY=value lines into process.env if not already set (no dependency on dotenv). */
 function loadOptionalEnvFile(absPath) {
@@ -121,9 +120,9 @@ function linkProject() {
   console.log('OK: Linked CLI to remote project.')
 }
 
-function applyMigration() {
-  runSupabase(['db', 'query', '--linked', '--file', MIGRATION, '-o', 'table'])
-  console.log('OK: Applied profiles migration.')
+function applyMigrations() {
+  runSupabase(['db', 'push', '--linked', '--yes'])
+  console.log('OK: Pushed pending Supabase migrations to remote.')
 }
 
 function promoteAdminSql() {
@@ -167,7 +166,7 @@ async function main() {
   }
 
   linkProject()
-  applyMigration()
+  applyMigrations()
   console.log(
     `\nNext: register at http://localhost:5173, then run:\n  npm run supabase:bootstrap:promote\n(with same SUPABASE_ACCESS_TOKEN and SUPABASE_DB_PASSWORD in env)\n`,
   )
