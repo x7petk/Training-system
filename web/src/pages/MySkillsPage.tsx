@@ -84,8 +84,10 @@ const selectClass =
   'w-full max-w-md rounded-xl border border-border bg-canvas px-3 py-2.5 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-2 md:w-auto md:min-w-[18rem]'
 
 export function MySkillsPage() {
-  const { user, isAdmin, isOperator } = useAuth()
+  const { user, isAdmin, isAssessor, isOperator } = useAuth()
   const readOnly = isOperator
+  /** Pick anyone on the roster and edit their skills (incl. extra skills). */
+  const canManageAnyPerson = isAdmin || isAssessor
   const [dataVersion, setDataVersion] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -138,7 +140,7 @@ export function MySkillsPage() {
         const linkedRow = linked as PersonRow | null
         let people: PersonRow[] = []
 
-        if (isAdmin) {
+        if (canManageAnyPerson) {
           const { data: plist, error: pe } = await supabase
             .from('people')
             .select('id, display_name, person_roles(role_id)')
@@ -247,7 +249,7 @@ export function MySkillsPage() {
     return () => {
       cancelled = true
     }
-  }, [user, isAdmin, selectedPersonId, dataVersion])
+  }, [user, isAdmin, isAssessor, canManageAnyPerson, selectedPersonId, dataVersion])
 
   const rsrMap = useMemo(() => {
     const m = new Map<string, number>()
@@ -372,14 +374,16 @@ export function MySkillsPage() {
           <p className="mt-1 max-w-2xl text-sm text-muted">
             {readOnly
               ? 'Your skill levels and targets (read-only). Ask an assessor or admin if something needs updating.'
-              : isAdmin
-                ? 'As an admin you can review any person’s skills. Assessors use the matrix to score others; operators only see this page read-only.'
+              : canManageAnyPerson
+                ? isAdmin
+                  ? 'Choose anyone on the roster, edit their levels, and add extra skills not required by their job roles. Operators only see their own skills here (read-only).'
+                  : 'Choose anyone on the roster to update levels, add extra skills, or set target dates — same as the matrix, without Admin access.'
                 : 'Your levels and target dates for skills required by your job roles, plus any extra skills you choose to track.'}
           </p>
         </div>
       </header>
 
-      {isAdmin && peopleOptions.length > 0 ? (
+      {canManageAnyPerson && peopleOptions.length > 0 ? (
         <label className="block max-w-xl rounded-2xl border border-border bg-surface-raised/60 p-4 backdrop-blur-sm">
           <span className="text-xs font-medium uppercase tracking-wider text-muted">View skills for</span>
           <select
@@ -439,6 +443,11 @@ export function MySkillsPage() {
                 </Link>{' '}
                 to create or link your person row (you can still use the person selector above once others exist).
               </p>
+            ) : isAssessor ? (
+              <p className="mt-2 text-sm text-muted">
+                Ask an admin to link your login to a person if you need a default “you” on the roster. You can still
+                select anyone above once people exist.
+              </p>
             ) : null}
           </div>
         </div>
@@ -446,7 +455,11 @@ export function MySkillsPage() {
         <>
           <p className="text-sm text-muted">
             Viewing <span className="font-medium text-fg/90">{person.display_name}</span>
-            {isAdmin ? <span className="text-muted"> (admin view)</span> : null}
+            {isAdmin ? (
+              <span className="text-muted"> (admin)</span>
+            ) : isAssessor ? (
+              <span className="text-muted"> (assessor)</span>
+            ) : null}
             {roleIds.length === 0 ? (
               <span className="text-muted"> · No job roles assigned — requirements may be empty.</span>
             ) : null}
@@ -474,8 +487,11 @@ export function MySkillsPage() {
 
           {!readOnly && addableSkillOptions.length > 0 ? (
             <section className="rounded-2xl border border-border bg-surface-raised/40 p-4 backdrop-blur-sm">
-              <h2 className="font-display text-lg font-semibold tracking-tight">Track another skill</h2>
-              <p className="mt-1 text-xs text-muted">Skill not required by their roles.</p>
+              <h2 className="font-display text-lg font-semibold tracking-tight">Add extra skill</h2>
+              <p className="mt-1 text-xs text-muted">
+                Skills not required by this person’s job roles. Choose one to set level or certification (saved as an
+                extra).
+              </p>
               <label htmlFor="add-skill" className="mt-4 block text-xs font-medium uppercase tracking-wider text-muted">
                 Choose skill
               </label>
@@ -499,6 +515,13 @@ export function MySkillsPage() {
                 ))}
               </select>
             </section>
+          ) : null}
+
+          {!readOnly && canManageAnyPerson && addableSkillOptions.length === 0 && skillsRaw.length > 0 ? (
+            <p className="rounded-xl border border-border bg-surface-raised/50 px-4 py-3 text-sm text-muted">
+              No extra skills to add: every skill in the catalog is already required for this person’s roles or already
+              on their profile.
+            </p>
           ) : null}
         </>
       ) : null}
