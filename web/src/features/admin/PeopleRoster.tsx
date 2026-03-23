@@ -30,6 +30,13 @@ const emptyForm = (): FormState => ({
   role_ids: [],
 })
 
+function appAccessSuffix(role: string): string {
+  if (role === 'admin') return ' · admin'
+  if (role === 'assessor') return ' · assessor'
+  if (role === 'operator' || role === 'user') return ' · operator'
+  return ''
+}
+
 export function PeopleRoster() {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [people, setPeople] = useState<PersonRow[]>([])
@@ -341,7 +348,7 @@ export function PeopleRoster() {
                 <option value="">No link</option>
                 {profileOptions.map((pr) => (
                   <option key={pr.id} value={pr.id}>
-                    {(pr.display_name?.trim() || 'User') + (pr.role === 'admin' ? ' · admin' : '')}
+                    {(pr.display_name?.trim() || 'User') + appAccessSuffix(pr.role)}
                   </option>
                 ))}
               </select>

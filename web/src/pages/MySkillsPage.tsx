@@ -84,7 +84,8 @@ const selectClass =
   'w-full max-w-md rounded-xl border border-border bg-canvas px-3 py-2.5 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-2 md:w-auto md:min-w-[18rem]'
 
 export function MySkillsPage() {
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, isOperator } = useAuth()
+  const readOnly = isOperator
   const [dataVersion, setDataVersion] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -369,9 +370,11 @@ export function MySkillsPage() {
         <div>
           <h1 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">My skills</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            {isAdmin
-              ? 'As an admin you can review any person’s skills. Others only see their own linked profile.'
-              : 'Your levels and target dates for skills required by your job roles, plus any extra skills you choose to track.'}
+            {readOnly
+              ? 'Your skill levels and targets (read-only). Ask an assessor or admin if something needs updating.'
+              : isAdmin
+                ? 'As an admin you can review any person’s skills. Assessors use the matrix to score others; operators only see this page read-only.'
+                : 'Your levels and target dates for skills required by your job roles, plus any extra skills you choose to track.'}
           </p>
         </div>
       </header>
@@ -456,6 +459,7 @@ export function MySkillsPage() {
             empty="Nothing required for this person’s current job roles."
             onEdit={openEditor}
             requiredLabel={requiredLabel}
+            readOnly={readOnly}
           />
 
           <SkillSection
@@ -465,9 +469,10 @@ export function MySkillsPage() {
             empty="No optional skills recorded yet."
             onEdit={openEditor}
             requiredLabel={requiredLabel}
+            readOnly={readOnly}
           />
 
-          {addableSkillOptions.length > 0 ? (
+          {!readOnly && addableSkillOptions.length > 0 ? (
             <section className="rounded-2xl border border-border bg-surface-raised/40 p-4 backdrop-blur-sm">
               <h2 className="font-display text-lg font-semibold tracking-tight">Track another skill</h2>
               <p className="mt-1 text-xs text-muted">Skill not required by their roles.</p>
@@ -498,11 +503,13 @@ export function MySkillsPage() {
         </>
       ) : null}
 
-      <MatrixCellEditor
-        ctx={editorCtx}
-        onDismiss={() => setEditorCtx(null)}
-        onSaved={bumpData}
-      />
+      {!readOnly ? (
+        <MatrixCellEditor
+          ctx={editorCtx}
+          onDismiss={() => setEditorCtx(null)}
+          onSaved={bumpData}
+        />
+      ) : null}
     </div>
   )
 }
@@ -514,8 +521,9 @@ function SkillSection(props: {
   empty: string
   onEdit: (row: SkillRowModel) => void
   requiredLabel: (kind: SkillKind, req: number | null) => string
+  readOnly?: boolean
 }) {
-  const { title, description, rows, empty, onEdit, requiredLabel } = props
+  const { title, description, rows, empty, onEdit, requiredLabel, readOnly } = props
 
   return (
     <section className="rounded-2xl border border-border bg-surface-raised/40 backdrop-blur-sm">
@@ -557,14 +565,16 @@ function SkillSection(props: {
                     </span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onEdit(row)}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-border bg-surface-raised px-4 py-2.5 text-sm font-medium text-fg hover:border-border-strong sm:self-center"
-                >
-                  <Pencil className="size-4 text-muted" aria-hidden />
-                  Edit
-                </button>
+                {readOnly ? null : (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(row)}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-border bg-surface-raised px-4 py-2.5 text-sm font-medium text-fg hover:border-border-strong sm:self-center"
+                  >
+                    <Pencil className="size-4 text-muted" aria-hidden />
+                    Edit
+                  </button>
+                )}
               </li>
             ))}
           </ul>

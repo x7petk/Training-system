@@ -14,8 +14,8 @@ export function AdminPage() {
           <h1 className="font-display text-3xl font-semibold tracking-tight">Admin</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted">
             Edit the <strong>skill catalog</strong> and <strong>role requirements</strong>, manage{' '}
-            <strong>people</strong> on the matrix, and review <strong>accounts</strong>. All catalog changes are enforced
-            by Row Level Security (admins only).
+            <strong>people</strong>, and set <strong>login account roles</strong> (operator / assessor / admin).
+            Assessors score skills on the matrix; operators only see My skills (read-only).
           </p>
         </div>
       </header>

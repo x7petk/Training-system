@@ -11,7 +11,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   ].join(' ')
 
 export function AppLayout() {
-  const { signOut, isAdmin, user } = useAuth()
+  const { signOut, isAdmin, isOperator, adminLoading, user } = useAuth()
   const navigate = useNavigate()
 
   return (
@@ -27,10 +27,12 @@ export function AppLayout() {
           </div>
         </div>
         <nav className="flex gap-1 p-2 md:flex-col" aria-label="Main">
-          <NavLink to="/" end className={navClass}>
-            <Grid3X3 className="size-4 shrink-0 opacity-80" aria-hidden />
-            Matrix
-          </NavLink>
+          {!adminLoading && !isOperator ? (
+            <NavLink to="/" end className={navClass}>
+              <Grid3X3 className="size-4 shrink-0 opacity-80" aria-hidden />
+              Matrix
+            </NavLink>
+          ) : null}
           <NavLink to="/my-skills" className={navClass}>
             <UserCircle className="size-4 shrink-0 opacity-80" aria-hidden />
             My skills

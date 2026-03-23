@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useCallback } from 'react'
+import { Navigate } from 'react-router-dom'
 import { Filter, Search } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -37,7 +38,7 @@ function groupName(s: SkillRaw): string {
 }
 
 export function MatrixPage() {
-  const { user, isAdmin } = useAuth()
+  const { user, isAdmin, isAssessor, isOperator, adminLoading } = useAuth()
   const [myPersonId, setMyPersonId] = useState<string | null>(null)
   const [dataVersion, setDataVersion] = useState(0)
   const [skillsRaw, setSkillsRaw] = useState<SkillRaw[]>([])
@@ -82,8 +83,11 @@ export function MatrixPage() {
   const bumpData = useCallback(() => setDataVersion((v) => v + 1), [])
 
   const canEditPerson = useCallback(
-    (personId: string) => isAdmin || (myPersonId != null && personId === myPersonId),
-    [isAdmin, myPersonId],
+    (personId: string) =>
+      isAdmin ||
+      isAssessor ||
+      (!isOperator && myPersonId != null && personId === myPersonId),
+    [isAdmin, isAssessor, isOperator, myPersonId],
   )
 
   useEffect(() => {
@@ -275,6 +279,10 @@ export function MatrixPage() {
     'border-accent/50 bg-accent-dim text-fg shadow-[0_0_12px_-4px_color-mix(in_oklab,var(--color-accent)_40%,transparent)]'
   const chipOff = 'border-border bg-surface-raised/60 text-muted hover:border-border-strong hover:text-fg/90'
 
+  if (!adminLoading && isOperator) {
+    return <Navigate to="/my-skills" replace />
+  }
+
   return (
     <div className="space-y-8">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -282,7 +290,8 @@ export function MatrixPage() {
           <h1 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">Skill matrix</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted">
             Wide heatmap: people × skills. <strong className="text-fg/90">Click a cell</strong> to set actual level
-            and optional target date (admins: any person; others: only your linked row in Admin).
+            and optional target date. <strong className="text-fg/90">Admins and assessors</strong> can update any
+            person.
           </p>
         </div>
       </header>
