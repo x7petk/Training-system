@@ -66,7 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [user])
+  }, [user, session])
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!supabaseConfigured) {
