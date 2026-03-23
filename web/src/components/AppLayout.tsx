@@ -7,7 +7,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
     'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
     isActive
       ? 'bg-accent-dim text-accent'
-      : 'text-muted hover:bg-white/5 hover:text-fg',
+      : 'text-muted hover:bg-black/[0.06] hover:text-fg',
   ].join(' ')
 
 export function AppLayout() {
@@ -51,7 +51,7 @@ export function AppLayout() {
             onClick={() => {
               void signOut().then(() => navigate('/login'))
             }}
-            className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-white/5 hover:text-fg"
+            className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-black/[0.06] hover:text-fg"
           >
             <LogOut className="size-4" aria-hidden />
             Sign out
@@ -67,7 +67,7 @@ export function AppLayout() {
             onClick={() => {
               void signOut().then(() => navigate('/login'))
             }}
-            className="rounded-lg p-2 text-muted hover:bg-white/5 hover:text-fg"
+            className="rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg"
             aria-label="Sign out"
           >
             <LogOut className="size-4" />

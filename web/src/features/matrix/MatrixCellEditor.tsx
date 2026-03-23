@@ -28,10 +28,15 @@ function hasGap(required: number | null, actual: number | null, kind: SkillKind)
   return actual == null || actual < required
 }
 
+const LEVEL_HINTS = [
+  { n: 1, short: 'None', sub: 'No knowledge' },
+  { n: 2, short: 'Theory', sub: 'Theoretical' },
+  { n: 3, short: 'Practice', sub: 'Practical' },
+  { n: 4, short: 'Expert', sub: 'Trainer level' },
+] as const
+
 export function MatrixCellEditor({ ctx, onDismiss, onSaved }: MatrixCellEditorProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
-  const [actualNum, setActualNum] = useState<string>('')
-  const [certYes, setCertYes] = useState(false)
   const [dueDate, setDueDate] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -43,13 +48,6 @@ export function MatrixCellEditor({ ctx, onDismiss, onSaved }: MatrixCellEditorPr
     el?.showModal()
     setError(null)
     setHadRow(ctx.actual != null || ctx.isExtra)
-    if (ctx.kind === 'certification') {
-      setCertYes(ctx.actual != null && ctx.actual >= 1)
-      setActualNum('')
-    } else {
-      setActualNum(ctx.actual == null ? '' : String(ctx.actual))
-      setCertYes(false)
-    }
     setDueDate(ctx.dueDate ? ctx.dueDate.slice(0, 10) : '')
     return () => {
       el?.close()
@@ -59,7 +57,6 @@ export function MatrixCellEditor({ ctx, onDismiss, onSaved }: MatrixCellEditorPr
   if (!ctx) return null
 
   const cur = ctx
-
   const showDueHint = hasGap(cur.required, cur.actual, cur.kind)
 
   function close() {
@@ -67,57 +64,32 @@ export function MatrixCellEditor({ ctx, onDismiss, onSaved }: MatrixCellEditorPr
     onDismiss()
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
+  async function persist(actualLevel: number | null, deleteRow: boolean) {
     setError(null)
     setSaving(true)
-
     try {
-      let actualLevel: number | null = null
-
-      if (cur.kind === 'certification') {
-        actualLevel = certYes ? 1 : 0
+      if (deleteRow) {
+        const { error: delErr } = await supabase
+          .from('person_skills')
+          .delete()
+          .eq('person_id', cur.personId)
+          .eq('skill_id', cur.skillId)
+        if (delErr) throw delErr
       } else {
-        if (actualNum === '') {
-          if (hadRow) {
-            const { error: delErr } = await supabase
-              .from('person_skills')
-              .delete()
-              .eq('person_id', cur.personId)
-              .eq('skill_id', cur.skillId)
-            if (delErr) throw delErr
-            onSaved()
-            close()
-          } else {
-            close()
-          }
-          setSaving(false)
-          return
-        }
-        const n = Number.parseInt(actualNum, 10)
-        if (Number.isNaN(n) || n < 1 || n > 4) {
-          setError('Pick a level from 1 to 4.')
-          setSaving(false)
-          return
-        }
-        actualLevel = n
+        const isExtra = cur.required == null
+        const due = dueDate.trim() ? dueDate.trim() : null
+        const { error: upErr } = await supabase.from('person_skills').upsert(
+          {
+            person_id: cur.personId,
+            skill_id: cur.skillId,
+            actual_level: actualLevel,
+            due_date: due,
+            is_extra: isExtra,
+          },
+          { onConflict: 'person_id,skill_id' },
+        )
+        if (upErr) throw upErr
       }
-
-      const isExtra = cur.required == null
-      const due = dueDate.trim() ? dueDate.trim() : null
-
-      const { error: upErr } = await supabase.from('person_skills').upsert(
-        {
-          person_id: cur.personId,
-          skill_id: cur.skillId,
-          actual_level: actualLevel,
-          due_date: due,
-          is_extra: isExtra,
-        },
-        { onConflict: 'person_id,skill_id' },
-      )
-      if (upErr) throw upErr
-
       onSaved()
       close()
     } catch (err) {
@@ -127,24 +99,60 @@ export function MatrixCellEditor({ ctx, onDismiss, onSaved }: MatrixCellEditorPr
     }
   }
 
-  async function handleClear() {
+  async function onPickNumericLevel(n: number) {
+    if (n < 1 || n > 4) return
+    await persist(n, false)
+  }
+
+  async function onPickCert(yes: boolean) {
+    await persist(yes ? 1 : 0, false)
+  }
+
+  async function onClear() {
     if (!hadRow) {
       close()
+      return
+    }
+    await persist(null, true)
+  }
+
+  async function handleDateOnly(e: FormEvent) {
+    e.preventDefault()
+    if (!hadRow && cur.actual == null) {
+      setError('Set a level with the buttons above first, then you can add a target date.')
       return
     }
     setSaving(true)
     setError(null)
     try {
-      const { error: delErr } = await supabase
-        .from('person_skills')
-        .delete()
-        .eq('person_id', cur.personId)
-        .eq('skill_id', cur.skillId)
-      if (delErr) throw delErr
+      const due = dueDate.trim() ? dueDate.trim() : null
+      let actual_level: number
+      if (cur.kind === 'certification') {
+        actual_level = cur.actual != null && cur.actual >= 1 ? 1 : 0
+      } else {
+        if (cur.actual == null || cur.actual < 1) {
+          setError('Set a level using the grid first.')
+          setSaving(false)
+          return
+        }
+        actual_level = cur.actual
+      }
+      const isExtra = cur.required == null
+      const { error: upErr } = await supabase.from('person_skills').upsert(
+        {
+          person_id: cur.personId,
+          skill_id: cur.skillId,
+          actual_level,
+          due_date: due,
+          is_extra: isExtra,
+        },
+        { onConflict: 'person_id,skill_id' },
+      )
+      if (upErr) throw upErr
       onSaved()
       close()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed')
+      setError(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setSaving(false)
     }
@@ -153,20 +161,20 @@ export function MatrixCellEditor({ ctx, onDismiss, onSaved }: MatrixCellEditorPr
   return (
     <dialog
       ref={dialogRef}
-      className="w-[min(100%,24rem)] rounded-2xl border border-border bg-surface-raised p-0 text-fg shadow-glow backdrop:bg-black/70"
+      className="w-[min(100%,26rem)] rounded-2xl border border-border bg-surface-raised p-0 text-fg shadow-glow backdrop:bg-black/30"
       onCancel={(e) => {
         e.preventDefault()
         close()
       }}
     >
-      <form onSubmit={(e) => void handleSubmit(e)} className="p-6">
-        <h3 className="font-display text-lg font-semibold">Update skill</h3>
+      <div className="p-5">
+        <h3 className="font-display text-lg font-semibold">Set level</h3>
         <p className="mt-1 text-sm text-muted">
           <span className="font-medium text-fg">{cur.personName}</span>
           <span className="mx-1">·</span>
           {cur.skillName}
         </p>
-        <p className="mt-2 text-xs text-muted">
+        <p className="mt-1.5 text-xs text-muted">
           Required:{' '}
           <span className="font-mono text-fg">
             {cur.kind === 'certification'
@@ -177,88 +185,110 @@ export function MatrixCellEditor({ ctx, onDismiss, onSaved }: MatrixCellEditorPr
           </span>
         </p>
 
-        <div className="mt-4 space-y-4">
+        <div className="mt-4">
           {cur.kind === 'certification' ? (
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={certYes}
-                onChange={(e) => setCertYes(e.target.checked)}
-                className="size-4 rounded border-border text-accent focus:ring-accent"
-              />
-              Qualified / licensed (Yes)
-            </label>
-          ) : (
-            <div>
-              <label htmlFor="cell-level" className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">
-                Actual level (1–4)
-              </label>
-              <select
-                id="cell-level"
-                value={actualNum}
-                onChange={(e) => setActualNum(e.target.value)}
-                className="w-full rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2"
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void onPickCert(true)}
+                className="rounded-xl bg-emerald-600 px-4 py-3.5 text-sm font-semibold text-white shadow-sm transition-[filter] hover:brightness-105 active:brightness-95 disabled:opacity-40"
               >
-                <option value="">Not recorded</option>
-                <option value="1">1 — No knowledge</option>
-                <option value="2">2 — Theoretical</option>
-                <option value="3">3 — Practical</option>
-                <option value="4">4 — Expert / trainer</option>
-              </select>
+                Yes — qualified
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void onPickCert(false)}
+                className="rounded-xl border border-border bg-surface px-4 py-3.5 text-sm font-semibold text-fg shadow-sm transition-colors hover:bg-surface-raised disabled:opacity-40"
+              >
+                Not yet
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {LEVEL_HINTS.map(({ n, short, sub }) => {
+                const active = cur.actual === n
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void onPickNumericLevel(n)}
+                    className={`flex flex-col items-center justify-center rounded-xl border px-2 py-3 text-center transition-[filter,box-shadow] disabled:opacity-40 ${
+                      active
+                        ? 'border-accent bg-accent-dim ring-2 ring-accent/40'
+                        : 'border-border bg-surface hover:border-border-strong hover:bg-surface-raised'
+                    }`}
+                  >
+                    <span className="font-display text-xl font-bold tabular-nums text-fg">{n}</span>
+                    <span className="text-[11px] font-semibold text-fg">{short}</span>
+                    <span className="mt-0.5 text-[10px] leading-tight text-muted">{sub}</span>
+                  </button>
+                )
+              })}
             </div>
           )}
+        </div>
 
-          <div>
-            <label htmlFor="cell-due" className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">
-              Target date {showDueHint ? '(gap — optional)' : '(optional)'}
-            </label>
+        {cur.kind === 'numeric' && hadRow ? (
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => void onClear()}
+            className="mt-3 w-full rounded-lg py-2 text-center text-xs font-medium text-danger hover:underline disabled:opacity-40"
+          >
+            Remove level (clear cell)
+          </button>
+        ) : null}
+
+        {cur.kind === 'certification' && hadRow ? (
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => void onClear()}
+            className="mt-3 w-full rounded-lg py-2 text-center text-xs font-medium text-danger hover:underline disabled:opacity-40"
+          >
+            Remove record
+          </button>
+        ) : null}
+
+        <details className="group mt-4 rounded-xl border border-border bg-surface px-3 py-2">
+          <summary className="cursor-pointer text-xs font-medium text-muted marker:text-muted">
+            Target date {showDueHint ? '(gap — optional)' : '(optional)'}
+          </summary>
+          <form onSubmit={(e) => void handleDateOnly(e)} className="mt-3 space-y-2 pb-1">
             <input
-              id="cell-due"
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              className="w-full rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2"
+              className="w-full rounded-lg border border-border bg-canvas px-3 py-2 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-2"
             />
-          </div>
-
-          {error ? (
-            <p className="text-sm text-danger" role="alert">
-              {error}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-          {hadRow ? (
-            <button
-              type="button"
-              onClick={() => void handleClear()}
-              disabled={saving}
-              className="text-sm text-danger hover:underline disabled:opacity-40"
-            >
-              Remove record
-            </button>
-          ) : (
-            <span />
-          )}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={close}
-              className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted hover:bg-white/5 hover:text-fg"
-            >
-              Cancel
-            </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-canvas hover:brightness-110 disabled:opacity-40"
+              className="w-full rounded-lg border border-border bg-surface-raised py-2 text-xs font-medium text-fg hover:bg-surface disabled:opacity-40"
             >
-              {saving ? 'Saving…' : 'Save'}
+              Save date only
             </button>
-          </div>
-        </div>
-      </form>
+          </form>
+        </details>
+
+        {error ? (
+          <p className="mt-3 text-sm text-danger" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={close}
+          disabled={saving}
+          className="mt-4 w-full rounded-xl border border-border py-2.5 text-sm font-medium text-muted hover:bg-surface disabled:opacity-40"
+        >
+          Cancel
+        </button>
+      </div>
     </dialog>
   )
 }

@@ -83,7 +83,7 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={pending || !supabaseConfigured}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-canvas transition-[transform,opacity] hover:brightness-110 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-40"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white transition-[transform,opacity] hover:brightness-110 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-40"
             >
               {pending ? 'Signing in…' : 'Sign in'}
               <ArrowRight className="size-4" aria-hidden />

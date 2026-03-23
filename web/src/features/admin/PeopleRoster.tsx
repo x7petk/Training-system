@@ -228,7 +228,7 @@ export function PeopleRoster() {
         <button
           type="button"
           onClick={openCreate}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-canvas hover:brightness-110"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110"
         >
           <Plus className="size-4" aria-hidden />
           Add person
@@ -258,7 +258,7 @@ export function PeopleRoster() {
             </thead>
             <tbody className="divide-y divide-border">
               {people.map((row) => (
-                <tr key={row.id} className="hover:bg-white/[0.03]">
+                <tr key={row.id} className="hover:bg-black/[0.04]">
                   <td className="px-4 py-3 font-medium text-fg">{row.display_name}</td>
                   <td className="px-4 py-3 text-muted">{profileLabel(row.user_id)}</td>
                   <td className="px-4 py-3">
@@ -281,7 +281,7 @@ export function PeopleRoster() {
                       <button
                         type="button"
                         onClick={() => openEdit(row)}
-                        className="rounded-lg p-2 text-muted hover:bg-white/5 hover:text-fg"
+                        className="rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg"
                         aria-label={`Edit ${row.display_name}`}
                       >
                         <Pencil className="size-4" />
@@ -305,7 +305,7 @@ export function PeopleRoster() {
 
       <dialog
         ref={dialogRef}
-        className="w-[min(100%,28rem)] rounded-2xl border border-border bg-surface-raised p-0 text-fg shadow-glow backdrop:bg-black/70"
+        className="w-[min(100%,28rem)] rounded-2xl border border-border bg-surface-raised p-0 text-fg shadow-glow backdrop:bg-black/30"
         onClose={() => {
           setDialogOpen(false)
           setEditingId(null)
@@ -377,14 +377,14 @@ export function PeopleRoster() {
             <button
               type="button"
               onClick={closeDialog}
-              className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted hover:bg-white/5 hover:text-fg"
+              className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted hover:bg-black/[0.06] hover:text-fg"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-canvas hover:brightness-110 disabled:opacity-40"
+              className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-40"
             >
               {saving ? 'Saving…' : editingId ? 'Save' : 'Create'}
             </button>

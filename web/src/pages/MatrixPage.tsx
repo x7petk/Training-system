@@ -404,7 +404,7 @@ export function MatrixPage() {
       </section>
 
       {loadError ? (
-        <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+        <p className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           {loadError}
         </p>
       ) : null}
@@ -436,7 +436,7 @@ export function MatrixPage() {
           <span className="size-2.5 rounded-sm bg-sky-500/25 ring-1 ring-sky-400/25" /> Extra skill
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm bg-white/10" /> N/A
+          <span className="size-2.5 rounded-sm bg-zinc-200 ring-1 ring-zinc-300/80" /> N/A
         </span>
       </div>
     </div>

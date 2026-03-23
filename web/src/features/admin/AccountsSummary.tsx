@@ -51,14 +51,14 @@ export function AccountsSummary() {
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-white/[0.03]">
+                <tr key={r.id} className="hover:bg-black/[0.04]">
                   <td className="px-4 py-3 font-medium text-fg">{r.display_name?.trim() || '—'}</td>
                   <td className="px-4 py-3">
                     <span
                       className={
                         r.role === 'admin'
                           ? 'rounded-lg bg-accent-dim px-2 py-0.5 text-xs font-medium text-accent'
-                          : 'rounded-lg bg-white/5 px-2 py-0.5 text-xs text-muted'
+                          : 'rounded-lg bg-zinc-100 px-2 py-0.5 text-xs text-muted'
                       }
                     >
                       {r.role}

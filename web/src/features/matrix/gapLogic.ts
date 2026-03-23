@@ -47,18 +47,18 @@ export function classifyCell(params: {
 export function gapKindClasses(kind: GapKind): string {
   switch (kind) {
     case 'critical':
-      return 'bg-rose-500/35 text-rose-50 ring-1 ring-rose-400/40'
+      return 'bg-rose-100 text-rose-900 ring-1 ring-rose-200/90'
     case 'minor':
-      return 'bg-amber-500/25 text-amber-50 ring-1 ring-amber-400/35'
+      return 'bg-amber-100 text-amber-950 ring-1 ring-amber-200/90'
     case 'meet':
-      return 'bg-emerald-500/25 text-emerald-50 ring-1 ring-emerald-400/30'
+      return 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-200/90'
     case 'exceed':
-      return 'bg-teal-600/30 text-teal-50 ring-1 ring-teal-400/35'
+      return 'bg-teal-100 text-teal-900 ring-1 ring-teal-200/90'
     case 'extra':
-      return 'bg-sky-500/20 text-sky-100 ring-1 ring-sky-400/25'
+      return 'bg-sky-100 text-sky-900 ring-1 ring-sky-200/90'
     case 'na':
     default:
-      return 'bg-white/[0.03] text-muted'
+      return 'bg-zinc-100/90 text-zinc-600 ring-1 ring-zinc-200/80'
   }
 }
 

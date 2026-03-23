@@ -72,7 +72,7 @@ export function MatrixGrid({ skills, rows, loading, emptyMessage, canEditPerson,
   return (
     <>
       <MatrixCellEditor ctx={editor} onDismiss={() => setEditor(null)} onSaved={onDataChanged} />
-      <div className="relative max-h-[min(70vh,52rem)] max-w-full overflow-auto rounded-2xl border border-border bg-surface-raised/40 shadow-inner ring-1 ring-white/[0.04]">
+      <div className="relative max-h-[min(70vh,52rem)] max-w-full overflow-auto rounded-2xl border border-border bg-surface-raised/80 shadow-inner ring-1 ring-black/[0.06]">
         <table className="w-max min-w-full border-collapse text-left text-xs">
         <thead>
           <tr>
@@ -99,7 +99,7 @@ export function MatrixGrid({ skills, rows, loading, emptyMessage, canEditPerson,
         </thead>
         <tbody className="divide-y divide-border/80">
           {rows.map((row) => (
-            <tr key={row.personId} className="hover:bg-white/[0.02]">
+            <tr key={row.personId} className="hover:bg-black/[0.03]">
               <th
                 scope="row"
                 className="sticky left-0 z-10 border-r border-border bg-canvas/95 px-3 py-2 text-left align-middle backdrop-blur-sm"

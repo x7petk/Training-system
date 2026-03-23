@@ -80,6 +80,9 @@ type SkillRowModel = {
   gap: GapKind
 }
 
+const selectClass =
+  'w-full max-w-md rounded-xl border border-border bg-canvas px-3 py-2.5 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-2 md:w-auto md:min-w-[18rem]'
+
 export function MySkillsPage() {
   const { user, isAdmin } = useAuth()
   const [dataVersion, setDataVersion] = useState(0)
@@ -87,6 +90,9 @@ export function MySkillsPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [person, setPerson] = useState<PersonRow | null>(null)
   const [noLink, setNoLink] = useState(false)
+  const [adminNoPeople, setAdminNoPeople] = useState(false)
+  const [peopleOptions, setPeopleOptions] = useState<PersonRow[]>([])
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
   const [skillsRaw, setSkillsRaw] = useState<SkillRaw[]>([])
   const [rsr, setRsr] = useState<RsrRaw[]>([])
   const [psRows, setPsRows] = useState<PsRaw[]>([])
@@ -94,77 +100,153 @@ export function MySkillsPage() {
 
   const bumpData = useCallback(() => setDataVersion((v) => v + 1), [])
 
-  const load = useCallback(async () => {
-    if (!user?.id) {
-      setPerson(null)
-      setNoLink(false)
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    setLoadError(null)
-    setNoLink(false)
-
-    const { data: pRow, error: pErr } = await supabase
-      .from('people')
-      .select('id, display_name, person_roles(role_id)')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    if (pErr) {
-      setLoadError(pErr.message)
-      setPerson(null)
-      setNoLink(false)
-      setLoading(false)
-      return
-    }
-
-    if (!pRow) {
-      setPerson(null)
-      setNoLink(true)
-      setSkillsRaw([])
-      setRsr([])
-      setPsRows([])
-      setLoading(false)
-      return
-    }
-
-    const pr = pRow as unknown as PersonRow
-    setPerson(pr)
-
-    const pid = pr.id
-    const [sk, rs, ps] = await Promise.all([
-      supabase.from('skills').select('id, name, kind, sort_order, skill_groups(name)').order('sort_order', {
-        ascending: true,
-      }),
-      supabase.from('role_skill_requirements').select('role_id, skill_id, required_level'),
-      supabase.from('person_skills').select('person_id, skill_id, actual_level, is_extra, due_date').eq('person_id', pid),
-    ])
-
-    if (sk.error) {
-      setLoadError(sk.error.message)
-      setSkillsRaw([])
-    } else {
-      setSkillsRaw((sk.data ?? []) as SkillRaw[])
-    }
-    if (!rs.error && rs.data) setRsr(rs.data as RsrRaw[])
-    else setRsr([])
-    if (!ps.error && ps.data) setPsRows(ps.data as PsRaw[])
-    else setPsRows([])
-
-    setLoading(false)
-  }, [user])
-
   useEffect(() => {
+    if (!user?.id) {
+      void Promise.resolve().then(() => {
+        setPerson(null)
+        setPeopleOptions([])
+        setSelectedPersonId(null)
+        setNoLink(false)
+        setAdminNoPeople(false)
+        setLoading(false)
+      })
+      return
+    }
+
     let cancelled = false
+
     void Promise.resolve().then(() => {
-      if (cancelled) return
-      void load()
+      void (async () => {
+        setLoading(true)
+        setLoadError(null)
+
+        const { data: linked, error: linkErr } = await supabase
+          .from('people')
+          .select('id, display_name, person_roles(role_id)')
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        if (cancelled) return
+        if (linkErr) {
+          setLoadError(linkErr.message)
+          setPerson(null)
+          setLoading(false)
+          return
+        }
+
+        const linkedRow = linked as PersonRow | null
+        let people: PersonRow[] = []
+
+        if (isAdmin) {
+          const { data: plist, error: pe } = await supabase
+            .from('people')
+            .select('id, display_name, person_roles(role_id)')
+            .order('display_name')
+          if (cancelled) return
+          if (pe) {
+            setLoadError(pe.message)
+            setLoading(false)
+            return
+          }
+          people = (plist ?? []) as PersonRow[]
+          setPeopleOptions(people)
+
+          if (people.length === 0) {
+            setAdminNoPeople(true)
+            setNoLink(false)
+            setPerson(null)
+            setSkillsRaw([])
+            setRsr([])
+            setPsRows([])
+            setSelectedPersonId(null)
+            setLoading(false)
+            return
+          }
+          setAdminNoPeople(false)
+
+          let targetId: string | null = null
+          if (selectedPersonId && people.some((p) => p.id === selectedPersonId)) {
+            targetId = selectedPersonId
+          } else {
+            targetId = linkedRow?.id ?? people[0]?.id ?? null
+            if (targetId !== selectedPersonId) {
+              void Promise.resolve().then(() => setSelectedPersonId(targetId))
+              setLoading(false)
+              return
+            }
+          }
+
+          await loadPersonSkills(targetId, cancelled)
+          return
+        }
+
+        setPeopleOptions([])
+        setAdminNoPeople(false)
+        setSelectedPersonId(null)
+
+        if (!linkedRow) {
+          setPerson(null)
+          setNoLink(true)
+          setSkillsRaw([])
+          setRsr([])
+          setPsRows([])
+          setLoading(false)
+          return
+        }
+
+        setNoLink(false)
+        await loadPersonSkills(linkedRow.id, cancelled)
+      })()
     })
+
+    async function loadPersonSkills(pid: string, cancel: boolean) {
+      const { data: pRow, error: pErr } = await supabase
+        .from('people')
+        .select('id, display_name, person_roles(role_id)')
+        .eq('id', pid)
+        .single()
+
+      if (cancel) return
+      if (pErr || !pRow) {
+        setLoadError(pErr?.message ?? 'Person not found')
+        setPerson(null)
+        setSkillsRaw([])
+        setRsr([])
+        setPsRows([])
+        setLoading(false)
+        return
+      }
+
+      setPerson(pRow as PersonRow)
+      setNoLink(false)
+
+      const [sk, rs, ps] = await Promise.all([
+        supabase.from('skills').select('id, name, kind, sort_order, skill_groups(name)').order('sort_order', {
+          ascending: true,
+        }),
+        supabase.from('role_skill_requirements').select('role_id, skill_id, required_level'),
+        supabase.from('person_skills').select('person_id, skill_id, actual_level, is_extra, due_date').eq('person_id', pid),
+      ])
+
+      if (cancel) return
+      if (sk.error) {
+        setLoadError(sk.error.message)
+        setSkillsRaw([])
+      } else {
+        setSkillsRaw((sk.data ?? []) as SkillRaw[])
+      }
+      if (!rs.error && rs.data) setRsr(rs.data as RsrRaw[])
+      else setRsr([])
+      if (!ps.error && ps.data) setPsRows(ps.data as PsRaw[])
+      else setPsRows([])
+
+      setLoading(false)
+    }
+
     return () => {
       cancelled = true
     }
-  }, [load, dataVersion])
+  }, [user, isAdmin, selectedPersonId, dataVersion])
 
   const rsrMap = useMemo(() => {
     const m = new Map<string, number>()
@@ -287,20 +369,54 @@ export function MySkillsPage() {
         <div>
           <h1 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">My skills</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            Your levels and target dates for skills required by your job roles, plus any extra skills you choose to
-            track. Admins still manage the roster and catalog.
+            {isAdmin
+              ? 'As an admin you can review any person’s skills. Others only see their own linked profile.'
+              : 'Your levels and target dates for skills required by your job roles, plus any extra skills you choose to track.'}
           </p>
         </div>
       </header>
 
+      {isAdmin && peopleOptions.length > 0 ? (
+        <label className="block max-w-xl rounded-2xl border border-border bg-surface-raised/60 p-4 backdrop-blur-sm">
+          <span className="text-xs font-medium uppercase tracking-wider text-muted">View skills for</span>
+          <select
+            className={`${selectClass} mt-2 w-full`}
+            value={selectedPersonId ?? ''}
+            onChange={(e) => setSelectedPersonId(e.target.value || null)}
+          >
+            {peopleOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.display_name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+
       {loadError ? (
-        <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+        <p className="rounded-xl border border-amber-500/40 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           {loadError}
         </p>
       ) : null}
 
       {loading ? (
         <p className="text-sm text-muted">Loading…</p>
+      ) : adminNoPeople ? (
+        <div className="flex flex-col items-start gap-4 rounded-2xl border border-border bg-surface-raised/50 p-6 backdrop-blur-sm">
+          <span className="flex size-12 items-center justify-center rounded-xl bg-accent-dim text-accent">
+            <UserCircle className="size-7" aria-hidden />
+          </span>
+          <div>
+            <h2 className="font-display text-lg font-semibold">No people on the roster</h2>
+            <p className="mt-2 max-w-lg text-sm text-muted">
+              Add people in{' '}
+              <Link to="/admin" className="font-medium text-accent underline-offset-2 hover:underline">
+                Admin → People
+              </Link>{' '}
+              before you can view skills here.
+            </p>
+          </div>
+        </div>
       ) : noLink ? (
         <div className="flex flex-col items-start gap-4 rounded-2xl border border-border bg-surface-raised/50 p-6 backdrop-blur-sm">
           <span className="flex size-12 items-center justify-center rounded-xl bg-accent-dim text-accent">
@@ -318,7 +434,7 @@ export function MySkillsPage() {
                 <Link to="/admin" className="underline underline-offset-2">
                   Admin
                 </Link>{' '}
-                to create or link your person row.
+                to create or link your person row (you can still use the person selector above once others exist).
               </p>
             ) : null}
           </div>
@@ -326,26 +442,27 @@ export function MySkillsPage() {
       ) : person ? (
         <>
           <p className="text-sm text-muted">
-            Signed in as <span className="font-medium text-fg/90">{person.display_name}</span>
+            Viewing <span className="font-medium text-fg/90">{person.display_name}</span>
+            {isAdmin ? <span className="text-muted"> (admin view)</span> : null}
             {roleIds.length === 0 ? (
-              <span className="text-muted"> · No job roles assigned yet — requirements may be empty.</span>
+              <span className="text-muted"> · No job roles assigned — requirements may be empty.</span>
             ) : null}
           </p>
 
           <SkillSection
             title="Required for your roles"
-            description="From role skill requirements. Update your actual level or certification status."
+            description="From role skill requirements. Update actual level or certification."
             rows={requiredRows}
-            empty="Nothing required for your current job roles."
+            empty="Nothing required for this person’s current job roles."
             onEdit={openEditor}
             requiredLabel={requiredLabel}
           />
 
           <SkillSection
-            title="Extra skills you track"
-            description="Skills not required by your roles but recorded on your profile."
+            title="Extra skills tracked"
+            description="Skills not required by their roles but recorded on their profile."
             rows={optionalRows}
-            empty="You have no optional skills recorded yet."
+            empty="No optional skills recorded yet."
             onEdit={openEditor}
             requiredLabel={requiredLabel}
           />
@@ -353,7 +470,7 @@ export function MySkillsPage() {
           {addableSkillOptions.length > 0 ? (
             <section className="rounded-2xl border border-border bg-surface-raised/40 p-4 backdrop-blur-sm">
               <h2 className="font-display text-lg font-semibold tracking-tight">Track another skill</h2>
-              <p className="mt-1 text-xs text-muted">Add a skill that is not required for your roles.</p>
+              <p className="mt-1 text-xs text-muted">Skill not required by their roles.</p>
               <label htmlFor="add-skill" className="mt-4 block text-xs font-medium uppercase tracking-wider text-muted">
                 Choose skill
               </label>
@@ -367,7 +484,7 @@ export function MySkillsPage() {
                   const s = sortedSkills.find((x) => x.id === id)
                   if (s) openEditorForSkill(s)
                 }}
-                className="mt-1.5 w-full max-w-md rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2 md:w-auto md:min-w-[16rem]"
+                className={`${selectClass} mt-1.5`}
               >
                 <option value="">Select…</option>
                 {addableSkillOptions.map((s) => (
@@ -414,22 +531,22 @@ function SkillSection(props: {
             {rows.map((row) => (
               <li
                 key={row.skillId}
-                className="flex flex-col gap-3 rounded-xl border border-border/60 bg-canvas/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 rounded-xl border border-border/80 bg-surface p-4 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-fg">{row.skillName}</p>
                   <p className="text-xs text-muted">{row.groupLabel}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="rounded-md bg-white/[0.06] px-2 py-1 text-muted">
+                    <span className="rounded-md bg-zinc-100 px-2 py-1 text-muted">
                       Required:{' '}
                       <span className="font-mono text-fg">{requiredLabel(row.kind, row.required)}</span>
                     </span>
-                    <span className="rounded-md bg-white/[0.06] px-2 py-1 text-muted">
+                    <span className="rounded-md bg-zinc-100 px-2 py-1 text-muted">
                       Actual:{' '}
                       <span className="font-mono text-fg">{formatLevel(row.kind, row.actual)}</span>
                     </span>
                     {row.dueDate ? (
-                      <span className="rounded-md bg-white/[0.06] px-2 py-1 text-muted">
+                      <span className="rounded-md bg-zinc-100 px-2 py-1 text-muted">
                         Target: <span className="font-mono text-fg">{row.dueDate}</span>
                       </span>
                     ) : null}

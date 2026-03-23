@@ -415,7 +415,7 @@ export function CatalogManager() {
           <button
             type="button"
             onClick={openCreateGroup}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-canvas hover:brightness-110"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110"
           >
             <Plus className="size-4" />
             Add group
@@ -437,7 +437,7 @@ export function CatalogManager() {
               </thead>
               <tbody className="divide-y divide-border">
                 {groups.map((row) => (
-                  <tr key={row.id} className="hover:bg-white/[0.03]">
+                  <tr key={row.id} className="hover:bg-black/[0.04]">
                     <td className="px-4 py-3 font-medium text-fg">{row.name}</td>
                     <td className="px-4 py-3 tabular-nums text-muted">{row.sort_order}</td>
                     <td className="px-4 py-3 text-right">
@@ -445,7 +445,7 @@ export function CatalogManager() {
                         <button
                           type="button"
                           onClick={() => openEditGroup(row)}
-                          className="rounded-lg p-2 text-muted hover:bg-white/5 hover:text-fg"
+                          className="rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg"
                           aria-label={`Edit ${row.name}`}
                         >
                           <Pencil className="size-4" />
@@ -481,7 +481,7 @@ export function CatalogManager() {
           <button
             type="button"
             onClick={openCreateSkill}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-canvas hover:brightness-110"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110"
           >
             <Plus className="size-4" />
             Add skill
@@ -505,7 +505,7 @@ export function CatalogManager() {
               </thead>
               <tbody className="divide-y divide-border">
                 {skills.map((row) => (
-                  <tr key={row.id} className="hover:bg-white/[0.03]">
+                  <tr key={row.id} className="hover:bg-black/[0.04]">
                     <td className="px-4 py-3 font-medium text-fg">{row.name}</td>
                     <td className="px-4 py-3 text-muted">{row.skill_groups?.name ?? '—'}</td>
                     <td className="px-4 py-3">
@@ -519,7 +519,7 @@ export function CatalogManager() {
                         <button
                           type="button"
                           onClick={() => openEditSkill(row)}
-                          className="rounded-lg p-2 text-muted hover:bg-white/5 hover:text-fg"
+                          className="rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg"
                           aria-label={`Edit ${row.name}`}
                         >
                           <Pencil className="size-4" />
@@ -555,7 +555,7 @@ export function CatalogManager() {
           <button
             type="button"
             onClick={openCreateRole}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-canvas hover:brightness-110"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110"
           >
             <Plus className="size-4" />
             Add role
@@ -577,7 +577,7 @@ export function CatalogManager() {
               </thead>
               <tbody className="divide-y divide-border">
                 {roles.map((row) => (
-                  <tr key={row.id} className="hover:bg-white/[0.03]">
+                  <tr key={row.id} className="hover:bg-black/[0.04]">
                     <td className="px-4 py-3 font-medium text-fg">{row.name}</td>
                     <td className="px-4 py-3 tabular-nums text-muted">{row.sort_order}</td>
                     <td className="px-4 py-3 text-right">
@@ -585,7 +585,7 @@ export function CatalogManager() {
                         <button
                           type="button"
                           onClick={() => openEditRole(row)}
-                          className="rounded-lg p-2 text-muted hover:bg-white/5 hover:text-fg"
+                          className="rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg"
                           aria-label={`Edit ${row.name}`}
                         >
                           <Pencil className="size-4" />
@@ -662,7 +662,7 @@ export function CatalogManager() {
                       const sk = skillById.get(x.skill_id)
                       const label = sk?.name ?? x.skill_id.slice(0, 8)
                       return (
-                        <tr key={x.skill_id} className="hover:bg-white/[0.03]">
+                        <tr key={x.skill_id} className="hover:bg-black/[0.04]">
                           <td className="px-4 py-3 font-medium text-fg">{label}</td>
                           <td className="px-4 py-3">
                             {sk ? (
@@ -745,7 +745,7 @@ export function CatalogManager() {
               <button
                 type="submit"
                 disabled={!newRsrSkillId}
-                className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-canvas hover:brightness-110 disabled:opacity-40"
+                className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-40"
               >
                 Add requirement
               </button>
@@ -757,7 +757,7 @@ export function CatalogManager() {
       {/* Dialog: skill group */}
       <dialog
         ref={groupDialogRef}
-        className="w-[min(100%,28rem)] rounded-2xl border border-border bg-surface-raised p-0 text-fg shadow-glow backdrop:bg-black/70"
+        className="w-[min(100%,28rem)] rounded-2xl border border-border bg-surface-raised p-0 text-fg shadow-glow backdrop:bg-black/30"
         onClose={() => {
           setGroupDialogOpen(false)
           setEditingGroupId(null)
@@ -801,14 +801,14 @@ export function CatalogManager() {
             <button
               type="button"
               onClick={closeGroupDialog}
-              className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted hover:bg-white/5 hover:text-fg"
+              className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted hover:bg-black/[0.06] hover:text-fg"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-canvas hover:brightness-110 disabled:opacity-40"
+              className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-40"
             >
               {saving ? 'Saving…' : editingGroupId ? 'Save' : 'Create'}
             </button>
@@ -819,7 +819,7 @@ export function CatalogManager() {
       {/* Dialog: skill */}
       <dialog
         ref={skillDialogRef}
-        className="w-[min(100%,28rem)] rounded-2xl border border-border bg-surface-raised p-0 text-fg shadow-glow backdrop:bg-black/70"
+        className="w-[min(100%,28rem)] rounded-2xl border border-border bg-surface-raised p-0 text-fg shadow-glow backdrop:bg-black/30"
         onClose={() => {
           setSkillDialogOpen(false)
           setEditingSkillId(null)
@@ -895,14 +895,14 @@ export function CatalogManager() {
             <button
               type="button"
               onClick={closeSkillDialog}
-              className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted hover:bg-white/5 hover:text-fg"
+              className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted hover:bg-black/[0.06] hover:text-fg"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-canvas hover:brightness-110 disabled:opacity-40"
+              className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-40"
             >
               {saving ? 'Saving…' : editingSkillId ? 'Save' : 'Create'}
             </button>
@@ -913,7 +913,7 @@ export function CatalogManager() {
       {/* Dialog: job role */}
       <dialog
         ref={roleDialogRef}
-        className="w-[min(100%,28rem)] rounded-2xl border border-border bg-surface-raised p-0 text-fg shadow-glow backdrop:bg-black/70"
+        className="w-[min(100%,28rem)] rounded-2xl border border-border bg-surface-raised p-0 text-fg shadow-glow backdrop:bg-black/30"
         onClose={() => {
           setRoleDialogOpen(false)
           setEditingRoleId(null)
@@ -957,14 +957,14 @@ export function CatalogManager() {
             <button
               type="button"
               onClick={closeRoleDialog}
-              className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted hover:bg-white/5 hover:text-fg"
+              className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted hover:bg-black/[0.06] hover:text-fg"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-canvas hover:brightness-110 disabled:opacity-40"
+              className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-40"
             >
               {saving ? 'Saving…' : editingRoleId ? 'Save' : 'Create'}
             </button>
