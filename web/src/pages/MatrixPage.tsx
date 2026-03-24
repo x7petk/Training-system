@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Filter, Search } from 'lucide-react'
+import { Filter, Grid3X3, Search } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { classifyCell, type SkillKind } from '../features/matrix/gapLogic'
@@ -14,10 +14,19 @@ type SkillRaw = {
   skill_groups: { name: string } | { name: string }[] | null
 }
 
+type TeamEmbed = { name: string } | { name: string }[] | null
+
 type PersonRaw = {
   id: string
   display_name: string
+  team_id: string | null
+  teams: TeamEmbed
   person_roles: { role_id: string }[] | null
+}
+
+function teamNameFromEmbed(teams: TeamEmbed): string {
+  if (teams == null) return ''
+  return Array.isArray(teams) ? (teams[0]?.name ?? '') : teams.name
 }
 
 type RsrRaw = { role_id: string; skill_id: string; required_level: number }
@@ -30,6 +39,7 @@ type PsRaw = {
 }
 
 type RoleRaw = { id: string; name: string }
+type TeamRaw = { id: string; name: string }
 
 function groupName(s: SkillRaw): string {
   const g = s.skill_groups
@@ -46,6 +56,7 @@ export function MatrixPage() {
   const [rsr, setRsr] = useState<RsrRaw[]>([])
   const [psRows, setPsRows] = useState<PsRaw[]>([])
   const [roles, setRoles] = useState<RoleRaw[]>([])
+  const [teams, setTeams] = useState<TeamRaw[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [personQuery, setPersonQuery] = useState('')
@@ -54,6 +65,8 @@ export function MatrixPage() {
   const [filterRoleIds, setFilterRoleIds] = useState<string[]>([])
   /** Columns limited to these skill groups (empty = all). */
   const [filterSkillGroups, setFilterSkillGroups] = useState<string[]>([])
+  /** People must belong to one of these teams (empty = all). */
+  const [filterTeamIds, setFilterTeamIds] = useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -98,11 +111,15 @@ export function MatrixPage() {
         .from('skills')
         .select('id, name, kind, sort_order, skill_groups(name)')
         .order('sort_order', { ascending: true }),
-      supabase.from('people').select('id, display_name, person_roles(role_id)').order('display_name'),
+      supabase
+        .from('people')
+        .select('id, display_name, team_id, teams(name), person_roles(role_id)')
+        .order('display_name'),
       supabase.from('role_skill_requirements').select('role_id, skill_id, required_level'),
       supabase.from('person_skills').select('person_id, skill_id, actual_level, is_extra, due_date'),
       supabase.from('roles').select('id, name').order('sort_order', { ascending: true }),
-    ]).then(([sk, pe, rs, ps, ro]) => {
+      supabase.from('teams').select('id, name').order('sort_order', { ascending: true }),
+    ]).then(([sk, pe, rs, ps, ro, tm]) => {
       if (cancelled) return
       if (sk.error) {
         setLoadError(sk.error.message)
@@ -119,6 +136,8 @@ export function MatrixPage() {
       if (!rs.error && rs.data) setRsr(rs.data as RsrRaw[])
       if (!ps.error && ps.data) setPsRows(ps.data as PsRaw[])
       if (!ro.error && ro.data) setRoles(ro.data as RoleRaw[])
+      if (!tm.error && tm.data) setTeams(tm.data as TeamRaw[])
+      else setTeams([])
       setLoading(false)
     })
 
@@ -197,8 +216,11 @@ export function MatrixPage() {
         (p.person_roles ?? []).some((pr) => filterRoleIds.includes(pr.role_id)),
       )
     }
+    if (filterTeamIds.length > 0) {
+      people = people.filter((p) => p.team_id != null && filterTeamIds.includes(p.team_id))
+    }
     return people
-  }, [peopleRaw, personQuery, filterRoleIds])
+  }, [peopleRaw, personQuery, filterRoleIds, filterTeamIds])
 
   const matrixRows: MatrixRowModel[] = useMemo(() => {
     function maxRequired(roleIds: string[], skillId: string): number | null {
@@ -212,10 +234,10 @@ export function MatrixPage() {
 
     return peopleFiltered.map((p) => {
       const roleIds = (p.person_roles ?? []).map((x) => x.role_id)
-      const roleText =
-        roleIds.length === 0
-          ? 'No job roles'
-          : roleIds.map((id) => roleNameById.get(id) ?? '…').join(' · ')
+      const roleLine =
+        roleIds.length === 0 ? '' : roleIds.map((id) => roleNameById.get(id) ?? '…').join(' · ')
+      const teamName = teamNameFromEmbed(p.teams)
+      const roleText = [teamName, roleLine].filter(Boolean).join(' · ') || '—'
 
       const cells: MatrixRowModel['cells'] = {}
       for (const s of skillColumns) {
@@ -248,20 +270,19 @@ export function MatrixPage() {
     })
   }, [peopleFiltered, skillColumns, psMap, rsrMap, roleNameById])
 
-  const counts = useMemo(
-    () => ({
-      skills: skillsRaw.length,
-      roles: roles.length,
-      people: peopleRaw.length,
-      requirements: rsr.length,
-    }),
-    [skillsRaw.length, roles.length, peopleRaw.length, rsr.length],
-  )
-
-  const filtersActive = filterRoleIds.length > 0 || filterSkillGroups.length > 0
+  const filtersActive =
+    filterRoleIds.length > 0 ||
+    filterTeamIds.length > 0 ||
+    filterSkillGroups.length > 0 ||
+    personQuery.trim().length > 0 ||
+    skillQuery.trim().length > 0
 
   function toggleRoleFilter(id: string) {
     setFilterRoleIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  function toggleTeamFilter(id: string) {
+    setFilterTeamIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
   function toggleSkillGroupFilter(name: string) {
@@ -270,144 +291,160 @@ export function MatrixPage() {
     )
   }
 
-  function clearMatrixFilters() {
+  function clearAllFilters() {
     setFilterRoleIds([])
+    setFilterTeamIds([])
     setFilterSkillGroups([])
+    setPersonQuery('')
+    setSkillQuery('')
   }
 
   const chipOn =
     'border-accent/50 bg-accent-dim text-fg shadow-[0_0_12px_-4px_color-mix(in_oklab,var(--color-accent)_40%,transparent)]'
-  const chipOff = 'border-border bg-surface-raised/60 text-muted hover:border-border-strong hover:text-fg/90'
+  const chipOff =
+    'border-border bg-canvas/80 text-muted hover:border-border-strong hover:text-fg/90'
+  const searchInputClass =
+    'min-w-0 flex-1 bg-transparent py-1 text-xs outline-none placeholder:text-muted/55'
+  const searchShellClass =
+    'flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-border bg-canvas/90 px-2 py-0.5'
 
   if (!adminLoading && isOperator) {
     return <Navigate to="/my-skills" replace />
   }
 
   return (
-    <div className="space-y-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">Skill matrix</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Wide heatmap: people × skills. <strong className="text-fg/90">Click a cell</strong> to set actual level
-            and optional target date. <strong className="text-fg/90">Admins and assessors</strong> can update any
-            person.
-          </p>
-        </div>
+    <div className="space-y-3">
+      <header className="flex items-center gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-dim text-accent">
+          <Grid3X3 className="size-5" aria-hidden />
+        </span>
+        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Skill matrix</h1>
       </header>
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {(
-          [
-            ['Skills', counts.skills],
-            ['Roles', counts.roles],
-            ['People', counts.people],
-            ['Requirements', counts.requirements],
-          ] as const
-        ).map(([label, n]) => (
-          <div
-            key={label}
-            className="rounded-2xl border border-border bg-surface-raised/50 px-4 py-3 backdrop-blur-sm"
-          >
-            <p className="text-xs font-medium uppercase tracking-wider text-muted">{label}</p>
-            <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-fg">{n}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-surface-raised px-3 py-2">
-          <Search className="size-4 shrink-0 text-muted" aria-hidden />
-          <input
-            type="search"
-            value={personQuery}
-            onChange={(e) => setPersonQuery(e.target.value)}
-            placeholder="Filter people…"
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted/60"
-          />
-        </label>
-        <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-surface-raised px-3 py-2">
-          <Filter className="size-4 shrink-0 text-muted" aria-hidden />
-          <input
-            type="search"
-            value={skillQuery}
-            onChange={(e) => setSkillQuery(e.target.value)}
-            placeholder="Filter skills…"
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted/60"
-          />
-        </label>
-      </div>
 
       <section
         aria-label="Matrix filters"
-        className="rounded-2xl border border-border bg-surface-raised/40 px-4 py-4 backdrop-blur-sm"
+        className="rounded-xl border border-border bg-surface-raised/50 px-2.5 py-2 shadow-sm backdrop-blur-sm"
       >
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted">Narrow the grid</p>
-          {filtersActive ? (
-            <button
-              type="button"
-              onClick={clearMatrixFilters}
-              className="text-xs font-medium text-accent underline-offset-2 hover:underline"
-            >
-              Reset filters
-            </button>
-          ) : null}
-        </div>
-        <div className="space-y-4">
-          <fieldset className="min-w-0">
-            <legend className="mb-2 text-[11px] font-medium text-muted">Job role (people)</legend>
-            {roles.length === 0 ? (
-              <p className="text-xs text-muted">No roles in catalog yet.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {roles.map((r) => {
-                  const on = filterRoleIds.includes(r.id)
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => toggleRoleFilter(r.id)}
-                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${on ? chipOn : chipOff}`}
-                      aria-pressed={on}
-                    >
-                      {r.name}
-                    </button>
-                  )
-                })}
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+            <label className={searchShellClass}>
+              <Search className="size-3.5 shrink-0 text-muted" aria-hidden />
+              <input
+                type="search"
+                value={personQuery}
+                onChange={(e) => setPersonQuery(e.target.value)}
+                placeholder="People…"
+                aria-label="Filter people by name"
+                className={searchInputClass}
+              />
+            </label>
+            <label className={searchShellClass}>
+              <Filter className="size-3.5 shrink-0 text-muted" aria-hidden />
+              <input
+                type="search"
+                value={skillQuery}
+                onChange={(e) => setSkillQuery(e.target.value)}
+                placeholder="Skills…"
+                aria-label="Filter skills by name"
+                className={searchInputClass}
+              />
+            </label>
+            {filtersActive ? (
+              <button
+                type="button"
+                onClick={clearAllFilters}
+                className="shrink-0 rounded-lg border border-border bg-canvas/90 px-2.5 py-1 text-[11px] font-medium text-accent hover:bg-surface sm:ml-auto"
+              >
+                Reset all
+              </button>
+            ) : null}
+          </div>
+
+          <fieldset className="min-w-0 border-t border-border/70 pt-2">
+            <legend className="sr-only">Job role</legend>
+            <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
+              <span className="w-full shrink-0 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted sm:w-[4.5rem] sm:pt-1">
+                Job role
+              </span>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1">
+                {roles.length === 0 ? (
+                  <span className="text-[11px] text-muted">No roles</span>
+                ) : (
+                  roles.map((r) => {
+                    const on = filterRoleIds.includes(r.id)
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => toggleRoleFilter(r.id)}
+                        className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${on ? chipOn : chipOff}`}
+                        aria-pressed={on}
+                      >
+                        {r.name}
+                      </button>
+                    )
+                  })
+                )}
               </div>
-            )}
-            <p className="mt-2 text-[11px] text-muted/90">
-              With any role selected, only people assigned that job role appear. Leave all off to show everyone (still
-              respects the people search).
-            </p>
+            </div>
           </fieldset>
-          <fieldset className="min-w-0 border-t border-border pt-4">
-            <legend className="mb-2 text-[11px] font-medium text-muted">Skill group (columns)</legend>
-            {skillGroupOptions.length === 0 ? (
-              <p className="text-xs text-muted">No skills loaded.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {skillGroupOptions.map((name) => {
-                  const on = filterSkillGroups.includes(name)
-                  return (
-                    <button
-                      key={name}
-                      type="button"
-                      onClick={() => toggleSkillGroupFilter(name)}
-                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${on ? chipOn : chipOff}`}
-                      aria-pressed={on}
-                    >
-                      {name}
-                    </button>
-                  )
-                })}
+
+          <fieldset className="min-w-0 border-t border-border/70 pt-2">
+            <legend className="sr-only">Team</legend>
+            <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
+              <span className="w-full shrink-0 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted sm:w-[4.5rem] sm:pt-1">
+                Team
+              </span>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1">
+                {teams.length === 0 ? (
+                  <span className="text-[11px] text-muted">No teams</span>
+                ) : (
+                  teams.map((t) => {
+                    const on = filterTeamIds.includes(t.id)
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => toggleTeamFilter(t.id)}
+                        className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${on ? chipOn : chipOff}`}
+                        aria-pressed={on}
+                      >
+                        {t.name}
+                      </button>
+                    )
+                  })
+                )}
               </div>
-            )}
-            <p className="mt-2 text-[11px] text-muted/90">
-              With any group selected, only skills in those groups are columns. Leave all off to show every skill (still
-              respects the skill search).
-            </p>
+            </div>
+          </fieldset>
+
+          <fieldset className="min-w-0 border-t border-border/70 pt-2">
+            <legend className="sr-only">Skill group</legend>
+            <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
+              <span className="w-full shrink-0 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted sm:w-[4.5rem] sm:pt-1">
+                Group
+              </span>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1">
+                {skillGroupOptions.length === 0 ? (
+                  <span className="text-[11px] text-muted">No groups</span>
+                ) : (
+                  skillGroupOptions.map((name) => {
+                    const on = filterSkillGroups.includes(name)
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => toggleSkillGroupFilter(name)}
+                        className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${on ? chipOn : chipOff}`}
+                        aria-pressed={on}
+                      >
+                        {name}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            </div>
           </fieldset>
         </div>
       </section>
@@ -427,7 +464,7 @@ export function MatrixPage() {
         onDataChanged={bumpData}
       />
 
-      <div className="flex flex-wrap gap-3 text-[11px] text-muted">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted">
         <span className="font-medium uppercase tracking-wider text-muted">Legend</span>
         <span className="inline-flex items-center gap-1.5">
           <span className="size-2.5 rounded-sm bg-rose-500/50 ring-1 ring-rose-400/40" /> Critical gap

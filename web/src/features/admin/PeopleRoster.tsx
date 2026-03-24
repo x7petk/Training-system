@@ -3,17 +3,27 @@ import { Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 type RoleRow = { id: string; name: string }
+type TeamRow = { id: string; name: string }
 
 type PersonRoleJoin = {
   role_id: string
   roles: { id: string; name: string } | null
 }
 
+type TeamEmbed = { id: string; name: string } | { id: string; name: string }[] | null
+
 type PersonRow = {
   id: string
   user_id: string | null
   display_name: string
+  team_id: string | null
+  teams: TeamEmbed
   person_roles: PersonRoleJoin[] | null
+}
+
+function rosterTeamName(teams: TeamEmbed): string {
+  if (teams == null) return ''
+  return Array.isArray(teams) ? (teams[0]?.name ?? '') : teams.name
 }
 
 type ProfileRow = { id: string; display_name: string | null; role: string }
@@ -21,12 +31,14 @@ type ProfileRow = { id: string; display_name: string | null; role: string }
 type FormState = {
   display_name: string
   user_id: string
+  team_id: string
   role_ids: string[]
 }
 
 const emptyForm = (): FormState => ({
   display_name: '',
   user_id: '',
+  team_id: '',
   role_ids: [],
 })
 
@@ -41,6 +53,7 @@ export function PeopleRoster() {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [people, setPeople] = useState<PersonRow[]>([])
   const [roles, setRoles] = useState<RoleRow[]>([])
+  const [teams, setTeams] = useState<TeamRow[]>([])
   const [profiles, setProfiles] = useState<ProfileRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -58,19 +71,23 @@ export function PeopleRoster() {
           id,
           user_id,
           display_name,
+          team_id,
+          teams ( id, name ),
           person_roles ( role_id, roles ( id, name ) )
         `,
         )
         .order('display_name'),
       supabase.from('roles').select('id, name').order('sort_order', { ascending: true }),
+      supabase.from('teams').select('id, name').order('sort_order', { ascending: true }),
       supabase.from('profiles').select('id, display_name, role').order('display_name', { ascending: true }),
     ])
   }
 
-  function applyRosterTriple(
+  function applyRosterQuad(
     pRes: Awaited<ReturnType<typeof fetchRosterData>>[0],
     rRes: Awaited<ReturnType<typeof fetchRosterData>>[1],
-    prRes: Awaited<ReturnType<typeof fetchRosterData>>[2],
+    tRes: Awaited<ReturnType<typeof fetchRosterData>>[2],
+    prRes: Awaited<ReturnType<typeof fetchRosterData>>[3],
   ) {
     if (pRes.error) {
       setError(pRes.error.message)
@@ -80,6 +97,8 @@ export function PeopleRoster() {
     }
     if (rRes.error) setRoles([])
     else setRoles((rRes.data ?? []) as RoleRow[])
+    if (tRes.error) setTeams([])
+    else setTeams((tRes.data ?? []) as TeamRow[])
     if (prRes.error) setProfiles([])
     else setProfiles((prRes.data ?? []) as ProfileRow[])
     setLoading(false)
@@ -87,9 +106,9 @@ export function PeopleRoster() {
 
   useEffect(() => {
     let cancelled = false
-    void fetchRosterData().then(([pRes, rRes, prRes]) => {
+    void fetchRosterData().then(([pRes, rRes, tRes, prRes]) => {
       if (cancelled) return
-      applyRosterTriple(pRes, rRes, prRes)
+      applyRosterQuad(pRes, rRes, tRes, prRes)
     })
     return () => {
       cancelled = true
@@ -128,6 +147,7 @@ export function PeopleRoster() {
     setForm({
       display_name: row.display_name,
       user_id: row.user_id ?? '',
+      team_id: row.team_id ?? '',
       role_ids: (row.person_roles ?? []).map((x) => x.role_id),
     })
     setError(null)
@@ -154,12 +174,13 @@ export function PeopleRoster() {
     setError(null)
 
     const uid = form.user_id.trim() || null
+    const tid = form.team_id.trim() || null
 
     try {
       if (editingId) {
         const { error: uErr } = await supabase
           .from('people')
-          .update({ display_name: name, user_id: uid })
+          .update({ display_name: name, user_id: uid, team_id: tid })
           .eq('id', editingId)
         if (uErr) throw uErr
 
@@ -175,7 +196,7 @@ export function PeopleRoster() {
       } else {
         const { data: inserted, error: insErr } = await supabase
           .from('people')
-          .insert({ display_name: name, user_id: uid })
+          .insert({ display_name: name, user_id: uid, team_id: tid })
           .select('id')
           .single()
         if (insErr) throw insErr
@@ -189,8 +210,8 @@ export function PeopleRoster() {
       }
 
       closeDialog()
-      const triple = await fetchRosterData()
-      applyRosterTriple(triple[0], triple[1], triple[2])
+      const quad = await fetchRosterData()
+      applyRosterQuad(quad[0], quad[1], quad[2], quad[3])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
     } finally {
@@ -206,7 +227,7 @@ export function PeopleRoster() {
       setError(delErr.message)
       return
     }
-    void fetchRosterData().then(([pRes, rRes, prRes]) => applyRosterTriple(pRes, rRes, prRes))
+    void fetchRosterData().then(([pRes, rRes, tRes, prRes]) => applyRosterQuad(pRes, rRes, tRes, prRes))
   }
 
   function profileLabel(userId: string | null) {
@@ -254,19 +275,21 @@ export function PeopleRoster() {
         ) : people.length === 0 ? (
           <p className="px-4 py-10 text-center text-sm text-muted">No people yet. Add your first roster row.</p>
         ) : (
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="border-b border-border text-xs font-medium uppercase tracking-wider text-muted">
               <tr>
                 <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Team</th>
                 <th className="px-4 py-3">Login link</th>
                 <th className="px-4 py-3">Job roles</th>
-                <th className="px-4 py-3 w-28 text-right">Actions</th>
+                <th className="w-28 px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {people.map((row) => (
                 <tr key={row.id} className="hover:bg-black/[0.04]">
                   <td className="px-4 py-3 font-medium text-fg">{row.display_name}</td>
+                  <td className="px-4 py-3 text-muted">{rosterTeamName(row.teams) || '—'}</td>
                   <td className="px-4 py-3 text-muted">{profileLabel(row.user_id)}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1.5">
@@ -353,6 +376,24 @@ export function PeopleRoster() {
                 ))}
               </select>
               <p className="mt-1 text-xs text-muted">Each account can link to at most one person.</p>
+            </div>
+            <div>
+              <label htmlFor="roster-team" className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">
+                Team
+              </label>
+              <select
+                id="roster-team"
+                value={form.team_id}
+                onChange={(e) => setForm((f) => ({ ...f, team_id: e.target.value }))}
+                className="w-full rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2"
+              >
+                <option value="">No team</option>
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">Job roles</p>

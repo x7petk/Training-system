@@ -2,6 +2,8 @@ import { Shield } from 'lucide-react'
 import { AccountsSummary } from '../features/admin/AccountsSummary'
 import { CatalogManager } from '../features/admin/CatalogManager'
 import { PeopleRoster } from '../features/admin/PeopleRoster'
+import { SkillTrainingManager } from '../features/admin/SkillTrainingManager'
+import { TeamsManager } from '../features/admin/TeamsManager'
 
 export function AdminPage() {
   return (
@@ -21,6 +23,8 @@ export function AdminPage() {
       </header>
 
       <CatalogManager />
+      <SkillTrainingManager />
+      <TeamsManager />
       <PeopleRoster />
       <AccountsSummary />
     </div>

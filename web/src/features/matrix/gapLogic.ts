@@ -44,21 +44,74 @@ export function classifyCell(params: {
   return 'exceed'
 }
 
+const GAP_PALETTE: Record<
+  GapKind,
+  { surface: string; ringIdle: string; ringSelected: string }
+> = {
+  critical: {
+    surface: 'bg-rose-100 text-rose-900',
+    ringIdle: 'ring-1 ring-rose-200/90',
+    ringSelected: 'ring-4 ring-rose-400/80',
+  },
+  minor: {
+    surface: 'bg-amber-100 text-amber-950',
+    ringIdle: 'ring-1 ring-amber-200/90',
+    ringSelected: 'ring-4 ring-amber-400/80',
+  },
+  meet: {
+    surface: 'bg-emerald-100 text-emerald-900',
+    ringIdle: 'ring-1 ring-emerald-200/90',
+    ringSelected: 'ring-4 ring-emerald-400/80',
+  },
+  exceed: {
+    surface: 'bg-teal-100 text-teal-900',
+    ringIdle: 'ring-1 ring-teal-200/90',
+    ringSelected: 'ring-4 ring-teal-400/80',
+  },
+  extra: {
+    surface: 'bg-sky-100 text-sky-900',
+    ringIdle: 'ring-1 ring-sky-200/90',
+    ringSelected: 'ring-4 ring-sky-400/80',
+  },
+  na: {
+    surface: 'bg-zinc-100/90 text-zinc-600',
+    ringIdle: 'ring-1 ring-zinc-200/80',
+    ringSelected: 'ring-4 ring-zinc-400/70',
+  },
+}
+
+/** Matrix cell chip (heatmap). */
 export function gapKindClasses(kind: GapKind): string {
+  const p = GAP_PALETTE[kind]
+  return `${p.surface} ${p.ringIdle}`
+}
+
+/** Editor option button: same colours as the matrix for the resulting gap. */
+export function gapKindEditorOptionClasses(kind: GapKind, selected: boolean): string {
+  const p = GAP_PALETTE[kind]
+  const base = `${p.surface} transition-[box-shadow,opacity,transform]`
+  if (selected) {
+    return `${base} ${p.ringSelected} ring-offset-2 ring-offset-surface-raised shadow-md`
+  }
+  return `${base} ${p.ringIdle} opacity-[0.88] hover:opacity-100`
+}
+
+/** Short label aligned with matrix legend copy. */
+export function gapKindLegendLabel(kind: GapKind): string {
   switch (kind) {
     case 'critical':
-      return 'bg-rose-100 text-rose-900 ring-1 ring-rose-200/90'
+      return 'Critical gap'
     case 'minor':
-      return 'bg-amber-100 text-amber-950 ring-1 ring-amber-200/90'
+      return 'Minor gap'
     case 'meet':
-      return 'bg-emerald-100 text-emerald-900 ring-1 ring-emerald-200/90'
+      return 'Meets'
     case 'exceed':
-      return 'bg-teal-100 text-teal-900 ring-1 ring-teal-200/90'
+      return 'Exceeds'
     case 'extra':
-      return 'bg-sky-100 text-sky-900 ring-1 ring-sky-200/90'
+      return 'Extra skill'
     case 'na':
     default:
-      return 'bg-zinc-100/90 text-zinc-600 ring-1 ring-zinc-200/80'
+      return 'N/A'
   }
 }
 
