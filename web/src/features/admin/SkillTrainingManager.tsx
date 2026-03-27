@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { BookOpenCheck, FileUp, RotateCcw } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
@@ -41,6 +41,11 @@ const DOC_BUCKET = 'skill-training-docs'
 
 const inputClass =
   'w-full rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2'
+
+const LazyTrainingStandardsEditor = lazy(async () => {
+  const mod = await import('./TrainingStandardsEditor')
+  return { default: mod.TrainingStandardsEditor }
+})
 
 function emptyQuestion(): EditableQuestion {
   return {
@@ -383,6 +388,16 @@ export function SkillTrainingManager() {
               />
             </label>
           </div>
+
+          {selectedSkill ? (
+            <Suspense fallback={<p className="rounded-xl border border-border p-3 text-xs text-muted">Loading standards editor…</p>}>
+              <LazyTrainingStandardsEditor
+                key={selectedSkill.id}
+                skillId={selectedSkill.id}
+                skillName={selectedSkill.name}
+              />
+            </Suspense>
+          ) : null}
 
           <div className="rounded-xl border border-border p-3">
             <div className="mb-2 flex items-center justify-between">

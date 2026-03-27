@@ -11,9 +11,18 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.3",
+    "@tiptap/extension-color": "^3.20.5",
+    "@tiptap/extension-highlight": "^3.20.5",
+    "@tiptap/extension-link": "^3.20.5",
+    "@tiptap/extension-text-align": "^3.20.5",
+    "@tiptap/extension-text-style": "^3.20.5",
+    "@tiptap/extension-underline": "^3.20.5",
+    "@tiptap/react": "^3.20.5",
+    "@tiptap/starter-kit": "^3.20.5",
     "lucide-react": "^0.577.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-rnd": "^10.5.3",
     "react-router-dom": "^7.13.1"
   },
   "devDependencies": {

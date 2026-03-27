@@ -77,6 +77,23 @@ type TrainingQuestionRaw = {
   sort_order: number
 }
 
+type TrainingStandardRaw = {
+  skill_id: string
+  title: string
+  pages: Array<{
+    id: string
+    contentHtml: string
+    images: Array<{
+      id: string
+      path: string
+      x?: number
+      y?: number
+      w?: number
+      h?: number
+    }>
+  }>
+}
+
 type AssessorProfileRaw = { id: string; display_name: string | null; role: string }
 type AssessorPersonRaw = {
   id: string
@@ -142,6 +159,7 @@ const selectFilterClass =
 
 const GAP_FILTER_ORDER: GapKind[] = ['critical', 'minor', 'meet', 'exceed', 'extra', 'na']
 const TRAINING_DOC_BUCKET = 'skill-training-docs'
+const TRAINING_STANDARD_IMG_BUCKET = 'skill-training-standard-images'
 
 type GapFilterValue = 'all' | GapKind
 
@@ -985,10 +1003,13 @@ function TrainingDialog(props: {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pack, setPack] = useState<TrainingPackRaw | null>(null)
+  const [standard, setStandard] = useState<TrainingStandardRaw | null>(null)
   const [questions, setQuestions] = useState<TrainingQuestionRaw[]>([])
   const [skillName, setSkillName] = useState('Skill')
   const [answers, setAnswers] = useState<Record<string, 'A' | 'B' | 'C' | 'D'>>({})
   const [docUrl, setDocUrl] = useState<string | null>(null)
+  const [pageImageUrls, setPageImageUrls] = useState<Record<string, string>>({})
+  const [currentPageIdx, setCurrentPageIdx] = useState(0)
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0)
   const [submitResult, setSubmitResult] = useState<{
     score: number
@@ -1002,17 +1023,24 @@ function TrainingDialog(props: {
     const raf = requestAnimationFrame(() => {
       setSubmitResult(null)
       setAnswers({})
+      setCurrentPageIdx(0)
       setCurrentQuestionIdx(0)
     })
     void (async () => {
       setLoading(true)
       setError(null)
       setDocUrl(null)
-      const [sk, p, q] = await Promise.all([
+      setPageImageUrls({})
+      const [sk, p, st, q] = await Promise.all([
         supabase.from('skills').select('name').eq('id', skillId).maybeSingle(),
         supabase
           .from('skill_training_packs')
           .select('skill_id, document_path, document_name, document_mime, pass_score_percent')
+          .eq('skill_id', skillId)
+          .maybeSingle(),
+        supabase
+          .from('skill_training_standards')
+          .select('skill_id, title, pages')
           .eq('skill_id', skillId)
           .maybeSingle(),
         supabase
@@ -1025,14 +1053,16 @@ function TrainingDialog(props: {
       ])
       if (cancelled) return
       setLoading(false)
-      if (sk.error || p.error || q.error) {
-        setError(sk.error?.message ?? p.error?.message ?? q.error?.message ?? 'Failed to load training')
+      if (sk.error || p.error || st.error || q.error) {
+        setError(sk.error?.message ?? p.error?.message ?? st.error?.message ?? q.error?.message ?? 'Failed to load training')
         return
       }
       setSkillName(sk.data?.name ?? 'Skill')
       const packData = (p.data as TrainingPackRaw | null) ?? null
+      const stData = (st.data as TrainingStandardRaw | null) ?? null
       const qData = (q.data ?? []) as TrainingQuestionRaw[]
       setPack(packData)
+      setStandard(stData)
       setQuestions(qData)
       if (!packData || qData.length === 0) {
         setError('Training pack is not configured for this skill yet.')
@@ -1045,6 +1075,17 @@ function TrainingDialog(props: {
             setDocUrl(signed.data.signedUrl)
           }
         }
+        const imagePaths = stData?.pages?.flatMap((pg) => (pg.images ?? []).map((img) => img.path)) ?? []
+        if (imagePaths.length > 0) {
+          const urls: Record<string, string> = {}
+          await Promise.all(
+            imagePaths.map(async (p) => {
+              const { data } = await supabase.storage.from(TRAINING_STANDARD_IMG_BUCKET).createSignedUrl(p, 60 * 30)
+              if (data?.signedUrl) urls[p] = data.signedUrl
+            }),
+          )
+          if (!cancelled) setPageImageUrls(urls)
+        }
       }
     })()
     return () => {
@@ -1054,6 +1095,8 @@ function TrainingDialog(props: {
   }, [skillId])
 
   const hasTrainingDoc = Boolean(pack?.document_path)
+  const pageCount = standard?.pages?.length ?? 0
+  const currentPage = pageCount > 0 ? standard?.pages[currentPageIdx] ?? null : null
   const isPdf =
     pack?.document_mime === 'application/pdf' ||
     (pack?.document_name?.toLowerCase().endsWith('.pdf') ?? false)
@@ -1165,14 +1208,68 @@ function TrainingDialog(props: {
             </div>
           ) : null}
 
+          {!loading && !submitResult && pack && standard && pageCount > 0 ? (
+            <div className="rounded-2xl border border-border bg-surface p-3 shadow-sm">
+              <div className="mb-2 overflow-hidden rounded-xl border border-sky-800/10">
+                <div className="bg-sky-700 px-4 py-3 text-lg font-semibold text-white">{standard.title || skillName}</div>
+                <div className="relative min-h-[20rem] p-4">
+                  <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: currentPage?.contentHtml || '<p></p>' }} />
+                  {(currentPage?.images ?? []).map((img) =>
+                    pageImageUrls[img.path] ? (
+                      <img
+                        key={img.id}
+                        src={pageImageUrls[img.path]}
+                        alt=""
+                        className="absolute rounded-md object-cover shadow"
+                        style={{
+                          left: `${img.x ?? 68}%`,
+                          top: `${img.y ?? 8}%`,
+                          width: `${img.w ?? 24}%`,
+                          height: `${img.h ?? 24}%`,
+                        }}
+                      />
+                    ) : null,
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPageIdx((prev) => Math.max(0, prev - 1))}
+                  disabled={currentPageIdx === 0}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-black/[0.06] hover:text-fg disabled:opacity-40"
+                >
+                  Previous page
+                </button>
+                <p className="text-xs text-muted">
+                  Page {currentPageIdx + 1} / {pageCount}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPageIdx((prev) => Math.min(pageCount - 1, prev + 1))}
+                  disabled={currentPageIdx >= pageCount - 1}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-black/[0.06] hover:text-fg disabled:opacity-40"
+                >
+                  Next page
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {!loading && !submitResult && pack && hasTrainingDoc && docUrl ? (
             <div className="rounded-2xl border border-border bg-surface p-3 shadow-sm">
               <p className="mb-2 text-sm font-medium text-fg">
-                Step 1 — Material{' '}
-                <span className="font-normal text-muted">({pack.document_name ?? 'document'})</span>
+                Download attachment <span className="font-normal text-muted">({pack.document_name ?? 'document'})</span>
               </p>
               {isPdf ? (
-                <iframe title={`Training document for ${skillName}`} src={docUrl} className="h-[min(26rem,50vh)] w-full rounded-xl border border-border bg-white" />
+                <a
+                  href={docUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex rounded-xl border border-border bg-surface-raised px-4 py-2.5 text-sm font-medium text-fg hover:bg-black/[0.04]"
+                >
+                  Open / download PDF
+                </a>
               ) : (
                 <a
                   href={docUrl}
@@ -1186,19 +1283,10 @@ function TrainingDialog(props: {
             </div>
           ) : null}
 
-          {!loading && !submitResult && pack && !hasTrainingDoc && questions.length > 0 ? (
-            <div className="rounded-2xl border border-border bg-surface p-3 shadow-sm">
-              <p className="text-sm font-medium text-fg">Quiz-only training</p>
-              <p className="mt-1 text-xs text-muted">
-                There is no uploaded document for this skill. When you are ready, answer the questions below.
-              </p>
-            </div>
-          ) : null}
-
           {!loading && !submitResult && pack && questions.length > 0 ? (
             <div className="space-y-4">
               <div className="rounded-2xl border border-sky-200/80 bg-sky-50/50 px-3 py-2.5">
-                <p className="text-sm font-medium text-sky-950">{hasTrainingDoc ? 'Step 2 — Quiz' : 'Quiz'}</p>
+                <p className="text-sm font-medium text-sky-950">{standard && pageCount > 0 ? 'Step 2 — Quiz' : 'Quiz'}</p>
                 <p className="text-xs text-sky-900/80">
                   Tap one choice per question (tick marks your answer). The pass requirement and your score are shown only after you submit.
                 </p>

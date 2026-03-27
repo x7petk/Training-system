@@ -1,9 +1,14 @@
+import { Suspense, lazy } from 'react'
 import { Shield } from 'lucide-react'
 import { AccountsSummary } from '../features/admin/AccountsSummary'
 import { CatalogManager } from '../features/admin/CatalogManager'
 import { PeopleRoster } from '../features/admin/PeopleRoster'
-import { SkillTrainingManager } from '../features/admin/SkillTrainingManager'
 import { TeamsManager } from '../features/admin/TeamsManager'
+
+const LazySkillTrainingManager = lazy(async () => {
+  const mod = await import('../features/admin/SkillTrainingManager')
+  return { default: mod.SkillTrainingManager }
+})
 
 export function AdminPage() {
   return (
@@ -23,7 +28,9 @@ export function AdminPage() {
       </header>
 
       <CatalogManager />
-      <SkillTrainingManager />
+      <Suspense fallback={<p className="text-sm text-muted">Loading training admin tools…</p>}>
+        <LazySkillTrainingManager />
+      </Suspense>
       <TeamsManager />
       <PeopleRoster />
       <AccountsSummary />
