@@ -1,9 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { addMonths, localYMD, startOfDay } from '../../lib/dueDateUtils'
+import { classifyCell, type SkillKind } from '../matrix/gapLogic'
 
 type RoleRow = { id: string; name: string }
 type TeamRow = { id: string; name: string }
+type RequirementRow = { role_id: string; skill_id: string; required_level: number }
+type SkillKindRow = { id: string; kind: SkillKind }
+type PersonSkillRow = {
+  person_id: string
+  skill_id: string
+  actual_level: number | null
+  is_extra: boolean
+  due_date: string | null
+}
 
 type PersonRoleJoin = {
   role_id: string
@@ -162,6 +173,58 @@ export function PeopleRoster() {
     setForm(emptyForm())
   }
 
+  async function seedRequiredSkillsForPerson(personId: string, roleIds: string[]) {
+    if (roleIds.length === 0) return
+
+    const [reqRes, skillRes, psRes] = await Promise.all([
+      supabase.from('role_skill_requirements').select('role_id, skill_id, required_level').in('role_id', roleIds),
+      supabase.from('skills').select('id, kind'),
+      supabase.from('person_skills').select('person_id, skill_id, actual_level, is_extra, due_date').eq('person_id', personId),
+    ])
+
+    if (reqRes.error) throw reqRes.error
+    if (skillRes.error) throw skillRes.error
+    if (psRes.error) throw psRes.error
+
+    const requiredBySkill = new Map<string, number>()
+    for (const row of (reqRes.data ?? []) as RequirementRow[]) {
+      const current = requiredBySkill.get(row.skill_id)
+      requiredBySkill.set(row.skill_id, current == null ? row.required_level : Math.max(current, row.required_level))
+    }
+    if (requiredBySkill.size === 0) return
+
+    const kindBySkill = new Map<string, SkillKind>()
+    for (const row of (skillRes.data ?? []) as SkillKindRow[]) kindBySkill.set(row.id, row.kind)
+
+    const existingBySkill = new Map<string, PersonSkillRow>()
+    for (const row of (psRes.data ?? []) as PersonSkillRow[]) existingBySkill.set(row.skill_id, row)
+
+    const targetDate = localYMD(addMonths(startOfDay(new Date()), 3))
+    const payload = [...requiredBySkill.entries()].map(([skillId, required]) => {
+      const existing = existingBySkill.get(skillId)
+      const kind = kindBySkill.get(skillId) ?? 'numeric'
+      const actual = existing?.actual_level ?? 1
+      const gap = classifyCell({
+        kind,
+        required,
+        actual,
+        isExtra: false,
+      })
+      return {
+        person_id: personId,
+        skill_id: skillId,
+        actual_level: actual,
+        is_extra: false,
+        due_date: existing?.due_date?.trim() || (gap === 'critical' || gap === 'minor' ? targetDate : null),
+      }
+    })
+
+    const { error } = await supabase.from('person_skills').upsert(payload, {
+      onConflict: 'person_id,skill_id',
+    })
+    if (error) throw error
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     const name = form.display_name.trim()
@@ -192,6 +255,7 @@ export function PeopleRoster() {
             form.role_ids.map((role_id) => ({ person_id: editingId, role_id })),
           )
           if (iErr) throw iErr
+          await seedRequiredSkillsForPerson(editingId, form.role_ids)
         }
       } else {
         const { data: inserted, error: insErr } = await supabase
@@ -206,6 +270,7 @@ export function PeopleRoster() {
             form.role_ids.map((role_id) => ({ person_id: pid, role_id })),
           )
           if (rErr) throw rErr
+          await seedRequiredSkillsForPerson(pid, form.role_ids)
         }
       }
 

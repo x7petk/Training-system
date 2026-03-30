@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Layers, ListChecks, Pencil, Plus, Tag, Trash2, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { addMonths, localYMD, startOfDay } from '../../lib/dueDateUtils'
+import { classifyCell, type SkillKind } from '../matrix/gapLogic'
 import type { CatalogManagerSection } from './adminNavConfig'
-
-type SkillKind = 'numeric' | 'certification'
 
 type SkillGroupRow = { id: string; name: string; sort_order: number }
 type SkillRow = {
@@ -16,6 +16,14 @@ type SkillRow = {
 }
 type RoleRow = { id: string; name: string; sort_order: number }
 type RsrRow = { role_id: string; skill_id: string; required_level: number }
+type PersonRoleRow = { person_id: string }
+type PersonSkillSeedRow = {
+  person_id: string
+  skill_id: string
+  actual_level: number | null
+  is_extra: boolean
+  due_date: string | null
+}
 
 type GroupForm = { name: string; sort_order: string }
 type SkillForm = {
@@ -62,7 +70,7 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
 
   const [selectedRoleId, setSelectedRoleId] = useState<string>('')
   const [newRsrSkillId, setNewRsrSkillId] = useState<string>('')
-  const [newRsrLevel, setNewRsrLevel] = useState<string>('1')
+  const [newRsrLevel, setNewRsrLevel] = useState<string>('3')
 
   const fetchAll = useCallback(async () => {
     const [gRes, sRes, rRes, xRes] = await Promise.all([
@@ -366,19 +374,77 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
     e.preventDefault()
     if (!selectedRoleId || !newRsrSkillId) return
     const lv = Number.parseInt(newRsrLevel, 10)
-    const required_level = Number.isFinite(lv) ? Math.min(4, Math.max(0, lv)) : 1
+    const required_level = Number.isFinite(lv) ? Math.min(4, Math.max(0, lv)) : 3
     setError(null)
     const { error: err } = await supabase.from('role_skill_requirements').insert({
       role_id: selectedRoleId,
       skill_id: newRsrSkillId,
       required_level,
     })
-    if (err) setError(err.message)
-    else {
-      setNewRsrSkillId('')
-      setNewRsrLevel('1')
-      void fetchAll()
+    if (err) {
+      setError(err.message)
+      return
     }
+
+    const skillKind = skillById.get(newRsrSkillId)?.kind ?? 'numeric'
+    const targetDate = localYMD(addMonths(startOfDay(new Date()), 3))
+    const rolePeopleRes = await supabase.from('person_roles').select('person_id').eq('role_id', selectedRoleId)
+    if (rolePeopleRes.error) {
+      setError(rolePeopleRes.error.message)
+      return
+    }
+
+    const personIds = ((rolePeopleRes.data ?? []) as PersonRoleRow[]).map((x) => x.person_id)
+    if (personIds.length > 0) {
+      const existingRes = await supabase
+        .from('person_skills')
+        .select('person_id, skill_id, actual_level, is_extra, due_date')
+        .eq('skill_id', newRsrSkillId)
+        .in('person_id', personIds)
+      if (existingRes.error) {
+        setError(existingRes.error.message)
+        return
+      }
+
+      const existingByPerson = new Map<string, PersonSkillSeedRow>()
+      for (const row of (existingRes.data ?? []) as PersonSkillSeedRow[]) {
+        existingByPerson.set(row.person_id, row)
+      }
+
+      const payload = personIds.map((personId) => {
+        const existing = existingByPerson.get(personId)
+        const actual = existing?.actual_level ?? 1
+        const gap = classifyCell({
+          kind: skillKind,
+          required: required_level,
+          actual,
+          isExtra: false,
+        })
+        const due_date =
+          existing?.due_date?.trim() ||
+          (gap === 'critical' || gap === 'minor' ? targetDate : null)
+
+        return {
+          person_id: personId,
+          skill_id: newRsrSkillId,
+          actual_level: actual,
+          is_extra: false,
+          due_date,
+        }
+      })
+
+      const { error: seedErr } = await supabase.from('person_skills').upsert(payload, {
+        onConflict: 'person_id,skill_id',
+      })
+      if (seedErr) {
+        setError(seedErr.message)
+        return
+      }
+    }
+
+    setNewRsrSkillId('')
+    setNewRsrLevel('3')
+    void fetchAll()
   }
 
   async function deleteRsr(skillId: string, label: string) {

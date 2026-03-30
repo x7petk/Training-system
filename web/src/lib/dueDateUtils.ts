@@ -12,6 +12,12 @@ export function addDays(d: Date, n: number): Date {
   return x
 }
 
+export function addMonths(d: Date, n: number): Date {
+  const x = new Date(d)
+  x.setMonth(x.getMonth() + n)
+  return x
+}
+
 export function startOfDay(d: Date): Date {
   const x = new Date(d)
   x.setHours(0, 0, 0, 0)
