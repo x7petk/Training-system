@@ -11,6 +11,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { MySkillsPage } from './pages/MySkillsPage'
 import { ReportPage } from './pages/ReportPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { UserGuidePage } from './pages/UserGuidePage'
 
 export default function App() {
   return (
@@ -46,6 +47,14 @@ export default function App() {
               element={
                 <AdminRoute>
                   <AdminPage />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="user-guide"
+              element={
+                <AdminRoute>
+                  <UserGuidePage />
                 </AdminRoute>
               }
             />

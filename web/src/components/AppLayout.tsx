@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   BarChart3,
+  BookOpenText,
   FileBarChart,
   Grid3X3,
   LayoutDashboard,
@@ -203,6 +204,24 @@ export function AppLayout() {
             <LogOut className="size-4" aria-hidden />
             {!desktopCollapsed ? 'Sign out' : null}
           </button>
+          {isAdmin ? (
+            <NavLink
+              to="/user-guide"
+              className={({ isActive }) =>
+                `mt-2 flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                  desktopCollapsed ? 'justify-center gap-0 px-2' : 'gap-2'
+                } ${
+                  isActive
+                    ? 'bg-accent-dim text-accent'
+                    : 'text-muted hover:bg-black/[0.06] hover:text-fg'
+                }`
+              }
+              title={desktopCollapsed ? 'User Guide' : undefined}
+            >
+              <BookOpenText className="size-4" aria-hidden />
+              {!desktopCollapsed ? 'User Guide' : null}
+            </NavLink>
+          ) : null}
         </div>
       </aside>
 
