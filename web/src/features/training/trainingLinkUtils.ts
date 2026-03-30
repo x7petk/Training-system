@@ -62,6 +62,15 @@ export function stripAnchorsForCanvasPreview(html: string): string {
   return wrap.innerHTML
 }
 
+/** Learner canvas: remove links completely because they are rendered in a separate links block above the canvas. */
+export function removeAnchorsForCanvasPreview(html: string): string {
+  if (typeof document === 'undefined') return html
+  const wrap = document.createElement('div')
+  wrap.innerHTML = html
+  wrap.querySelectorAll('a').forEach((a) => a.remove())
+  return wrap.innerHTML
+}
+
 export type StandardContentLink = {
   href: string
   label: string

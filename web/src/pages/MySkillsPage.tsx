@@ -25,7 +25,7 @@ import {
 } from '../features/training/standardPageCanvas'
 import {
   extractStandardContentLinks,
-  stripAnchorsForCanvasPreview,
+  removeAnchorsForCanvasPreview,
 } from '../features/training/trainingLinkUtils'
 
 type SkillRaw = {
@@ -1298,7 +1298,7 @@ function TrainingDialog(props: {
                   <div
                     className={standardPageProseClass}
                     dangerouslySetInnerHTML={{
-                      __html: stripAnchorsForCanvasPreview(currentPage?.contentHtml || '<p></p>'),
+                      __html: removeAnchorsForCanvasPreview(currentPage?.contentHtml || '<p></p>'),
                     }}
                   />
                   {(currentPage?.images ?? []).map((img) =>
