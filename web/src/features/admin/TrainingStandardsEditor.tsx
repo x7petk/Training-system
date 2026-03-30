@@ -7,7 +7,7 @@ import { TextStyle } from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
-import { Extension } from '@tiptap/core'
+import { Extension, getMarkRange } from '@tiptap/core'
 import { Rnd } from 'react-rnd'
 import {
   AlignCenter,
@@ -19,16 +19,29 @@ import {
   Highlighter,
   ImagePlus,
   Italic,
-  Link as LinkIcon,
   List,
   ListOrdered,
   Plus,
   Redo2,
+  Link2,
   Trash2,
   Underline as UnderlineIcon,
   Undo2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import {
+  standardPageOuterClass,
+  standardPageProseClass,
+  standardPageStageClass,
+  standardPageTitleClass,
+} from '../training/standardPageCanvas'
+import {
+  escapeHrefAttr,
+  escapeHtmlForLinkBody,
+  normalizeTrainingLinkHref,
+  sanitizeStandardContentAnchors,
+  stripAnchorsForCanvasPreview,
+} from '../training/trainingLinkUtils'
 
 const IMG_BUCKET = 'skill-training-standard-images'
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -85,6 +98,9 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
   const [activePage, setActivePage] = useState(0)
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
   const [fontSizeValue, setFontSizeValue] = useState('14')
+  const [linkUrlInput, setLinkUrlInput] = useState('')
+  const [linkLabelInput, setLinkLabelInput] = useState('')
+  const [linkPanelFocused, setLinkPanelFocused] = useState(false)
   const [canvasSize, setCanvasSize] = useState({ width: 700, height: 500 })
   const canvasRef = useRef<HTMLDivElement | null>(null)
 
@@ -98,7 +114,16 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
     extensions: [
       StarterKit,
       Underline,
-      Link.configure({ openOnClick: true, autolink: true }),
+      Link.configure({
+        openOnClick: false,
+        autolink: true,
+        defaultProtocol: 'https',
+        HTMLAttributes: {
+          class: 'training-standard-link',
+          target: '_blank',
+          rel: 'noopener noreferrer',
+        },
+      }),
       TextStyle,
       FontSize,
       Color,
@@ -109,7 +134,7 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
     editorProps: {
       attributes: {
         class:
-          'min-h-[16rem] prose prose-sm max-w-none rounded-md border border-border bg-white px-3 py-2 focus:outline-none',
+          'min-h-[16rem] prose prose-sm max-w-none rounded-md border border-border bg-white px-3 py-2 focus:outline-none [&_a]:font-medium [&_a]:text-sky-700 [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-sky-500/45',
       },
     },
     onUpdate: ({ editor: ed }) => {
@@ -143,6 +168,32 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
       editor.off('update', syncSize)
     }
   }, [editor])
+
+  useEffect(() => {
+    if (!editor || linkPanelFocused) return
+    const linkMark = editor.schema.marks.link
+    if (!linkMark) return
+    const sync = () => {
+      const range = getMarkRange(editor.state.selection.$from, linkMark)
+      if (range) {
+        setLinkLabelInput(editor.state.doc.textBetween(range.from, range.to))
+        const href = editor.getAttributes('link').href as string | undefined
+        setLinkUrlInput(typeof href === 'string' ? href : '')
+      } else {
+        const { from, to } = editor.state.selection
+        if (from !== to) {
+          setLinkLabelInput(editor.state.doc.textBetween(from, to, ''))
+        }
+      }
+    }
+    editor.on('selectionUpdate', sync)
+    editor.on('transaction', sync)
+    sync()
+    return () => {
+      editor.off('selectionUpdate', sync)
+      editor.off('transaction', sync)
+    }
+  }, [editor, linkPanelFocused, activePage])
 
   useEffect(() => {
     let cancelled = false
@@ -275,7 +326,7 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
     setInfo(null)
     const payload = pages.slice(0, 5).map((p) => ({
       id: p.id,
-      contentHtml: p.contentHtml || '<p></p>',
+      contentHtml: sanitizeStandardContentAnchors(p.contentHtml || '<p></p>'),
       images: p.images,
     }))
     const { error: e } = await supabase.from('skill_training_standards').upsert({
@@ -294,6 +345,41 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
 
   const toolbarBtn =
     'rounded border border-border bg-surface px-2 py-1 text-xs text-fg hover:bg-black/[0.04]'
+
+  const linkInputClass =
+    'min-w-0 flex-1 rounded-lg border border-border bg-canvas/60 px-2.5 py-1.5 text-sm text-fg outline-none placeholder:text-muted focus:border-accent/40 focus:ring-2 focus:ring-accent/25'
+
+  function applyEditorLink() {
+    if (!editor) return
+    const href = normalizeTrainingLinkHref(linkUrlInput)
+    if (!href) {
+      setError('Enter a URL (https://…, mailto:, tel:, or /path).')
+      return
+    }
+    const labelRaw = linkLabelInput.trim()
+    if (!labelRaw) {
+      setError('Enter the label (visible text) for this link.')
+      return
+    }
+    setError(null)
+    const html = `<a href="${escapeHrefAttr(href)}">${escapeHtmlForLinkBody(labelRaw)}</a>`
+    const chain = editor.chain().focus()
+    if (editor.isActive('link')) {
+      chain.extendMarkRange('link').deleteSelection().insertContent(html).run()
+    } else {
+      chain.deleteSelection().insertContent(html).run()
+    }
+  }
+
+  function clearEditorLink() {
+    if (!editor) return
+    if (editor.isActive('link')) {
+      editor.chain().focus().extendMarkRange('link').unsetLink().run()
+    }
+    setLinkUrlInput('')
+    setLinkLabelInput('')
+    setError(null)
+  }
 
   return (
     <div className="rounded-xl border border-border p-3">
@@ -391,17 +477,6 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
               <button type="button" className={toolbarBtn} onClick={() => editor.chain().focus().toggleHighlight().run()}>
                 <Highlighter className="size-3.5" />
               </button>
-              <button
-                type="button"
-                className={toolbarBtn}
-                onClick={() => {
-                  const url = window.prompt('Paste URL')
-                  if (!url) return
-                  editor.chain().focus().setLink({ href: url }).run()
-                }}
-              >
-                <LinkIcon className="size-3.5" />
-              </button>
               <button type="button" className={toolbarBtn} onClick={() => editor.chain().focus().undo().run()}>
                 <Undo2 className="size-3.5" />
               </button>
@@ -454,6 +529,85 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
           onDrop={(e) => void onDropImage(e)}
           className="rounded-lg border border-border/70 p-2.5"
         >
+          {editor ? (
+            <div
+              className="mb-3 rounded-lg border border-border/70 bg-canvas/40 p-2.5"
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) setLinkPanelFocused(false)
+              }}
+              onFocusCapture={() => setLinkPanelFocused(true)}
+            >
+              <p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted">
+                <Link2 className="mr-1 inline size-3.5 align-[-0.125em] opacity-70" aria-hidden />
+                Link
+              </p>
+              <p className="mb-2 text-[11px] leading-snug text-muted">
+                Add above the canvas (not inside the preview). The canvas shows plain text only; learners still get a
+                clickable link that opens in a new tab.
+              </p>
+              <div className="flex flex-col gap-2">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="block min-w-0 space-y-1">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-muted">Label</span>
+                    <input
+                      type="text"
+                      value={linkLabelInput}
+                      onChange={(e) => setLinkLabelInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          applyEditorLink()
+                        }
+                      }}
+                      placeholder="Text people see"
+                      className={`${linkInputClass} w-full`}
+                      autoComplete="off"
+                      aria-label="Link label"
+                    />
+                  </label>
+                  <label className="block min-w-0 space-y-1">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-muted">URL</span>
+                    <input
+                      type="text"
+                      inputMode="url"
+                      autoComplete="url"
+                      value={linkUrlInput}
+                      onChange={(e) => setLinkUrlInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          applyEditorLink()
+                        }
+                      }}
+                      placeholder="https://… or mailto:…"
+                      className={`${linkInputClass} w-full`}
+                      aria-label="Link URL"
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={!editor}
+                    onClick={() => applyEditorLink()}
+                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-40"
+                  >
+                    Insert link
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!editor}
+                    onClick={() => clearEditorLink()}
+                    className={toolbarBtn}
+                    title="Remove link mark from cursor / selection"
+                  >
+                    Clear link
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div className="mb-2 flex items-center justify-between">
             <p className="text-xs font-medium uppercase tracking-wider text-muted">Page canvas (drag images)</p>
             <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-border px-2 py-1 text-xs text-muted">
@@ -470,9 +624,15 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
             </label>
           </div>
 
-          <div ref={canvasRef} className="relative min-h-[20rem] overflow-hidden rounded-lg border border-border bg-white p-3">
-            <div className="mb-3 rounded-md bg-sky-700 px-3 py-2 text-lg font-semibold text-white">{title || `${skillName} standard`}</div>
-            <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: page?.contentHtml || '<p></p>' }} />
+          <div className={`rounded-lg border border-border ${standardPageOuterClass}`}>
+            <div className={standardPageTitleClass}>{title || `${skillName} standard`}</div>
+            <div ref={canvasRef} className={standardPageStageClass}>
+              <div
+                className={standardPageProseClass}
+                dangerouslySetInnerHTML={{
+                  __html: stripAnchorsForCanvasPreview(page?.contentHtml || '<p></p>'),
+                }}
+              />
             {(page?.images ?? []).map((img) => (
               <Rnd
                 key={img.id}
@@ -508,11 +668,15 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
                     }),
                   )
                 }}
-                className="rounded-md border border-border shadow"
+                className="z-10 rounded-md border border-border shadow"
               >
                 <div className="relative h-full w-full">
                   {imageUrls[img.path] ? (
-                    <img src={imageUrls[img.path]} alt="" className="h-full w-full rounded-md object-cover" />
+                    <img
+                      src={imageUrls[img.path]}
+                      alt=""
+                      className="h-full w-full rounded-md bg-white object-contain object-center"
+                    />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-[10px] text-muted">Loading image…</div>
                   )}
@@ -533,7 +697,9 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
                 </div>
               </Rnd>
             ))}
+            </div>
           </div>
+
           <p className="mt-2 text-[11px] text-muted">
             Paste or drop images here, then drag and resize with your mouse.
           </p>

@@ -16,6 +16,17 @@ import {
   type GapKind,
   type SkillKind,
 } from '../features/matrix/gapLogic'
+import {
+  standardPageImageClass,
+  standardPageOuterClass,
+  standardPageProseClass,
+  standardPageStageClass,
+  standardPageTitleClass,
+} from '../features/training/standardPageCanvas'
+import {
+  extractStandardContentLinks,
+  stripAnchorsForCanvasPreview,
+} from '../features/training/trainingLinkUtils'
 
 type SkillRaw = {
   id: string
@@ -268,7 +279,6 @@ export function MySkillsPage() {
             targetId = linkedRow?.id ?? people[0]?.id ?? null
             if (targetId !== selectedPersonId) {
               void Promise.resolve().then(() => setSelectedPersonId(targetId))
-              setLoading(false)
               return
             }
           }
@@ -518,18 +528,22 @@ export function MySkillsPage() {
 
   const trainingEligibleSkillIds = useMemo(() => {
     const s = new Set<string>()
-    for (const r of requiredRows) {
+    for (const r of [...requiredRows, ...optionalRows]) {
       if (r.kind !== 'numeric' || r.actual !== 1) continue
       if (!packBySkill.has(r.skillId)) continue
       if ((questionsBySkill.get(r.skillId) ?? []).length === 0) continue
       s.add(r.skillId)
     }
     return s
-  }, [requiredRows, packBySkill, questionsBySkill])
+  }, [requiredRows, optionalRows, packBySkill, questionsBySkill])
 
   const needsAssessorRows = useMemo(
     () => requiredRows.filter((r) => r.kind === 'numeric' && r.actual === 2 && (r.required === 3 || r.required === 4)),
     [requiredRows],
+  )
+  const optionalAssessorRows = useMemo(
+    () => optionalRows.filter((r) => r.kind === 'numeric' && r.actual === 2),
+    [optionalRows],
   )
 
   function openEditor(row: SkillRowModel, anchor?: CellEditorAnchor | null) {
@@ -625,7 +639,7 @@ export function MySkillsPage() {
             <h2 className="font-display text-lg font-semibold">No people on the roster</h2>
             <p className="mt-2 max-w-lg text-sm text-muted">
               Add people in{' '}
-              <Link to="/admin" className="font-medium text-accent underline-offset-2 hover:underline">
+              <Link to="/admin?tab=people" className="font-medium text-accent underline-offset-2 hover:underline">
                 Admin → People
               </Link>{' '}
               before you can view skills here.
@@ -646,7 +660,7 @@ export function MySkillsPage() {
             {isAdmin ? (
               <p className="mt-2 text-sm text-accent">
                 You’re an admin — open{' '}
-                <Link to="/admin" className="underline underline-offset-2">
+                <Link to="/admin?tab=people" className="underline underline-offset-2">
                   Admin
                 </Link>{' '}
                 to create or link your person row (you can still use the person selector above once others exist).
@@ -718,6 +732,15 @@ export function MySkillsPage() {
             onEdit={openEditor}
             requiredLabel={requiredLabel}
             readOnly={readOnly}
+            trainingEligibleIds={trainingEligibleSkillIds}
+            onStartTraining={(row) => setTrainingSkillId(row.skillId)}
+            assessorNeededIds={new Set(optionalAssessorRows.map((r) => r.skillId))}
+            onShowAssessors={(row) =>
+              setAssessorSkillInfo({
+                skillName: row.skillName,
+                required: row.required ?? Math.min(4, (row.actual ?? 2) + 1),
+              })
+            }
           />
 
           {!readOnly && addableSkillOptions.length > 0 ? (
@@ -1009,7 +1032,8 @@ function TrainingDialog(props: {
   const [answers, setAnswers] = useState<Record<string, 'A' | 'B' | 'C' | 'D'>>({})
   const [docUrl, setDocUrl] = useState<string | null>(null)
   const [pageImageUrls, setPageImageUrls] = useState<Record<string, string>>({})
-  const [currentPageIdx, setCurrentPageIdx] = useState(0)
+  /** Material pages are 0..pageCount-1; stepIdx === pageCount is the quiz step (when standards exist). */
+  const [stepIdx, setStepIdx] = useState(0)
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0)
   const [submitResult, setSubmitResult] = useState<{
     score: number
@@ -1023,7 +1047,7 @@ function TrainingDialog(props: {
     const raf = requestAnimationFrame(() => {
       setSubmitResult(null)
       setAnswers({})
-      setCurrentPageIdx(0)
+      setStepIdx(0)
       setCurrentQuestionIdx(0)
     })
     void (async () => {
@@ -1096,12 +1120,22 @@ function TrainingDialog(props: {
 
   const hasTrainingDoc = Boolean(pack?.document_path)
   const pageCount = standard?.pages?.length ?? 0
-  const currentPage = pageCount > 0 ? standard?.pages[currentPageIdx] ?? null : null
+  const hasStandards = Boolean(standard && pageCount > 0)
+  const quizAfterMaterial = hasStandards && questions.length > 0
+  const onQuizStep = hasStandards && quizAfterMaterial && stepIdx === pageCount
+  const onMaterialStep = hasStandards && stepIdx >= 0 && stepIdx < pageCount
+  const currentPage = onMaterialStep ? (standard?.pages[stepIdx] ?? null) : null
+  const lastMaterialIdx = Math.max(0, pageCount - 1)
+  const maxStepIdx = hasStandards ? (quizAfterMaterial ? pageCount : lastMaterialIdx) : 0
   const isPdf =
     pack?.document_mime === 'application/pdf' ||
     (pack?.document_name?.toLowerCase().endsWith('.pdf') ?? false)
   const currentQuestion = questions[currentQuestionIdx] ?? null
   const answeredCount = Object.keys(answers).length
+  const currentPageLinks = useMemo(
+    () => extractStandardContentLinks(currentPage?.contentHtml || ''),
+    [currentPage?.contentHtml],
+  )
 
   async function submit() {
     if (!pack || questions.length === 0) return
@@ -1135,18 +1169,19 @@ function TrainingDialog(props: {
 
     let levelUp = false
     if (passed) {
-      const { error: upErr } = await supabase
+      const { data: updatedRows, error: upErr } = await supabase
         .from('person_skills')
         .update({ actual_level: 2 })
         .eq('person_id', personId)
         .eq('skill_id', skillId)
         .eq('actual_level', 1)
+        .select('person_id')
       if (upErr) {
         setSaving(false)
         setError(upErr.message)
         return
       }
-      levelUp = true
+      levelUp = (updatedRows?.length ?? 0) > 0
     }
     setSaving(false)
     setSubmitResult({ score, passed, threshold: pack.pass_score_percent, levelUp })
@@ -1208,19 +1243,71 @@ function TrainingDialog(props: {
             </div>
           ) : null}
 
-          {!loading && !submitResult && pack && standard && pageCount > 0 ? (
+          {!loading && !submitResult && pack && hasStandards && onQuizStep ? (
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface-raised/50 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => setStepIdx((s) => Math.max(0, s - 1))}
+                disabled={stepIdx === 0}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-black/[0.06] hover:text-fg disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <p className="text-center text-xs text-muted">
+                <span className="font-medium text-fg">Quiz</span>
+                <span className="text-muted">
+                  {' '}
+                  · step {stepIdx + 1} of {quizAfterMaterial ? pageCount + 1 : pageCount}
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={() => setStepIdx((s) => Math.min(maxStepIdx, s + 1))}
+                disabled={stepIdx >= maxStepIdx}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-black/[0.06] hover:text-fg disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          ) : null}
+
+          {!loading && !submitResult && pack && hasStandards && onMaterialStep && currentPageLinks.length > 0 ? (
             <div className="rounded-2xl border border-border bg-surface p-3 shadow-sm">
-              <div className="mb-2 overflow-hidden rounded-xl border border-sky-800/10">
-                <div className="bg-sky-700 px-4 py-3 text-lg font-semibold text-white">{standard.title || skillName}</div>
-                <div className="relative min-h-[20rem] p-4">
-                  <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: currentPage?.contentHtml || '<p></p>' }} />
+              <p className="mb-2 text-sm font-medium text-fg">Links</p>
+              <div className="flex flex-wrap gap-2">
+                {currentPageLinks.map((link, idx) => (
+                  <a
+                    key={`${link.href}-${idx}`}
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex rounded-xl border border-border bg-surface-raised px-3 py-2 text-sm font-medium text-fg hover:bg-black/[0.04]"
+                  >
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {!loading && !submitResult && pack && hasStandards && onMaterialStep ? (
+            <div className="rounded-2xl border border-border bg-surface p-3 shadow-sm">
+              <div className={standardPageOuterClass}>
+                <div className={standardPageTitleClass}>{standard!.title || skillName}</div>
+                <div className={standardPageStageClass}>
+                  <div
+                    className={standardPageProseClass}
+                    dangerouslySetInnerHTML={{
+                      __html: stripAnchorsForCanvasPreview(currentPage?.contentHtml || '<p></p>'),
+                    }}
+                  />
                   {(currentPage?.images ?? []).map((img) =>
                     pageImageUrls[img.path] ? (
                       <img
                         key={img.id}
                         src={pageImageUrls[img.path]}
                         alt=""
-                        className="absolute rounded-md object-cover shadow"
+                        className={standardPageImageClass}
                         style={{
                           left: `${img.x ?? 68}%`,
                           top: `${img.y ?? 8}%`,
@@ -1232,31 +1319,10 @@ function TrainingDialog(props: {
                   )}
                 </div>
               </div>
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setCurrentPageIdx((prev) => Math.max(0, prev - 1))}
-                  disabled={currentPageIdx === 0}
-                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-black/[0.06] hover:text-fg disabled:opacity-40"
-                >
-                  Previous page
-                </button>
-                <p className="text-xs text-muted">
-                  Page {currentPageIdx + 1} / {pageCount}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPageIdx((prev) => Math.min(pageCount - 1, prev + 1))}
-                  disabled={currentPageIdx >= pageCount - 1}
-                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-black/[0.06] hover:text-fg disabled:opacity-40"
-                >
-                  Next page
-                </button>
-              </div>
             </div>
           ) : null}
 
-          {!loading && !submitResult && pack && hasTrainingDoc && docUrl ? (
+          {!loading && !submitResult && pack && hasTrainingDoc && docUrl && (!hasStandards || onMaterialStep) ? (
             <div className="rounded-2xl border border-border bg-surface p-3 shadow-sm">
               <p className="mb-2 text-sm font-medium text-fg">
                 Download attachment <span className="font-normal text-muted">({pack.document_name ?? 'document'})</span>
@@ -1283,10 +1349,39 @@ function TrainingDialog(props: {
             </div>
           ) : null}
 
-          {!loading && !submitResult && pack && questions.length > 0 ? (
+          {!loading && !submitResult && pack && hasStandards && onMaterialStep ? (
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface-raised/50 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => setStepIdx((s) => Math.max(0, s - 1))}
+                disabled={stepIdx === 0}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-black/[0.06] hover:text-fg disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <p className="text-center text-xs text-muted">
+                <span className="font-medium text-fg">Material</span>
+                <span className="text-muted">
+                  {' '}
+                  · page {stepIdx + 1} of {pageCount}
+                  {quizAfterMaterial ? ' (then quiz)' : ''}
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={() => setStepIdx((s) => Math.min(maxStepIdx, s + 1))}
+                disabled={stepIdx >= maxStepIdx}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-black/[0.06] hover:text-fg disabled:opacity-40"
+              >
+                {quizAfterMaterial && stepIdx === lastMaterialIdx ? 'Continue to quiz' : 'Next'}
+              </button>
+            </div>
+          ) : null}
+
+          {!loading && !submitResult && pack && questions.length > 0 && (!hasStandards || onQuizStep) ? (
             <div className="space-y-4">
               <div className="rounded-2xl border border-sky-200/80 bg-sky-50/50 px-3 py-2.5">
-                <p className="text-sm font-medium text-sky-950">{standard && pageCount > 0 ? 'Step 2 — Quiz' : 'Quiz'}</p>
+                <p className="text-sm font-medium text-sky-950">{hasStandards ? 'Step 2 — Quiz' : 'Quiz'}</p>
                 <p className="text-xs text-sky-900/80">
                   Tap one choice per question (tick marks your answer). The pass requirement and your score are shown only after you submit.
                 </p>

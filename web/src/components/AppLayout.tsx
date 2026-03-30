@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   BarChart3,
+  FileBarChart,
   Grid3X3,
   LayoutDashboard,
   LogOut,
@@ -11,6 +12,7 @@ import {
   UserCircle,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { ADMIN_NAV_GROUPS, DEFAULT_ADMIN_TAB, parseAdminTab } from '../features/admin/adminNavConfig'
 
 const DESKTOP_SIDEBAR_KEY = 'skill-matrix.sidebar-collapsed'
 
@@ -23,9 +25,24 @@ const navClass = (isCollapsed: boolean) => ({ isActive }: { isActive: boolean })
       : 'text-muted hover:bg-black/[0.06] hover:text-fg',
   ].join(' ')
 
+function adminSubNavClass(active: boolean, collapsed: boolean) {
+  return [
+    'flex rounded-md text-xs font-medium transition-colors',
+    collapsed ? 'justify-center px-2 py-2' : 'items-center gap-2 px-2 py-1.5 text-left',
+    active
+      ? 'bg-accent-dim text-accent ring-1 ring-accent/25'
+      : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+  ].join(' ')
+}
+
 export function AppLayout() {
   const { signOut, isAdmin, isOperator, adminLoading, user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+  const onAdminRoute = location.pathname === '/admin'
+  const resolvedAdminTab = parseAdminTab(searchParams.get('tab'))
+  const adminHref = `/admin?tab=${onAdminRoute ? resolvedAdminTab : DEFAULT_ADMIN_TAB}`
   const [desktopCollapsed, setDesktopCollapsed] = useState(
     () => typeof window !== 'undefined' && window.localStorage.getItem(DESKTOP_SIDEBAR_KEY) === '1',
   )
@@ -73,14 +90,24 @@ export function AppLayout() {
         </div>
         <nav className="flex gap-1 p-2 md:flex-col" aria-label="Main">
           {!adminLoading && !isOperator ? (
-            <NavLink
-              to="/dashboard"
-              className={navClass(desktopCollapsed)}
-              title={desktopCollapsed ? 'Dashboard' : undefined}
-            >
-              <BarChart3 className="size-4 shrink-0 opacity-80" aria-hidden />
-              {!desktopCollapsed ? 'Dashboard' : null}
-            </NavLink>
+            <>
+              <NavLink
+                to="/dashboard"
+                className={navClass(desktopCollapsed)}
+                title={desktopCollapsed ? 'Dashboard' : undefined}
+              >
+                <BarChart3 className="size-4 shrink-0 opacity-80" aria-hidden />
+                {!desktopCollapsed ? 'Dashboard' : null}
+              </NavLink>
+              <NavLink
+                to="/report"
+                className={navClass(desktopCollapsed)}
+                title={desktopCollapsed ? 'Report' : undefined}
+              >
+                <FileBarChart className="size-4 shrink-0 opacity-80" aria-hidden />
+                {!desktopCollapsed ? 'Report' : null}
+              </NavLink>
+            </>
           ) : null}
           <NavLink
             to="/my-skills"
@@ -102,14 +129,59 @@ export function AppLayout() {
             </NavLink>
           ) : null}
           {isAdmin ? (
-            <NavLink
-              to="/admin"
-              className={navClass(desktopCollapsed)}
-              title={desktopCollapsed ? 'Admin' : undefined}
+            <div
+              className={`flex w-full flex-col gap-1 md:w-auto ${onAdminRoute ? 'rounded-lg bg-black/[0.03] p-1 ring-1 ring-border/60 dark:bg-white/[0.04]' : ''}`}
             >
-              <LayoutDashboard className="size-4 shrink-0 opacity-80" aria-hidden />
-              {!desktopCollapsed ? 'Admin' : null}
-            </NavLink>
+              <NavLink
+                to={adminHref}
+                className={navClass(desktopCollapsed)}
+                title={desktopCollapsed ? 'Admin' : undefined}
+              >
+                <LayoutDashboard className="size-4 shrink-0 opacity-80" aria-hidden />
+                {!desktopCollapsed ? 'Admin' : null}
+              </NavLink>
+              {onAdminRoute ? (
+                <div
+                  className={`flex flex-col gap-2 ${desktopCollapsed ? 'items-stretch' : 'border-l-2 border-accent/20 pl-2 md:ml-1'}`}
+                  role="navigation"
+                  aria-label="Admin settings"
+                >
+                  {ADMIN_NAV_GROUPS.map((group) => (
+                    <div key={group.heading} className="min-w-0">
+                      {!desktopCollapsed ? (
+                        <p className="mb-1 px-1 text-[9px] font-semibold uppercase tracking-wide text-muted">
+                          {group.heading}
+                        </p>
+                      ) : null}
+                      <ul className={`space-y-0.5 ${desktopCollapsed ? 'flex flex-col' : ''}`}>
+                        {group.items.map((item) => {
+                          const Icon = item.icon
+                          const active = resolvedAdminTab === item.id
+                          return (
+                            <li key={item.id}>
+                              <NavLink
+                                to={`/admin?tab=${item.id}`}
+                                className={() => adminSubNavClass(active, desktopCollapsed)}
+                                title={desktopCollapsed ? `${item.label} — ${item.hint}` : item.hint}
+                                aria-current={active ? 'page' : undefined}
+                              >
+                                <Icon
+                                  className={`size-4 shrink-0 ${active ? 'text-accent' : 'opacity-75'}`}
+                                  aria-hidden
+                                />
+                                {!desktopCollapsed ? (
+                                  <span className="min-w-0 flex-1 leading-snug">{item.label}</span>
+                                ) : null}
+                              </NavLink>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </nav>
         <div className={`mt-auto hidden border-t border-border p-3 md:block ${desktopCollapsed ? 'px-2' : ''}`}>
@@ -149,16 +221,6 @@ export function AppLayout() {
           </button>
         </header>
         <main className="flex-1 p-4 md:p-8">
-          {desktopCollapsed ? (
-            <button
-              type="button"
-              onClick={toggleDesktopSidebar}
-              className="mb-3 hidden items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted hover:bg-surface-raised md:inline-flex"
-            >
-              <PanelLeftOpen className="size-4" aria-hidden />
-              Show menu
-            </button>
-          ) : null}
           <div className="mx-auto max-w-7xl">
             <Outlet />
           </div>

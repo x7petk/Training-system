@@ -9,6 +9,7 @@ import { AdminPage } from './pages/AdminPage'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { MySkillsPage } from './pages/MySkillsPage'
+import { ReportPage } from './pages/ReportPage'
 import { RegisterPage } from './pages/RegisterPage'
 
 export default function App() {
@@ -28,6 +29,14 @@ export default function App() {
               element={
                 <StaffRoute>
                   <DashboardPage />
+                </StaffRoute>
+              }
+            />
+            <Route
+              path="report"
+              element={
+                <StaffRoute>
+                  <ReportPage />
                 </StaffRoute>
               }
             />

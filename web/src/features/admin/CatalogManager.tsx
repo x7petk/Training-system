@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Layers, ListChecks, Pencil, Plus, Tag, Trash2, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import type { CatalogManagerSection } from './adminNavConfig'
 
 type SkillKind = 'numeric' | 'certification'
 
@@ -28,7 +29,7 @@ type RoleForm = { name: string; sort_order: string }
 const inputClass =
   'w-full rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2'
 
-export function CatalogManager() {
+export function CatalogManager({ activeSection }: { activeSection: CatalogManagerSection }) {
   const groupDialogRef = useRef<HTMLDialogElement>(null)
   const skillDialogRef = useRef<HTMLDialogElement>(null)
   const roleDialogRef = useRef<HTMLDialogElement>(null)
@@ -395,7 +396,7 @@ export function CatalogManager() {
   const showGlobalError = error && !groupDialogOpen && !skillDialogOpen && !roleDialogOpen
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {showGlobalError ? (
         <p className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
           {error}
@@ -403,6 +404,7 @@ export function CatalogManager() {
       ) : null}
 
       {/* Skill groups */}
+      {activeSection === 'skill-groups' ? (
       <section className="rounded-2xl border border-border bg-surface-raised/40 backdrop-blur-sm">
         <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
@@ -467,8 +469,10 @@ export function CatalogManager() {
           )}
         </div>
       </section>
+      ) : null}
 
       {/* Skills */}
+      {activeSection === 'skills' ? (
       <section className="rounded-2xl border border-border bg-surface-raised/40 backdrop-blur-sm">
         <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
@@ -541,8 +545,10 @@ export function CatalogManager() {
           )}
         </div>
       </section>
+      ) : null}
 
       {/* Job roles */}
+      {activeSection === 'job-roles' ? (
       <section className="rounded-2xl border border-border bg-surface-raised/40 backdrop-blur-sm">
         <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
@@ -607,8 +613,10 @@ export function CatalogManager() {
           )}
         </div>
       </section>
+      ) : null}
 
       {/* Requirements */}
+      {activeSection === 'role-requirements' ? (
       <section className="rounded-2xl border border-border bg-surface-raised/40 backdrop-blur-sm">
         <div className="flex flex-col gap-3 border-b border-border px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
@@ -753,6 +761,7 @@ export function CatalogManager() {
           </>
         )}
       </section>
+      ) : null}
 
       {/* Dialog: skill group */}
       <dialog
