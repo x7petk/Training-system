@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BookOpenCheck, Check, ChevronDown, ChevronRight, Pencil, UserCircle } from 'lucide-react'
+import { BookOpenCheck, Check, ChevronDown, ChevronRight, Pencil, UserCircle, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { addDays, compareYMD, localYMD, startOfDay } from '../lib/dueDateUtils'
 import { useAuth } from '../hooks/useAuth'
 import {
   MatrixCellEditor,
@@ -38,12 +39,17 @@ type SkillRaw = {
 
 type TeamEmbed = { name: string } | { name: string }[] | null
 
+type PersonRoleEmbed = {
+  role_id: string
+  roles?: { name: string } | { name: string }[] | null
+}
+
 type PersonRow = {
   id: string
   display_name: string
   team_id: string | null
   teams: TeamEmbed
-  person_roles: { role_id: string }[] | null
+  person_roles: PersonRoleEmbed[] | null
 }
 
 function teamNameFromEmbed(teams: TeamEmbed): string {
@@ -56,6 +62,10 @@ function roleNameFromEmbed(
 ): string {
   if (!v) return ''
   return Array.isArray(v) ? (v[0]?.name ?? '') : v.name
+}
+
+function jobRoleLabelFromPersonRole(pr: PersonRoleEmbed): string {
+  return roleNameFromEmbed(pr.roles) || 'Role'
 }
 
 type RsrRaw = { role_id: string; skill_id: string; required_level: number }
@@ -211,6 +221,35 @@ const TRAINING_STANDARD_IMG_BUCKET = 'skill-training-standard-images'
 
 type GapFilterValue = 'all' | GapKind
 
+type MySkillsDueQuickFilter =
+  | { kind: 'none' }
+  | { kind: 'tile'; id: 'overdue' | 'next7' | 'next30' | 'noTarget' }
+
+function rowMatchesDueQuickFilter(
+  row: SkillRowModel,
+  f: MySkillsDueQuickFilter,
+  todayStr: string,
+  today: Date,
+): boolean {
+  if (f.kind === 'none') return true
+  const d = row.dueDate?.trim() || ''
+  const hasDue = d.length > 0
+
+  if (f.id === 'overdue') return hasDue && compareYMD(d, todayStr) < 0
+  if (f.id === 'next7') {
+    const end = localYMD(addDays(today, 6))
+    return hasDue && compareYMD(d, todayStr) >= 0 && compareYMD(d, end) <= 0
+  }
+  if (f.id === 'next30') {
+    const end = localYMD(addDays(today, 29))
+    return hasDue && compareYMD(d, todayStr) >= 0 && compareYMD(d, end) <= 0
+  }
+  if (f.id === 'noTarget') {
+    return !hasDue && (row.gap === 'critical' || row.gap === 'minor')
+  }
+  return true
+}
+
 export function MySkillsPage() {
   const { user, isAdmin, isAssessor, isOperator } = useAuth()
   const readOnly = isOperator
@@ -234,6 +273,10 @@ export function MySkillsPage() {
   const [assessorSkillInfo, setAssessorSkillInfo] = useState<{ skillName: string; required: number } | null>(null)
   const [editorCtx, setEditorCtx] = useState<CellEditorContext | null>(null)
   const [gapFilter, setGapFilter] = useState<GapFilterValue>('all')
+  const [dueQuickFilter, setDueQuickFilter] = useState<MySkillsDueQuickFilter>({ kind: 'none' })
+  const [skillGroupFilter, setSkillGroupFilter] = useState('')
+  const [teamFilter, setTeamFilter] = useState('')
+  const [jobRoleFilter, setJobRoleFilter] = useState('')
 
   const bumpData = useCallback(() => setDataVersion((v) => v + 1), [])
 
@@ -263,7 +306,7 @@ export function MySkillsPage() {
 
         const { data: linked, error: linkErr } = await supabase
           .from('people')
-          .select('id, display_name, team_id, teams(name), person_roles(role_id)')
+          .select('id, display_name, team_id, teams(name), person_roles(role_id, roles(name))')
           .eq('user_id', user.id)
           .maybeSingle()
 
@@ -281,7 +324,7 @@ export function MySkillsPage() {
         if (canManageAnyPerson) {
           const { data: plist, error: pe } = await supabase
             .from('people')
-            .select('id, display_name, team_id, teams(name), person_roles(role_id)')
+            .select('id, display_name, team_id, teams(name), person_roles(role_id, roles(name))')
             .order('display_name')
           if (cancelled) return
           if (pe) {
@@ -350,7 +393,7 @@ export function MySkillsPage() {
     async function loadPersonSkills(pid: string, cancel: boolean) {
       const { data: pRow, error: pErr } = await supabase
         .from('people')
-        .select('id, display_name, team_id, teams(name), person_roles(role_id)')
+        .select('id, display_name, team_id, teams(name), person_roles(role_id, roles(name))')
         .eq('id', pid)
         .single()
 
@@ -547,6 +590,125 @@ export function MySkillsPage() {
     return optionalRows.filter((r) => r.gap === gapFilter)
   }, [optionalRows, gapFilter])
 
+  const filteredPeopleForSelect = useMemo(() => {
+    return peopleOptions.filter((p) => {
+      const tn = teamNameFromEmbed(p.teams)
+      if (teamFilter === '__none__') {
+        if (tn) return false
+      } else if (teamFilter) {
+        if (tn !== teamFilter) return false
+      }
+      if (jobRoleFilter && !(p.person_roles ?? []).some((x) => x.role_id === jobRoleFilter)) return false
+      return true
+    })
+  }, [peopleOptions, teamFilter, jobRoleFilter])
+
+  const teamNameOptions = useMemo(() => {
+    const named = new Set<string>()
+    let hasNoTeam = false
+    for (const p of peopleOptions) {
+      const t = teamNameFromEmbed(p.teams)
+      if (!t) hasNoTeam = true
+      else named.add(t)
+    }
+    return { names: [...named].sort((a, b) => a.localeCompare(b)), hasNoTeam }
+  }, [peopleOptions])
+
+  const jobRoleSelectOptions = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of peopleOptions) {
+      for (const pr of p.person_roles ?? []) {
+        if (!m.has(pr.role_id)) m.set(pr.role_id, jobRoleLabelFromPersonRole(pr))
+      }
+    }
+    return [...m.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [peopleOptions])
+
+  const skillGroupOptions = useMemo(() => {
+    const s = new Set<string>()
+    for (const sk of skillsRaw) {
+      s.add(groupName(sk).trim() || 'Skills')
+    }
+    return [...s].sort((a, b) => a.localeCompare(b))
+  }, [skillsRaw])
+
+  useEffect(() => {
+    if (!canManageAnyPerson) return
+    if (filteredPeopleForSelect.length === 0) return
+    if (selectedPersonId && filteredPeopleForSelect.some((p) => p.id === selectedPersonId)) return
+    const nextId = filteredPeopleForSelect[0].id
+    queueMicrotask(() => setSelectedPersonId(nextId))
+  }, [canManageAnyPerson, teamFilter, jobRoleFilter, filteredPeopleForSelect, selectedPersonId])
+
+  const groupFilteredRequired = useMemo(() => {
+    if (!skillGroupFilter) return filteredRequiredRows
+    return filteredRequiredRows.filter((r) => r.groupLabel === skillGroupFilter)
+  }, [filteredRequiredRows, skillGroupFilter])
+
+  const groupFilteredOptional = useMemo(() => {
+    if (!skillGroupFilter) return filteredOptionalRows
+    return filteredOptionalRows.filter((r) => r.groupLabel === skillGroupFilter)
+  }, [filteredOptionalRows, skillGroupFilter])
+
+  const today = useMemo(() => startOfDay(new Date()), [])
+  const todayStr = localYMD(today)
+
+  const allTrackedRows = useMemo(() => [...requiredRows, ...optionalRows], [requiredRows, optionalRows])
+
+  const mySkillsDueCounts = useMemo(() => {
+    const withDue = allTrackedRows.filter((r) => {
+      const d = r.dueDate?.trim() ?? ''
+      return d.length > 0
+    })
+    const overdue = withDue.filter((r) => compareYMD(r.dueDate!.trim(), todayStr) < 0)
+    const end7 = localYMD(addDays(today, 6))
+    const next7 = withDue.filter((r) => {
+      const d = r.dueDate!.trim()
+      return compareYMD(d, todayStr) >= 0 && compareYMD(d, end7) <= 0
+    })
+    const end30 = localYMD(addDays(today, 29))
+    const next30 = withDue.filter((r) => {
+      const d = r.dueDate!.trim()
+      return compareYMD(d, todayStr) >= 0 && compareYMD(d, end30) <= 0
+    })
+    const noTarget = allTrackedRows.filter(
+      (r) =>
+        !(r.dueDate?.trim()) &&
+        (r.gap === 'critical' || r.gap === 'minor'),
+    )
+    return {
+      overdue: overdue.length,
+      next7: next7.length,
+      next30: next30.length,
+      noTarget: noTarget.length,
+    }
+  }, [allTrackedRows, today, todayStr])
+
+  const displayRequiredRows = useMemo(() => {
+    if (dueQuickFilter.kind === 'none') return groupFilteredRequired
+    return groupFilteredRequired.filter((r) => rowMatchesDueQuickFilter(r, dueQuickFilter, todayStr, today))
+  }, [groupFilteredRequired, dueQuickFilter, todayStr, today])
+
+  const displayOptionalRows = useMemo(() => {
+    if (dueQuickFilter.kind === 'none') return groupFilteredOptional
+    return groupFilteredOptional.filter((r) => rowMatchesDueQuickFilter(r, dueQuickFilter, todayStr, today))
+  }, [groupFilteredOptional, dueQuickFilter, todayStr, today])
+
+  function toggleDueTile(id: 'overdue' | 'next7' | 'next30' | 'noTarget') {
+    setDueQuickFilter((prev) => {
+      if (prev.kind === 'tile' && prev.id === id) return { kind: 'none' }
+      return { kind: 'tile', id }
+    })
+  }
+
+  function compactTileClass(n: number) {
+    return n > 0
+      ? 'border-rose-200/90 bg-rose-50/90 text-rose-950 ring-1 ring-rose-200/70'
+      : 'border-emerald-200/90 bg-emerald-50/90 text-emerald-950 ring-1 ring-emerald-200/70'
+  }
+
   const packBySkill = useMemo(() => {
     const m = new Map<string, TrainingPackRaw>()
     for (const p of trainingPacks) m.set(p.skill_id, p)
@@ -647,22 +809,20 @@ export function MySkillsPage() {
         <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">My skills</h1>
       </header>
 
-      {canManageAnyPerson && peopleOptions.length > 0 ? (
+      {canManageAnyPerson && peopleOptions.length > 0 && loading && !person ? (
         <section
           aria-label="Person filter"
           className="rounded-xl border border-border bg-surface-raised/50 px-2.5 py-2 shadow-sm backdrop-blur-sm"
         >
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
-            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted sm:w-[4.5rem] sm:pt-0.5">
-              Person
-            </span>
+          <div className="flex flex-row flex-wrap items-center gap-2">
+            <span className="w-14 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted">Person</span>
             <select
               className={selectFilterClass}
               value={selectedPersonId ?? ''}
               onChange={(e) => setSelectedPersonId(e.target.value || null)}
               aria-label="View skills for person"
             >
-              {peopleOptions.map((p) => {
+              {filteredPeopleForSelect.map((p) => {
                 const tn = teamNameFromEmbed(p.teams)
                 return (
                   <option key={p.id} value={p.id}>
@@ -729,36 +889,188 @@ export function MySkillsPage() {
       ) : person ? (
         <>
           <section
-            aria-label="Gap filter"
+            aria-label="Person, roster, and skill filters"
             className="rounded-xl border border-border bg-surface-raised/50 px-2.5 py-2 shadow-sm backdrop-blur-sm"
           >
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted sm:w-[4.5rem] sm:pt-0.5">
-                Gap
-              </span>
-              <select
-                className={selectFilterClass}
-                value={gapFilter}
-                onChange={(e) => setGapFilter(e.target.value as GapFilterValue)}
-                aria-label="Filter skills by gap"
+            <div className="flex flex-row flex-wrap items-center gap-x-3 gap-y-2">
+              {canManageAnyPerson && peopleOptions.length > 0 ? (
+                <div className="flex min-w-0 max-w-full flex-1 basis-[min(100%,20rem)] items-center gap-2">
+                  <span className="w-12 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted">Person</span>
+                  <select
+                    className={selectFilterClass}
+                    value={selectedPersonId ?? ''}
+                    onChange={(e) => setSelectedPersonId(e.target.value || null)}
+                    aria-label="View skills for person"
+                  >
+                    {filteredPeopleForSelect.map((p) => {
+                      const tn = teamNameFromEmbed(p.teams)
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {tn ? `${p.display_name} · ${tn}` : p.display_name}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
+              ) : null}
+              {canManageAnyPerson && peopleOptions.length > 0 ? (
+                <div className="flex min-w-0 max-w-full flex-1 basis-[min(100%,16rem)] items-center gap-2">
+                  <span className="w-12 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted">Team</span>
+                  <select
+                    className={selectFilterClass}
+                    value={teamFilter}
+                    onChange={(e) => setTeamFilter(e.target.value)}
+                    aria-label="Filter roster by team"
+                  >
+                    <option value="">All teams</option>
+                    {teamNameOptions.hasNoTeam ? <option value="__none__">No team</option> : null}
+                    {teamNameOptions.names.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+              {canManageAnyPerson && peopleOptions.length > 0 ? (
+                <div className="flex min-w-0 max-w-full flex-1 basis-[min(100%,16rem)] items-center gap-2">
+                  <span className="w-12 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted" title="Job role">
+                    Role
+                  </span>
+                  <select
+                    className={selectFilterClass}
+                    value={jobRoleFilter}
+                    onChange={(e) => setJobRoleFilter(e.target.value)}
+                    aria-label="Filter roster by job role"
+                  >
+                    <option value="">All roles</option>
+                    {jobRoleSelectOptions.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+              <div className="flex min-w-0 max-w-full flex-1 basis-[min(100%,18rem)] items-center gap-2">
+                <span className="w-12 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted">Gap</span>
+                <select
+                  className={selectFilterClass}
+                  value={gapFilter}
+                  onChange={(e) => setGapFilter(e.target.value as GapFilterValue)}
+                  aria-label="Filter skills by gap"
+                >
+                  <option value="all">All ({totalSkillRows})</option>
+                  {GAP_FILTER_ORDER.map((k) => (
+                    <option key={k} value={k}>
+                      {gapKindLegendLabel(k)} ({gapCounts[k]})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex min-w-0 max-w-full flex-1 basis-[min(100%,16rem)] items-center gap-2">
+                <span className="w-12 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted">Group</span>
+                <select
+                  className={selectFilterClass}
+                  value={skillGroupFilter}
+                  onChange={(e) => setSkillGroupFilter(e.target.value)}
+                  aria-label="Filter skills by group"
+                >
+                  <option value="">All groups</option>
+                  {skillGroupOptions.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section
+            aria-label="Target date summary"
+            className="rounded-lg border border-border bg-surface-raised/50 px-2 py-2 shadow-sm backdrop-blur-sm"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Targets</p>
+              {dueQuickFilter.kind !== 'none' ? (
+                <button
+                  type="button"
+                  onClick={() => setDueQuickFilter({ kind: 'none' })}
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-2 py-0.5 text-[10px] font-medium text-muted hover:text-fg"
+                >
+                  <X className="size-3" aria-hidden />
+                  Clear target filter
+                </button>
+              ) : null}
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              <button
+                type="button"
+                onClick={() => toggleDueTile('overdue')}
+                aria-pressed={dueQuickFilter.kind === 'tile' && dueQuickFilter.id === 'overdue'}
+                className={`rounded-lg border px-2 py-1.5 text-left transition-[box-shadow] ${compactTileClass(mySkillsDueCounts.overdue)} ${
+                  dueQuickFilter.kind === 'tile' && dueQuickFilter.id === 'overdue'
+                    ? 'ring-2 ring-sky-600 ring-offset-1 ring-offset-canvas'
+                    : ''
+                }`}
               >
-                <option value="all">All ({totalSkillRows})</option>
-                {GAP_FILTER_ORDER.map((k) => (
-                  <option key={k} value={k}>
-                    {gapKindLegendLabel(k)} ({gapCounts[k]})
-                  </option>
-                ))}
-              </select>
+                <p className="text-[9px] font-semibold uppercase tracking-wide opacity-85">Overdue</p>
+                <p className="font-display text-lg font-semibold tabular-nums leading-tight">{mySkillsDueCounts.overdue}</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleDueTile('next7')}
+                aria-pressed={dueQuickFilter.kind === 'tile' && dueQuickFilter.id === 'next7'}
+                className={`rounded-lg border px-2 py-1.5 text-left ${compactTileClass(mySkillsDueCounts.next7)} ${
+                  dueQuickFilter.kind === 'tile' && dueQuickFilter.id === 'next7'
+                    ? 'ring-2 ring-sky-600 ring-offset-1 ring-offset-canvas'
+                    : ''
+                }`}
+              >
+                <p className="text-[9px] font-semibold uppercase tracking-wide opacity-85">Next 7 days</p>
+                <p className="font-display text-lg font-semibold tabular-nums leading-tight">{mySkillsDueCounts.next7}</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleDueTile('next30')}
+                aria-pressed={dueQuickFilter.kind === 'tile' && dueQuickFilter.id === 'next30'}
+                className={`rounded-lg border px-2 py-1.5 text-left ${compactTileClass(mySkillsDueCounts.next30)} ${
+                  dueQuickFilter.kind === 'tile' && dueQuickFilter.id === 'next30'
+                    ? 'ring-2 ring-sky-600 ring-offset-1 ring-offset-canvas'
+                    : ''
+                }`}
+              >
+                <p className="text-[9px] font-semibold uppercase tracking-wide opacity-85">Next 30 days</p>
+                <p className="font-display text-lg font-semibold tabular-nums leading-tight">{mySkillsDueCounts.next30}</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleDueTile('noTarget')}
+                aria-pressed={dueQuickFilter.kind === 'tile' && dueQuickFilter.id === 'noTarget'}
+                className={`rounded-lg border px-2 py-1.5 text-left ${compactTileClass(mySkillsDueCounts.noTarget)} ${
+                  dueQuickFilter.kind === 'tile' && dueQuickFilter.id === 'noTarget'
+                    ? 'ring-2 ring-sky-600 ring-offset-1 ring-offset-canvas'
+                    : ''
+                }`}
+              >
+                <p className="text-[9px] font-semibold uppercase tracking-wide opacity-85">No target date</p>
+                <p className="font-display text-lg font-semibold tabular-nums leading-tight">{mySkillsDueCounts.noTarget}</p>
+              </button>
             </div>
           </section>
 
           <SkillSection
             title="Required for your roles"
-            rows={filteredRequiredRows}
+            rows={displayRequiredRows}
             empty={
-              gapFilter === 'all'
-                ? 'Nothing required for this person’s current job roles.'
-                : `No required skills in “${gapKindLegendLabel(gapFilter)}”.`
+              dueQuickFilter.kind !== 'none'
+                ? 'No required skills match this target filter (and current gap filter).'
+                : skillGroupFilter
+                  ? `No required skills in group “${skillGroupFilter}” for this view.`
+                  : gapFilter === 'all'
+                    ? 'Nothing required for this person’s current job roles.'
+                    : `No required skills in “${gapKindLegendLabel(gapFilter)}”.`
             }
             onEdit={openEditor}
             requiredLabel={requiredLabel}
@@ -776,11 +1088,15 @@ export function MySkillsPage() {
 
           <SkillSection
             title="Extra skills tracked"
-            rows={filteredOptionalRows}
+            rows={displayOptionalRows}
             empty={
-              gapFilter === 'all'
-                ? 'No optional skills recorded yet.'
-                : `No extra skills in “${gapKindLegendLabel(gapFilter)}”.`
+              dueQuickFilter.kind !== 'none'
+                ? 'No extra skills match this target filter (and current gap filter).'
+                : skillGroupFilter
+                  ? `No extra skills in group “${skillGroupFilter}” for this view.`
+                  : gapFilter === 'all'
+                    ? 'No optional skills recorded yet.'
+                    : `No extra skills in “${gapKindLegendLabel(gapFilter)}”.`
             }
             onEdit={openEditor}
             requiredLabel={requiredLabel}

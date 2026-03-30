@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BarChart3 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { addDays, compareYMD, localYMD, startOfDay } from '../lib/dueDateUtils'
 import { classifyCell, type SkillKind } from '../features/matrix/gapLogic'
 
 type PsRow = {
@@ -36,29 +37,6 @@ function skillKind(r: PsRow): SkillKind {
 
 function personRoleIds(r: PsRow): string[] {
   return (asSingle(r.people)?.person_roles ?? []).map((x) => x.role_id)
-}
-
-function localYMD(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-function addDays(d: Date, n: number): Date {
-  const x = new Date(d)
-  x.setDate(x.getDate() + n)
-  return x
-}
-
-function startOfDay(d: Date): Date {
-  const x = new Date(d)
-  x.setHours(0, 0, 0, 0)
-  return x
-}
-
-function compareYMD(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0
 }
 
 type ChartMode = 'weeks' | 'months'
