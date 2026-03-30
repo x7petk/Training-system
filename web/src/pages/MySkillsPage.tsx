@@ -575,11 +575,27 @@ export function MySkillsPage() {
   }, [requiredRows, optionalRows, packBySkill, questionsBySkill])
 
   const needsAssessorRows = useMemo(
-    () => requiredRows.filter((r) => r.kind === 'numeric' && r.actual === 2 && (r.required === 3 || r.required === 4)),
+    () =>
+      requiredRows.filter((r) => {
+        if (r.kind === 'numeric' && r.actual === 2 && (r.required === 3 || r.required === 4)) return true
+        if (
+          r.kind === 'certification' &&
+          r.required != null &&
+          r.required >= 1 &&
+          (r.actual == null || r.actual < 1)
+        )
+          return true
+        return false
+      }),
     [requiredRows],
   )
   const optionalAssessorRows = useMemo(
-    () => optionalRows.filter((r) => r.kind === 'numeric' && r.actual === 2),
+    () =>
+      optionalRows.filter((r) => {
+        if (r.kind === 'numeric' && r.actual === 2) return true
+        if (r.kind === 'certification' && (r.actual == null || r.actual < 1)) return true
+        return false
+      }),
     [optionalRows],
   )
 
