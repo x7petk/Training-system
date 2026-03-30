@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BookOpenCheck, Check, Pencil, UserCircle } from 'lucide-react'
+import { BookOpenCheck, Check, ChevronDown, ChevronRight, Pencil, UserCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import {
@@ -151,6 +151,43 @@ function gapLabel(k: GapKind): string {
     default:
       return 'N/A'
   }
+}
+
+function groupRowsByGroupLabel(rows: SkillRowModel[]): { label: string; rows: SkillRowModel[] }[] {
+  const order: string[] = []
+  const map = new Map<string, SkillRowModel[]>()
+  for (const row of rows) {
+    const label = row.groupLabel?.trim() || 'Skills'
+    if (!map.has(label)) {
+      order.push(label)
+      map.set(label, [])
+    }
+    map.get(label)!.push(row)
+  }
+  return order.map((label) => ({ label, rows: map.get(label)! }))
+}
+
+function summarizeSkillGroup(rows: SkillRowModel[]) {
+  let level1 = 0
+  let level2 = 0
+  let level3 = 0
+  let level4 = 0
+  let certYes = 0
+  let certNo = 0
+  let withGap = 0
+  for (const r of rows) {
+    if (r.kind === 'numeric') {
+      if (r.actual === 1) level1 += 1
+      else if (r.actual === 2) level2 += 1
+      else if (r.actual === 3) level3 += 1
+      else if (r.actual === 4) level4 += 1
+    } else {
+      if (r.actual != null && r.actual >= 1) certYes += 1
+      else certNo += 1
+    }
+    if (r.gap === 'critical' || r.gap === 'minor') withGap += 1
+  }
+  return { level1, level2, level3, level4, certYes, certNo, withGap }
 }
 
 type SkillRowModel = {
@@ -867,6 +904,101 @@ function SkillSection(props: {
     onShowAssessors,
   } = props
 
+  const grouped = useMemo(() => groupRowsByGroupLabel(rows), [rows])
+  const sectionKey = title
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+
+  function groupKey(label: string) {
+    return `${sectionKey}::${label}`
+  }
+
+  function toggleGroup(label: string) {
+    const k = groupKey(label)
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(k)) next.delete(k)
+      else next.add(k)
+      return next
+    })
+  }
+
+  function renderSkillRow(row: SkillRowModel) {
+    return (
+      <tr key={row.skillId} className="border-b border-border/60 bg-surface last:border-b-0">
+        <th
+          scope="row"
+          className="sticky left-0 z-[1] max-w-[14rem] bg-surface px-2 py-1.5 align-middle font-normal shadow-[2px_0_6px_-4px_rgba(0,0,0,0.12)] sm:max-w-[18rem] sm:px-2.5"
+        >
+          <div className="truncate font-medium text-fg" title={row.skillName}>
+            {row.skillName}
+          </div>
+          {row.groupLabel ? (
+            <div className="truncate text-[10px] leading-tight text-muted" title={row.groupLabel}>
+              {row.groupLabel}
+            </div>
+          ) : null}
+        </th>
+        <td className="whitespace-nowrap px-2 py-1.5 text-right align-middle font-mono text-xs font-semibold tabular-nums text-fg sm:px-2.5">
+          {requiredLabel(row.kind, row.required)}
+        </td>
+        <td className="whitespace-nowrap px-2 py-1.5 text-right align-middle font-mono text-xs font-semibold tabular-nums text-fg sm:px-2.5">
+          {formatLevel(row.kind, row.actual)}
+        </td>
+        <td className="whitespace-nowrap px-2 py-1.5 text-right align-middle font-mono text-xs font-semibold tabular-nums text-fg sm:px-2.5">
+          {row.dueDate ?? '—'}
+        </td>
+        <td className="px-2 py-1.5 align-middle sm:px-2.5">
+          <span
+            className={`inline-flex max-w-full rounded-full px-2 py-0.5 text-[10px] font-semibold leading-tight ${gapKindClasses(row.gap)}`}
+          >
+            {gapLabel(row.gap)}
+          </span>
+        </td>
+        <td className="whitespace-nowrap px-2 py-1.5 text-right align-middle sm:px-2.5">
+          <div className="flex flex-wrap items-center justify-end gap-1">
+            {trainingEligibleIds && onStartTraining && trainingEligibleIds.has(row.skillId) ? (
+              <button
+                type="button"
+                onClick={() => onStartTraining(row)}
+                className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-300/80 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-950 hover:bg-sky-100/90"
+              >
+                <BookOpenCheck className="size-3 text-sky-700" aria-hidden />
+                Training
+              </button>
+            ) : null}
+            {assessorNeededIds && onShowAssessors && assessorNeededIds.has(row.skillId) ? (
+              <button
+                type="button"
+                onClick={() => onShowAssessors(row)}
+                className="inline-flex items-center justify-center gap-1 rounded-md border border-violet-300/80 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-950 hover:bg-violet-100/90"
+              >
+                Show assessors
+              </button>
+            ) : null}
+            {readOnly ? null : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect()
+                  onEdit(row, {
+                    top: r.top,
+                    left: r.left,
+                    width: r.width,
+                    height: r.height,
+                  })
+                }}
+                className="inline-flex items-center justify-center gap-1 rounded-md border border-border bg-surface-raised px-2 py-1 text-[11px] font-medium text-fg hover:border-border-strong"
+              >
+                <Pencil className="size-3 text-muted" aria-hidden />
+                Edit
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+    )
+  }
+
   return (
     <section className="rounded-xl border border-border bg-surface-raised/40 backdrop-blur-sm">
       <div className="border-b border-border px-2.5 py-2 sm:px-3">
@@ -918,82 +1050,46 @@ function SkillSection(props: {
                   </th>
                 </tr>
               </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.skillId} className="border-b border-border/60 bg-surface last:border-b-0">
-                    <th
-                      scope="row"
-                      className="sticky left-0 z-[1] max-w-[14rem] bg-surface px-2 py-1.5 align-middle font-normal shadow-[2px_0_6px_-4px_rgba(0,0,0,0.12)] sm:max-w-[18rem] sm:px-2.5"
-                    >
-                      <div className="truncate font-medium text-fg" title={row.skillName}>
-                        {row.skillName}
-                      </div>
-                      {row.groupLabel ? (
-                        <div className="truncate text-[10px] leading-tight text-muted" title={row.groupLabel}>
-                          {row.groupLabel}
-                        </div>
-                      ) : null}
-                    </th>
-                    <td className="whitespace-nowrap px-2 py-1.5 text-right align-middle font-mono text-xs font-semibold tabular-nums text-fg sm:px-2.5">
-                      {requiredLabel(row.kind, row.required)}
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-1.5 text-right align-middle font-mono text-xs font-semibold tabular-nums text-fg sm:px-2.5">
-                      {formatLevel(row.kind, row.actual)}
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-1.5 text-right align-middle font-mono text-xs font-semibold tabular-nums text-fg sm:px-2.5">
-                      {row.dueDate ?? '—'}
-                    </td>
-                    <td className="px-2 py-1.5 align-middle sm:px-2.5">
-                      <span
-                        className={`inline-flex max-w-full rounded-full px-2 py-0.5 text-[10px] font-semibold leading-tight ${gapKindClasses(row.gap)}`}
-                      >
-                        {gapLabel(row.gap)}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-1.5 text-right align-middle sm:px-2.5">
-                      <div className="flex flex-wrap items-center justify-end gap-1">
-                        {trainingEligibleIds && onStartTraining && trainingEligibleIds.has(row.skillId) ? (
-                          <button
-                            type="button"
-                            onClick={() => onStartTraining(row)}
-                            className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-300/80 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-950 hover:bg-sky-100/90"
-                          >
-                            <BookOpenCheck className="size-3 text-sky-700" aria-hidden />
-                            Training
-                          </button>
-                        ) : null}
-                        {assessorNeededIds && onShowAssessors && assessorNeededIds.has(row.skillId) ? (
-                          <button
-                            type="button"
-                            onClick={() => onShowAssessors(row)}
-                            className="inline-flex items-center justify-center gap-1 rounded-md border border-violet-300/80 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-950 hover:bg-violet-100/90"
-                          >
-                            Show assessors
-                          </button>
-                        ) : null}
-                        {readOnly ? null : (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              const r = e.currentTarget.getBoundingClientRect()
-                              onEdit(row, {
-                                top: r.top,
-                                left: r.left,
-                                width: r.width,
-                                height: r.height,
-                              })
-                            }}
-                            className="inline-flex items-center justify-center gap-1 rounded-md border border-border bg-surface-raised px-2 py-1 text-[11px] font-medium text-fg hover:border-border-strong"
-                          >
-                            <Pencil className="size-3 text-muted" aria-hidden />
-                            Edit
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+              {grouped.map(({ label: groupLabel, rows: groupRows }) => {
+                const collapsed = collapsedGroups.has(groupKey(groupLabel))
+                const s = summarizeSkillGroup(groupRows)
+                const summaryText = [
+                  `Level 1: ${s.level1}`,
+                  `Level 2: ${s.level2}`,
+                  `Level 3: ${s.level3}`,
+                  `Level 4: ${s.level4}`,
+                  `Yes: ${s.certYes} · No: ${s.certNo}`,
+                  `Gaps: ${s.withGap}`,
+                ].join(' · ')
+                return (
+                  <tbody key={groupKey(groupLabel)}>
+                    <tr className="border-b border-border/80 bg-black/[0.03] dark:bg-white/[0.04]">
+                      <td colSpan={6} className="px-2 py-2 sm:px-2.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(groupLabel)}
+                          className="flex w-full min-w-0 items-start gap-2 rounded-lg px-1 py-0.5 text-left hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                          aria-expanded={!collapsed}
+                          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${groupLabel} skill group`}
+                        >
+                          <span className="mt-0.5 shrink-0 text-muted" aria-hidden>
+                            {collapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-xs font-semibold text-fg">{groupLabel}</span>
+                            {collapsed ? (
+                              <span className="mt-1 block text-[11px] leading-snug text-muted">{summaryText}</span>
+                            ) : (
+                              <span className="mt-1 block text-[10px] text-muted">{groupRows.length} skills</span>
+                            )}
+                          </span>
+                        </button>
+                      </td>
+                    </tr>
+                    {collapsed ? null : groupRows.map((row) => renderSkillRow(row))}
+                  </tbody>
+                )
+              })}
             </table>
           </div>
         )}
