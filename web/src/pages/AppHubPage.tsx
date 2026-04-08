@@ -13,6 +13,7 @@ export function AppHubPage() {
     canAccessSkillMatrix,
     canAccessLdrTools,
     canAccessRttSystems,
+    profileLoadError,
   } = useAuth()
   const navigate = useNavigate()
 
@@ -42,6 +43,16 @@ export function AppHubPage() {
           Open the tools you have access to. Ask an administrator if something is missing.
         </p>
       </header>
+
+      {profileLoadError ? (
+        <div
+          className="mx-auto max-w-2xl rounded-xl border border-danger/35 bg-danger/10 px-4 py-3 text-center text-sm text-danger"
+          role="alert"
+        >
+          <p className="font-medium">Could not load your account permissions</p>
+          <p className="mt-1 text-balance text-danger/90">{profileLoadError}</p>
+        </div>
+      ) : null}
 
       {!anyApp ? (
         <p className="mx-auto max-w-md text-center text-sm text-muted">

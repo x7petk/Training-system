@@ -1,12 +1,45 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { Session, User } from '@supabase/supabase-js'
+import type { PostgrestError, Session, User } from '@supabase/supabase-js'
 import { AuthContext, type AppProfileRole } from './auth-context'
 import { supabase, supabaseConfigured } from '../lib/supabase'
+
+const PROFILE_SECTION_SELECT =
+  'role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems' as const
+
+type ProfileSectionRow = {
+  role: string | null
+  can_access_skill_matrix: boolean | null
+  can_access_ldr_tools: boolean | null
+  can_access_rtt_systems: boolean | null
+}
 
 function normalizeProfileRole(raw: string | undefined | null): AppProfileRole {
   if (raw === 'super_admin' || raw === 'admin' || raw === 'assessor' || raw === 'operator') return raw
   if (raw === 'user') return 'operator'
   return 'operator'
+}
+
+/** PostgREST / Postgres when `can_access_*` columns are not migrated yet. */
+function isMissingSectionColumnsError(error: PostgrestError | null): boolean {
+  if (!error) return false
+  const code = String((error as { code?: string }).code ?? '')
+  if (code === '42703') return true
+  const m = error.message.toLowerCase()
+  return m.includes('column') && m.includes('does not exist')
+}
+
+/** Same rules as migration backfill when section flags are unavailable. */
+function inferSectionFlagsFromRole(role: AppProfileRole): {
+  matrix: boolean
+  ldr: boolean
+  rtt: boolean
+} {
+  const isAdm = role === 'admin' || role === 'super_admin'
+  return {
+    matrix: isAdm || role === 'assessor' || role === 'operator',
+    ldr: isAdm,
+    rtt: isAdm,
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -17,6 +50,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [canAccessSkillMatrix, setCanAccessSkillMatrix] = useState(false)
   const [canAccessLdrTools, setCanAccessLdrTools] = useState(false)
   const [canAccessRttSystems, setCanAccessRttSystems] = useState(false)
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null)
+
+  const applyProfileRow = useCallback((data: ProfileSectionRow) => {
+    setProfileRole(normalizeProfileRole(data.role))
+    setCanAccessSkillMatrix(Boolean(data.can_access_skill_matrix))
+    setCanAccessLdrTools(Boolean(data.can_access_ldr_tools))
+    setCanAccessRttSystems(Boolean(data.can_access_rtt_systems))
+    setProfileLoadError(null)
+  }, [])
+
+  const applyOperatorFallback = useCallback((errorMessage: string | null) => {
+    setProfileRole('operator')
+    setCanAccessSkillMatrix(false)
+    setCanAccessLdrTools(false)
+    setCanAccessRttSystems(false)
+    setProfileLoadError(errorMessage)
+  }, [])
+
+  const loadProfileForUser = useCallback(
+    async (userId: string, cancelled: () => boolean) => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select(PROFILE_SECTION_SELECT)
+          .eq('id', userId)
+          .maybeSingle()
+
+        if (cancelled()) return
+
+        if (!error && data) {
+          applyProfileRow(data as ProfileSectionRow)
+          return
+        }
+
+        if (error && isMissingSectionColumnsError(error)) {
+          const { data: legacy, error: legacyErr } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', userId)
+            .maybeSingle()
+          if (cancelled()) return
+          if (legacyErr || !legacy) {
+            console.warn('[profiles] legacy role fetch', legacyErr?.message)
+            applyOperatorFallback(legacyErr?.message ?? 'Could not load your profile.')
+            return
+          }
+          const role = normalizeProfileRole(legacy.role)
+          const inferred = inferSectionFlagsFromRole(role)
+          setProfileRole(role)
+          setCanAccessSkillMatrix(inferred.matrix)
+          setCanAccessLdrTools(inferred.ldr)
+          setCanAccessRttSystems(inferred.rtt)
+          setProfileLoadError(null)
+          return
+        }
+
+        if (error) {
+          console.warn('[profiles]', error.message)
+          applyOperatorFallback(error.message)
+          return
+        }
+
+        applyOperatorFallback('No profile row found for this account.')
+      } catch (e) {
+        if (cancelled()) return
+        const msg = e instanceof Error ? e.message : 'Network error'
+        console.warn('[profiles]', msg)
+        applyOperatorFallback(msg)
+      }
+    },
+    [applyOperatorFallback, applyProfileRow],
+  )
 
   useEffect(() => {
     if (!supabaseConfigured) {
@@ -33,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCanAccessSkillMatrix(false)
         setCanAccessLdrTools(false)
         setCanAccessRttSystems(false)
+        setProfileLoadError(null)
       }
     })
 
@@ -46,6 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCanAccessSkillMatrix(false)
         setCanAccessLdrTools(false)
         setCanAccessRttSystems(false)
+        setProfileLoadError(null)
       }
     })
 
@@ -58,38 +165,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false
-    void (async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems')
-        .eq('id', user.id)
-        .maybeSingle()
-      if (cancelled) return
-      if (error) {
-        console.warn('[profiles]', error.message)
-        setProfileRole('operator')
-        setCanAccessSkillMatrix(false)
-        setCanAccessLdrTools(false)
-        setCanAccessRttSystems(false)
-        return
-      }
-      if (!data) {
-        setProfileRole('operator')
-        setCanAccessSkillMatrix(false)
-        setCanAccessLdrTools(false)
-        setCanAccessRttSystems(false)
-        return
-      }
-      setProfileRole(normalizeProfileRole(data.role))
-      setCanAccessSkillMatrix(Boolean(data.can_access_skill_matrix))
-      setCanAccessLdrTools(Boolean(data.can_access_ldr_tools))
-      setCanAccessRttSystems(Boolean(data.can_access_rtt_systems))
-    })()
+    const isCancelled = () => cancelled
+    void loadProfileForUser(user.id, isCancelled)
 
     return () => {
       cancelled = true
     }
-  }, [user, session])
+  }, [user, loadProfileForUser])
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!supabaseConfigured) {
@@ -126,27 +208,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: sessionData } = await supabase.auth.getSession()
     const uid = sessionData.session?.user?.id
     if (!uid) return
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems')
-      .eq('id', uid)
-      .maybeSingle()
-    if (error) {
-      console.warn('[profiles refresh]', error.message)
-      return
-    }
-    if (!data) {
-      setProfileRole('operator')
-      setCanAccessSkillMatrix(false)
-      setCanAccessLdrTools(false)
-      setCanAccessRttSystems(false)
-      return
-    }
-    setProfileRole(normalizeProfileRole(data.role))
-    setCanAccessSkillMatrix(Boolean(data.can_access_skill_matrix))
-    setCanAccessLdrTools(Boolean(data.can_access_ldr_tools))
-    setCanAccessRttSystems(Boolean(data.can_access_rtt_systems))
-  }, [])
+    await loadProfileForUser(uid, () => false)
+  }, [loadProfileForUser])
 
   const isSuperAdmin = profileRole === 'super_admin'
   const isAdmin = profileRole === 'admin' || profileRole === 'super_admin'
@@ -170,6 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canAccessRttSystems,
       profileReady,
       adminLoading,
+      profileLoadError,
       signIn,
       signUp,
       signOut,
@@ -189,6 +253,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canAccessRttSystems,
       profileReady,
       adminLoading,
+      profileLoadError,
       signIn,
       signUp,
       signOut,

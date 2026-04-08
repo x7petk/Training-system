@@ -2,8 +2,10 @@
 /**
  * One-shot Supabase setup (remote project `uhwbvwlneenvkldccehq`).
  *
- * 1) Auth URLs (localhost) — needs Personal Access Token only:
+ * 1) Auth URLs (localhost + optional production) — needs Personal Access Token only:
  *    export SUPABASE_ACCESS_TOKEN="..."   # Dashboard → Account → Access Tokens
+ *    Optional: PRODUCTION_SITE_URL=https://your-app.vercel.app
+ *    (adds that URL to the redirect allow list and sets site_url when set — keeps localhost in the allow list too)
  *
  * 2) Apply SQL migration — needs token + database password:
  *    export SUPABASE_DB_PASSWORD="..."    # Project Settings → Database
@@ -97,6 +99,13 @@ async function patchAuthUrls() {
   allow.add('http://localhost:5173')
   allow.add('http://127.0.0.1:5173')
 
+  const prodSite = process.env.PRODUCTION_SITE_URL?.trim()
+  if (prodSite) {
+    allow.add(prodSite.replace(/\/$/, ''))
+  }
+
+  const siteUrl = prodSite ? prodSite.replace(/\/$/, '') : 'http://localhost:5173'
+
   const patch = await fetch(`${API}/projects/${PROJECT_REF}/config/auth`, {
     method: 'PATCH',
     headers: {
@@ -104,7 +113,7 @@ async function patchAuthUrls() {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      site_url: 'http://localhost:5173',
+      site_url: siteUrl,
       uri_allow_list: [...allow].join('\n'),
     }),
   })
@@ -112,7 +121,11 @@ async function patchAuthUrls() {
   if (!patch.ok) {
     throw new Error(`PATCH /config/auth failed ${patch.status}: ${patchBody}`)
   }
-  console.log('OK: Auth URL configuration (site_url + redirect allow list for localhost:5173).')
+  console.log(
+    prodSite
+      ? `OK: Auth URLs — site_url=${siteUrl}; allow list includes localhost + production.`
+      : 'OK: Auth URL configuration (site_url + redirect allow list for localhost:5173).',
+  )
 }
 
 function linkProject() {

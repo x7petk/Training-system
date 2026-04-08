@@ -10,9 +10,11 @@ export function SetupBanner() {
       <div>
         <p className="font-medium text-amber-950">Supabase env vars missing</p>
         <p className="mt-1 text-amber-900/90">
-          Copy <code className="rounded bg-amber-100/90 px-1.5 py-0.5 font-mono text-xs text-amber-950">web/.env.example</code> to{' '}
-          <code className="rounded bg-amber-100/90 px-1.5 py-0.5 font-mono text-xs text-amber-950">web/.env.local</code> and add your
-          project URL and anon key.
+          For local dev: copy <code className="rounded bg-amber-100/90 px-1.5 py-0.5 font-mono text-xs text-amber-950">web/.env.example</code> to{' '}
+          <code className="rounded bg-amber-100/90 px-1.5 py-0.5 font-mono text-xs text-amber-950">web/.env.local</code> and set{' '}
+          <code className="rounded bg-amber-100/90 px-1.5 py-0.5 font-mono text-xs text-amber-950">VITE_SUPABASE_URL</code> and{' '}
+          <code className="rounded bg-amber-100/90 px-1.5 py-0.5 font-mono text-xs text-amber-950">VITE_SUPABASE_ANON_KEY</code>.
+          On Vercel, add the same two variables under Project → Settings → Environment Variables (Production), then redeploy.
         </p>
       </div>
     </div>

@@ -20,6 +20,8 @@ export type AuthContextValue = {
   /** False while logged in but `profiles.role` has not been loaded yet (avoids wrong redirects on refresh). */
   profileReady: boolean
   adminLoading: boolean
+  /** Set when the profiles row could not be loaded (network, RLS, etc.). Empty after a successful load. */
+  profileLoadError: string | null
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signUp: (
     email: string,
