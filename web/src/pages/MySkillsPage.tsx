@@ -867,14 +867,34 @@ export function MySkillsPage() {
           <div>
             <h2 className="font-display text-lg font-semibold">No person record linked</h2>
             <p className="mt-2 max-w-lg text-sm text-muted">
-              Your account is not linked to anyone on the skill matrix yet. An admin can add you in{' '}
-              <strong className="text-fg/90">Admin → People</strong> and attach your login.
+              Your login is not connected to a row on the <strong className="text-fg/90">People</strong> roster yet.
+              My skills reads your skills from that roster row via the <strong className="text-fg/90">Link to login
+              account</strong> field.
             </p>
+            <p className="mt-2 max-w-lg text-sm text-muted">
+              An <strong className="text-fg/90">admin</strong> should open{' '}
+              <strong className="text-fg/90">Skill Matrix → Admin → People</strong>, add or edit your person, and set{' '}
+              <strong className="text-fg/90">Link to login account</strong> to your user (each login can link to at
+              most one person).
+            </p>
+            <p className="mt-3">
+              <Link to="/" className="text-sm font-medium text-accent underline-offset-2 hover:underline">
+                Back to all apps
+              </Link>
+            </p>
+            {isOperator ? (
+              <p className="mt-3 max-w-lg text-xs text-muted">
+                Your app role is <strong className="text-fg/80">operator</strong>, so the sidebar only shows{' '}
+                <strong className="text-fg/80">My skills</strong> (no Matrix, Dashboard, or Report). An admin can
+                change your role under <strong className="text-fg/90">Hub → Login accounts</strong> if you need wider
+                access.
+              </p>
+            ) : null}
             {isAdmin ? (
               <p className="mt-2 text-sm text-accent">
                 You’re an admin — open{' '}
                 <Link to="/admin?tab=people" className="underline underline-offset-2">
-                  Admin
+                  Admin → People
                 </Link>{' '}
                 to create or link your person row (you can still use the person selector above once others exist).
               </p>
