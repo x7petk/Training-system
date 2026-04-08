@@ -1,7 +1,6 @@
 import { Suspense, lazy } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Shield } from 'lucide-react'
-import { AccountsSummary } from '../features/admin/AccountsSummary'
 import { CatalogManager } from '../features/admin/CatalogManager'
 import { ADMIN_NAV_FLAT, isCatalogSection, parseAdminTab } from '../features/admin/adminNavConfig'
 import { PeopleRoster } from '../features/admin/PeopleRoster'
@@ -27,7 +26,8 @@ export function AdminPage() {
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Admin</h1>
           <p className="mt-1 max-w-2xl text-sm text-muted">
             Use the <strong className="text-fg/90">Admin</strong> section in the sidebar to pick a settings category.
-            Assessors use the matrix; operators only see <strong className="text-fg/90">My skills</strong>.
+            Login accounts live under <strong className="text-fg/90">Login accounts</strong> on the app hub.
+            Assessors use the matrix; operators use <strong className="text-fg/90">My skills</strong> when enabled.
           </p>
         </div>
       </header>
@@ -48,7 +48,6 @@ export function AdminPage() {
 
         {active === 'teams' ? <TeamsManager /> : null}
         {active === 'people' ? <PeopleRoster /> : null}
-        {active === 'accounts' ? <AccountsSummary /> : null}
       </div>
     </div>
   )

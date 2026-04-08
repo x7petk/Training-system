@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   BarChart3,
   BookOpenText,
@@ -36,8 +36,9 @@ function adminSubNavClass(active: boolean, collapsed: boolean) {
   ].join(' ')
 }
 
-export function AppLayout() {
-  const { signOut, isAdmin, isOperator, adminLoading, user } = useAuth()
+/** Sidebar + shell for Skill Matrix app (matrix, dashboard, report, my-skills, admin). */
+export function SkillMatrixLayout() {
+  const { signOut, isAdmin, isOperator, profileReady, user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
@@ -47,6 +48,8 @@ export function AppLayout() {
   const [desktopCollapsed, setDesktopCollapsed] = useState(
     () => typeof window !== 'undefined' && window.localStorage.getItem(DESKTOP_SIDEBAR_KEY) === '1',
   )
+
+  const brandTo = isAdmin ? '/' : isOperator ? '/my-skills' : '/matrix'
 
   function toggleDesktopSidebar() {
     setDesktopCollapsed((prev) => {
@@ -64,33 +67,37 @@ export function AppLayout() {
         }`}
       >
         <div
-          className={`flex h-14 items-center border-b border-border px-4 md:h-16 ${
-            desktopCollapsed ? 'justify-center px-2' : 'gap-2'
+          className={`flex h-14 items-center border-b border-border md:h-16 ${
+            desktopCollapsed ? 'px-2' : 'pl-4 pr-2'
           }`}
         >
-          <span className="flex size-9 items-center justify-center rounded-lg bg-accent-dim text-accent">
-            <Sparkles className="size-4" aria-hidden />
-          </span>
-          {!desktopCollapsed ? (
-            <div className="min-w-0">
-              <p className="truncate font-display text-sm font-semibold tracking-tight">Skill Matrix</p>
-              <p className="truncate text-xs text-muted">Capability hub</p>
-            </div>
-          ) : null}
+          <Link
+            to={brandTo}
+            className={`flex min-w-0 flex-1 items-center no-underline ${desktopCollapsed ? 'justify-center' : 'gap-2'}`}
+            title={isAdmin ? 'All apps' : 'Home'}
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-dim text-accent">
+              <Sparkles className="size-4" aria-hidden />
+            </span>
+            {!desktopCollapsed ? (
+              <div className="min-w-0">
+                <p className="truncate font-display text-sm font-semibold tracking-tight text-fg">Skill Matrix</p>
+                <p className="truncate text-xs text-muted">Capability hub</p>
+              </div>
+            ) : null}
+          </Link>
           <button
             type="button"
             onClick={toggleDesktopSidebar}
-            className={`ml-auto hidden rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg md:block ${
-              desktopCollapsed ? 'ml-0' : ''
-            }`}
+            className="hidden shrink-0 rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg md:block"
             aria-label={desktopCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             title={desktopCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             {desktopCollapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
           </button>
         </div>
-        <nav className="flex gap-1 p-2 md:flex-col" aria-label="Main">
-          {!adminLoading && !isOperator ? (
+        <nav className="flex gap-1 p-2 md:flex-col" aria-label="Skill Matrix">
+          {profileReady && !isOperator ? (
             <>
               <NavLink
                 to="/dashboard"
@@ -118,10 +125,9 @@ export function AppLayout() {
             <UserCircle className="size-4 shrink-0 opacity-80" aria-hidden />
             {!desktopCollapsed ? 'My skills' : null}
           </NavLink>
-          {!adminLoading && !isOperator ? (
+          {profileReady && !isOperator ? (
             <NavLink
-              to="/"
-              end
+              to="/matrix"
               className={navClass(desktopCollapsed)}
               title={desktopCollapsed ? 'Matrix' : undefined}
             >

@@ -6,20 +6,31 @@ import type { AppProfileRole } from '../../contexts/auth-context'
 
 type ProfileRow = { id: string; display_name: string | null; role: string }
 
-const ROLE_OPTIONS: { value: AppProfileRole; label: string }[] = [
+/** Roles assignable from this UI (never promote to super_admin here). */
+const ASSIGNABLE_ROLES: { value: Exclude<AppProfileRole, 'super_admin'>; label: string }[] = [
   { value: 'operator', label: 'Operator (read-only)' },
   { value: 'assessor', label: 'Assessor (edit scores)' },
   { value: 'admin', label: 'Admin (full)' },
 ]
 
+function roleDisplayLabel(role: string): string {
+  if (role === 'super_admin') return 'Super admin'
+  if (role === 'admin') return 'Admin'
+  if (role === 'assessor') return 'Assessor'
+  if (role === 'operator') return 'Operator'
+  return role
+}
+
 function roleBadgeClass(role: string): string {
+  if (role === 'super_admin')
+    return 'rounded-lg border border-border-strong bg-violet-500/12 px-2.5 py-1 text-xs font-semibold text-fg'
   if (role === 'admin') return 'rounded-lg bg-accent-dim px-2 py-0.5 text-xs font-medium text-accent'
   if (role === 'assessor') return 'rounded-lg bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-900'
   return 'rounded-lg bg-zinc-100 px-2 py-0.5 text-xs text-muted'
 }
 
 export function AccountsSummary() {
-  const { user } = useAuth()
+  const { user, isSuperAdmin } = useAuth()
   const [rows, setRows] = useState<ProfileRow[]>([])
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -30,9 +41,9 @@ export function AccountsSummary() {
       .from('profiles')
       .select('id, display_name, role')
       .order('display_name', { ascending: true })
-      .then(({ data, error }) => {
-        if (!error && data) setRows(data as ProfileRow[])
-        return error
+      .then(({ data, error: err }) => {
+        if (!err && data) setRows(data as ProfileRow[])
+        return err
       })
   }, [])
 
@@ -67,8 +78,9 @@ export function AccountsSummary() {
         <div>
           <h2 className="font-display text-lg font-semibold tracking-tight">Login accounts</h2>
           <p className="text-xs text-muted">
-            Set <strong className="text-fg/90">app access</strong>: operator (My skills read-only), assessor (matrix
-            scoring), admin (includes this page). Separate from job roles on people.
+            App roles: operator, assessor, admin. Which <strong className="text-fg/90">hub sections</strong> each login
+            sees is managed on the <strong className="text-fg/90">Section access</strong> tab (super admin only). Job roles
+            on people stay under Skill Matrix → Admin → People.
           </p>
         </div>
       </div>
@@ -83,42 +95,87 @@ export function AccountsSummary() {
         ) : rows.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-muted">No profiles yet.</p>
         ) : (
-          <table className="w-full min-w-[520px] text-left text-sm">
+          <table className="w-full min-w-[640px] table-fixed border-collapse text-left text-sm">
+            <colgroup>
+              <col className="w-[28%]" />
+              <col className="w-[36%]" />
+              <col className="w-[36%]" />
+            </colgroup>
             <thead className="border-b border-border text-xs font-medium uppercase tracking-wider text-muted">
               <tr>
-                <th className="px-4 py-3">Display name</th>
-                <th className="px-4 py-3">App access</th>
-                <th className="px-4 py-3 font-mono text-[11px]">User id</th>
+                <th className="px-4 py-3 align-bottom">Display name</th>
+                <th className="px-4 py-3 align-bottom">App access</th>
+                <th className="px-4 py-3 align-bottom text-right font-mono normal-case tracking-normal">
+                  User id
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-black/[0.04]">
-                  <td className="px-4 py-3 font-medium text-fg">{r.display_name?.trim() || '—'}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                      <span className={roleBadgeClass(r.role)}>{r.role}</span>
-                      <select
-                        aria-label={`App role for ${r.display_name ?? r.id}`}
-                        disabled={savingId === r.id}
-                        value={ROLE_OPTIONS.some((o) => o.value === r.role) ? r.role : 'operator'}
-                        onChange={(e) => void setAccountRole(r.id, e.target.value as AppProfileRole)}
-                        className="max-w-[14rem] rounded-lg border border-border bg-canvas px-2 py-1.5 text-xs outline-none ring-accent/30 focus:border-accent/50 focus:ring-2 disabled:opacity-50"
-                      >
-                        {ROLE_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
-                      {r.id === user?.id ? (
-                        <span className="text-[11px] text-muted">You</span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-[11px] text-muted">{r.id}</td>
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const isSuperRow = r.role === 'super_admin'
+                const lockedForNonSuper = isSuperRow && !isSuperAdmin
+
+                const selectClass =
+                  'min-w-[12rem] max-w-full shrink-0 rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-fg outline-none ring-accent/30 focus:border-accent/50 focus:ring-2 disabled:opacity-50'
+
+                return (
+                  <tr key={r.id} className="hover:bg-black/[0.04]">
+                    <td className="align-middle px-4 py-3 font-medium text-fg">
+                      <span className="line-clamp-2 break-words">{r.display_name?.trim() || '—'}</span>
+                    </td>
+                    <td className="align-middle px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <span className={roleBadgeClass(r.role)}>{roleDisplayLabel(r.role)}</span>
+                        {lockedForNonSuper ? (
+                          <span className="text-[11px] font-medium text-fg/80">Managed by super admin</span>
+                        ) : isSuperRow && isSuperAdmin ? (
+                          <select
+                            aria-label={`App role for ${r.display_name ?? r.id}`}
+                            disabled={savingId === r.id}
+                            value="super_admin"
+                            onChange={(e) => void setAccountRole(r.id, e.target.value as AppProfileRole)}
+                            className={selectClass}
+                          >
+                            <option value="super_admin">Super admin</option>
+                            {ASSIGNABLE_ROLES.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label} (demote)
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <select
+                            aria-label={`App role for ${r.display_name ?? r.id}`}
+                            disabled={savingId === r.id}
+                            value={
+                              ASSIGNABLE_ROLES.some((o) => o.value === r.role) ? r.role : 'operator'
+                            }
+                            onChange={(e) =>
+                              void setAccountRole(r.id, e.target.value as AppProfileRole)
+                            }
+                            className={selectClass}
+                          >
+                            {ASSIGNABLE_ROLES.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {r.id === user?.id ? (
+                          <span className="text-[11px] font-medium text-fg/70">You</span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td
+                      className="align-middle px-4 py-3 text-right font-mono text-[11px] leading-snug text-muted"
+                      title={r.id}
+                    >
+                      <span className="inline-block w-full break-all">{r.id}</span>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

@@ -2,7 +2,6 @@ import type { ComponentType } from 'react'
 import {
   BookOpen,
   Briefcase,
-  KeyRound,
   Layers,
   ListChecks,
   Tag,
@@ -12,12 +11,7 @@ import {
 
 export type CatalogManagerSection = 'skill-groups' | 'skills' | 'job-roles' | 'role-requirements'
 
-export type AdminNavId =
-  | CatalogManagerSection
-  | 'skill-training'
-  | 'teams'
-  | 'people'
-  | 'accounts'
+export type AdminNavId = CatalogManagerSection | 'skill-training' | 'teams' | 'people'
 
 export type AdminNavItem = {
   id: AdminNavId
@@ -52,17 +46,6 @@ export const ADMIN_NAV_GROUPS: { heading: string; items: AdminNavItem[] }[] = [
     items: [
       { id: 'teams', label: 'Teams', hint: 'Shifts & cells', icon: UsersRound },
       { id: 'people', label: 'People', hint: 'Roster & roles', icon: UserCircle },
-    ],
-  },
-  {
-    heading: 'Access',
-    items: [
-      {
-        id: 'accounts',
-        label: 'Login accounts',
-        hint: 'Operator / assessor / admin',
-        icon: KeyRound,
-      },
     ],
   },
 ]

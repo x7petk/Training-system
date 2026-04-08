@@ -4,7 +4,7 @@ import { AuthContext, type AppProfileRole } from './auth-context'
 import { supabase, supabaseConfigured } from '../lib/supabase'
 
 function normalizeProfileRole(raw: string | undefined | null): AppProfileRole {
-  if (raw === 'admin' || raw === 'assessor' || raw === 'operator') return raw
+  if (raw === 'super_admin' || raw === 'admin' || raw === 'assessor' || raw === 'operator') return raw
   if (raw === 'user') return 'operator'
   return 'operator'
 }
@@ -14,7 +14,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(supabaseConfigured)
   const [profileRole, setProfileRole] = useState<AppProfileRole | null>(null)
-  const [adminLoading, setAdminLoading] = useState(false)
+  const [canAccessSkillMatrix, setCanAccessSkillMatrix] = useState(false)
+  const [canAccessLdrTools, setCanAccessLdrTools] = useState(false)
+  const [canAccessRttSystems, setCanAccessRttSystems] = useState(false)
 
   useEffect(() => {
     if (!supabaseConfigured) {
@@ -28,7 +30,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       if (!nextUser) {
         setProfileRole(null)
-        setAdminLoading(false)
+        setCanAccessSkillMatrix(false)
+        setCanAccessLdrTools(false)
+        setCanAccessRttSystems(false)
       }
     })
 
@@ -39,7 +43,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       if (!nextUser) {
         setProfileRole(null)
-        setAdminLoading(false)
+        setCanAccessSkillMatrix(false)
+        setCanAccessLdrTools(false)
+        setCanAccessRttSystems(false)
       }
     })
 
@@ -53,20 +59,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false
     void (async () => {
-      setAdminLoading(true)
       const { data, error } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems')
         .eq('id', user.id)
         .maybeSingle()
       if (cancelled) return
       if (error) {
         console.warn('[profiles]', error.message)
         setProfileRole('operator')
-      } else {
-        setProfileRole(normalizeProfileRole(data?.role))
+        setCanAccessSkillMatrix(false)
+        setCanAccessLdrTools(false)
+        setCanAccessRttSystems(false)
+        return
       }
-      setAdminLoading(false)
+      if (!data) {
+        setProfileRole('operator')
+        setCanAccessSkillMatrix(false)
+        setCanAccessLdrTools(false)
+        setCanAccessRttSystems(false)
+        return
+      }
+      setProfileRole(normalizeProfileRole(data.role))
+      setCanAccessSkillMatrix(Boolean(data.can_access_skill_matrix))
+      setCanAccessLdrTools(Boolean(data.can_access_ldr_tools))
+      setCanAccessRttSystems(Boolean(data.can_access_rtt_systems))
     })()
 
     return () => {
@@ -104,9 +121,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
   }, [])
 
-  const isAdmin = profileRole === 'admin'
+  const refreshProfile = useCallback(async () => {
+    if (!supabaseConfigured) return
+    const { data: sessionData } = await supabase.auth.getSession()
+    const uid = sessionData.session?.user?.id
+    if (!uid) return
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems')
+      .eq('id', uid)
+      .maybeSingle()
+    if (error) {
+      console.warn('[profiles refresh]', error.message)
+      return
+    }
+    if (!data) {
+      setProfileRole('operator')
+      setCanAccessSkillMatrix(false)
+      setCanAccessLdrTools(false)
+      setCanAccessRttSystems(false)
+      return
+    }
+    setProfileRole(normalizeProfileRole(data.role))
+    setCanAccessSkillMatrix(Boolean(data.can_access_skill_matrix))
+    setCanAccessLdrTools(Boolean(data.can_access_ldr_tools))
+    setCanAccessRttSystems(Boolean(data.can_access_rtt_systems))
+  }, [])
+
+  const isSuperAdmin = profileRole === 'super_admin'
+  const isAdmin = profileRole === 'admin' || profileRole === 'super_admin'
   const isAssessor = profileRole === 'assessor'
   const isOperator = profileRole === 'operator'
+  const profileReady = user == null || profileRole != null
+  const adminLoading = Boolean(user) && profileRole === null
 
   const value = useMemo(
     () => ({
@@ -115,14 +162,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       profileRole,
       isAdmin,
+      isSuperAdmin,
       isAssessor,
       isOperator,
+      canAccessSkillMatrix,
+      canAccessLdrTools,
+      canAccessRttSystems,
+      profileReady,
       adminLoading,
       signIn,
       signUp,
       signOut,
+      refreshProfile,
     }),
-    [user, session, loading, profileRole, isAdmin, isAssessor, isOperator, adminLoading, signIn, signUp, signOut],
+    [
+      user,
+      session,
+      loading,
+      profileRole,
+      isAdmin,
+      isSuperAdmin,
+      isAssessor,
+      isOperator,
+      canAccessSkillMatrix,
+      canAccessLdrTools,
+      canAccessRttSystems,
+      profileReady,
+      adminLoading,
+      signIn,
+      signUp,
+      signOut,
+      refreshProfile,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -48,7 +48,7 @@ function groupName(s: SkillRaw): string {
 }
 
 export function MatrixPage() {
-  const { user, isAdmin, isAssessor, isOperator, adminLoading } = useAuth()
+  const { user, isAdmin, isAssessor, isOperator, profileReady } = useAuth()
   const [myPersonId, setMyPersonId] = useState<string | null>(null)
   const [dataVersion, setDataVersion] = useState(0)
   const [skillsRaw, setSkillsRaw] = useState<SkillRaw[]>([])
@@ -308,7 +308,7 @@ export function MatrixPage() {
   const searchShellClass =
     'flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-border bg-canvas/90 px-2 py-0.5'
 
-  if (!adminLoading && isOperator) {
+  if (profileReady && isOperator) {
     return <Navigate to="/my-skills" replace />
   }
 
