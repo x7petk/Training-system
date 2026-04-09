@@ -1,5 +1,5 @@
 import { BookOpenText, CalendarDays, LayoutDashboard, Users, UsersRound } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { AppSectionLayout } from './AppSectionLayout'
 import { useAuth } from '../hooks/useAuth'
 import { LdrWorkspaceProvider } from '../features/ldr/LdrWorkspaceContext'
@@ -7,6 +7,8 @@ import { LdrScopeFilterBar } from '../features/ldr/LdrScopeFilterBar'
 
 export function LdrToolsLayout() {
   const { isAdmin, profileReady } = useAuth()
+  const location = useLocation()
+  const showScopeFilter = !location.pathname.startsWith('/ldr-tools/user-guide')
   return (
     <LdrWorkspaceProvider>
       <AppSectionLayout
@@ -14,7 +16,7 @@ export function LdrToolsLayout() {
         title="LDR tools"
         headerIconClass="bg-violet-500/15 text-violet-700 dark:text-violet-300"
         HeaderIcon={UsersRound}
-        mainTop={<LdrScopeFilterBar />}
+        mainTop={showScopeFilter ? <LdrScopeFilterBar /> : null}
         outletFallback={
           <div
             className="flex min-h-[14rem] items-center justify-center rounded-2xl border border-border bg-surface-raised/50 text-sm text-muted"
