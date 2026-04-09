@@ -31,6 +31,8 @@ type AppSectionLayoutProps = {
   navItems: SectionNavItem[]
   /** Extra nav nodes below primary items (e.g. footer links) */
   navFooter?: ReactNode
+  /** Extra account/action nodes shown under "Sign out" in desktop sidebar. */
+  accountFooter?: ReactNode
   /** Rendered above the routed outlet (e.g. global filters). */
   mainTop?: ReactNode
   /** When set, wraps `<Outlet />` in `<Suspense>` for lazy route segments. */
@@ -45,6 +47,7 @@ export function AppSectionLayout({
   HeaderIcon,
   navItems,
   navFooter,
+  accountFooter,
   mainTop,
   outletFallback,
 }: AppSectionLayoutProps) {
@@ -138,6 +141,7 @@ export function AppSectionLayout({
             <LogOut className="size-4" aria-hidden />
             {!desktopCollapsed ? 'Sign out' : null}
           </button>
+          {accountFooter ? <div className="mt-1">{accountFooter}</div> : null}
         </div>
       </aside>
 

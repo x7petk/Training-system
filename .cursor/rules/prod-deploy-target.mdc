@@ -1,0 +1,15 @@
+---
+description: Use the correct production deploy target for this repo
+alwaysApply: true
+---
+
+# Production Deploy Target Rule
+
+- This repository's production deployment target is `training-system-seven` on Vercel under scope `mikhails-projects-de0149d2`.
+- When the user asks to "commit/push and redeploy production", deploy from current `main` to this target.
+- Preferred deploy command:
+  - `npx vercel --prod --yes --scope mikhails-projects-de0149d2 --name training-system-seven`
+- After deploy, verify alias is correct for prod:
+  - `training-system-seven.vercel.app` should point to the new deployment.
+- If user reports old prod UI, check if they are using a legacy URL (for example `training-system.vercel.app`) that may belong to another/older project.
+- Report back with the production URL and inspector URL so the user can verify immediately.

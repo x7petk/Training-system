@@ -1,4 +1,5 @@
-import { CalendarDays, LayoutDashboard, Users, UsersRound } from 'lucide-react'
+import { BookOpenText, CalendarDays, LayoutDashboard, Users, UsersRound } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { AppSectionLayout } from './AppSectionLayout'
 import { useAuth } from '../hooks/useAuth'
 import { LdrWorkspaceProvider } from '../features/ldr/LdrWorkspaceContext'
@@ -30,6 +31,15 @@ export function LdrToolsLayout() {
           ? [{ to: '/ldr-tools/admin', label: 'Admin', icon: LayoutDashboard, end: true }]
           : []),
       ]}
+        accountFooter={
+          <Link
+            to="/ldr-tools/user-guide"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted transition-colors hover:bg-black/[0.06] hover:text-fg"
+          >
+            <BookOpenText className="size-4" aria-hidden />
+            User Guide
+          </Link>
+        }
       />
     </LdrWorkspaceProvider>
   )

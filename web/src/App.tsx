@@ -28,6 +28,9 @@ const LeadershipRosterPage = lazy(() =>
   import('./pages/LeadershipRosterPage').then((m) => ({ default: m.LeadershipRosterPage })),
 )
 const LdrAdminPage = lazy(() => import('./pages/LdrAdminPage').then((m) => ({ default: m.LdrAdminPage })))
+const LdrToolsUserGuidePage = lazy(() =>
+  import('./pages/LdrToolsUserGuidePage').then((m) => ({ default: m.LdrToolsUserGuidePage })),
+)
 import { RttSystemsPage } from './pages/RttSystemsPage'
 import { LoginAccountsPage } from './pages/LoginAccountsPage'
 import { SuperAdminRoute } from './components/SuperAdminRoute'
@@ -113,6 +116,7 @@ export default function App() {
             <Route index element={<Navigate to="calendar" replace />} />
             <Route path="calendar" element={<LdrCalendarPage />} />
             <Route path="roster" element={<LeadershipRosterPage />} />
+            <Route path="user-guide" element={<LdrToolsUserGuidePage />} />
             <Route
               path="admin"
               element={
