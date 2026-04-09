@@ -367,9 +367,9 @@ function CellEditorModal(props: {
   const addable = props.people.filter((p) => !assigned.has(p.id))
 
   return (
-    <dialog open className="fixed inset-0 z-50 flex max-h-none max-w-none items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[min(90vh,40rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-glow">
-        <h3 className="font-display text-lg font-semibold">{props.activityName}</h3>
+    <dialog open className="fixed inset-0 z-50 flex max-h-none max-w-none items-center justify-center bg-black/40 p-4 text-fg [color-scheme:light]">
+      <div className="max-h-[min(90vh,40rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-surface p-6 text-fg shadow-glow">
+        <h3 className="font-display text-lg font-semibold text-fg">{props.activityName}</h3>
         <p className="mt-1 text-sm text-muted">{props.date}</p>
 
         <div className="mt-4 space-y-4">
@@ -413,9 +413,9 @@ function CellEditorModal(props: {
                     e.target.value = ''
                   }
                 }}
-                className="mt-2 w-full rounded-xl border border-border bg-canvas px-3 py-2 text-sm"
+                className="mt-2 w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-fg"
               >
-                <option value="" disabled>
+                <option value="" disabled className="text-fg">
                   Select…
                 </option>
                 {addable.map((p) => (
@@ -457,7 +457,7 @@ function AssignmentRowEditor(props: {
   }, [props.row.id, props.row.comment])
 
   return (
-    <div className="rounded-xl border border-border bg-canvas/40 p-3">
+    <div className="rounded-xl border border-border bg-surface-raised p-3 text-fg shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <LdrPersonAvatar initials={props.personInitials} variant={props.personAvatarVariant} />
@@ -479,7 +479,7 @@ function AssignmentRowEditor(props: {
         <select
           value={props.row.rag_status}
           onChange={(e) => props.onUpdate(props.row.id, { rag_status: e.target.value as LdrRag })}
-          className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm"
+          className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm text-fg"
         >
           <option value="none">None</option>
           <option value="green">Green</option>
@@ -496,7 +496,7 @@ function AssignmentRowEditor(props: {
               ldr_location_id: e.target.value || null,
             })
           }
-          className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm"
+          className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm text-fg"
         >
           <option value="">No location</option>
           {props.locations.map((loc) => (
@@ -515,7 +515,7 @@ function AssignmentRowEditor(props: {
             if (comment !== props.row.comment) props.onUpdate(props.row.id, { comment })
           }}
           rows={2}
-          className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm"
+          className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm text-fg placeholder:text-muted"
         />
       </label>
     </div>

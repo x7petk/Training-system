@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import {
@@ -55,6 +55,174 @@ function buildWeekSegments(events: LdrEventRow[], weekDays: Date[]) {
     })
   }
   return { segments, laneCount: Math.max(1, lanesEnd.length) }
+}
+
+function compactDayLine(d: Date, dayIndex: number): string {
+  return `${dayLabels[dayIndex].toUpperCase()} ${d.getDate()}`
+}
+
+type WeekBoardProps = {
+  weekDays: Date[]
+  segments: WeekSegment[]
+  laneCount: number
+  dragOverYmd: string | null
+  setDragOverYmd: (ymd: string | null) => void
+  setDragCtx: (ctx: { eventId: string; grabDate: string } | null) => void
+  onDropOnDay: (ymd: string) => void
+  openCreate: (ymd: string) => void
+  openEdit: (ev: LdrEventRow, grabDate: string) => void
+  emptyMinH: string
+  lanePy: string
+  eventTitleClass: string
+}
+
+function WeekEventBoard(props: WeekBoardProps) {
+  const boardRef = useRef<HTMLDivElement>(null)
+
+  const ymdFromClientX = useCallback(
+    (clientX: number): string | null => {
+      const el = boardRef.current
+      if (!el) return null
+      const rect = el.getBoundingClientRect()
+      if (rect.width <= 0) return null
+      const x = clientX - rect.left
+      const col = Math.floor((x / rect.width) * 7)
+      const idx = Math.max(0, Math.min(6, col))
+      return toYMD(props.weekDays[idx])
+    },
+    [props.weekDays],
+  )
+
+  const handleDragOverBoard = useCallback(
+    (e: DragEvent) => {
+      e.preventDefault()
+      const ymd = ymdFromClientX(e.clientX)
+      if (ymd) props.setDragOverYmd(ymd)
+    },
+    [props, ymdFromClientX],
+  )
+
+  const handleDropAtPointer = useCallback(
+    (e: DragEvent) => {
+      e.preventDefault()
+      const ymd = ymdFromClientX(e.clientX)
+      if (ymd) props.onDropOnDay(ymd)
+    },
+    [props, ymdFromClientX],
+  )
+
+  return (
+    <div className="min-w-[720px] space-y-1">
+      <div className="grid grid-cols-7 gap-1">
+        {props.weekDays.map((d, i) => {
+          const ymd = toYMD(d)
+          return (
+            <button
+              key={ymd}
+              type="button"
+              onClick={() => props.openCreate(ymd)}
+              className="rounded-lg border border-border/60 bg-surface/80 px-1 py-1 text-center text-[11px] font-semibold uppercase tracking-tight text-fg hover:border-accent/40 hover:bg-surface"
+            >
+              {compactDayLine(d, i)}
+            </button>
+          )
+        })}
+      </div>
+
+      <div
+        ref={boardRef}
+        className={`relative rounded-2xl border border-border bg-canvas/35 p-1.5 ${
+          props.segments.length === 0 ? props.emptyMinH : 'min-h-[8.5rem]'
+        }`}
+        onDragOver={handleDragOverBoard}
+        onDrop={handleDropAtPointer}
+      >
+        <div className="pointer-events-none absolute inset-1.5 z-0 grid grid-cols-7 gap-1">
+          {props.weekDays.map((d) => {
+            const ymd = toYMD(d)
+            return (
+              <div
+                key={`drop-${ymd}`}
+                className={`pointer-events-auto min-h-full rounded-lg border border-dashed transition-colors ${
+                  props.dragOverYmd === ymd
+                    ? 'border-violet-500 bg-violet-500/15'
+                    : 'border-transparent bg-transparent hover:border-border/40'
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  props.setDragOverYmd(ymd)
+                }}
+                onDragEnter={() => props.setDragOverYmd(ymd)}
+                onDragLeave={(e) => {
+                  const related = e.relatedTarget as Node | null
+                  if (related && e.currentTarget.contains(related)) return
+                  if (props.dragOverYmd === ymd) props.setDragOverYmd(null)
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  props.onDropOnDay(ymd)
+                }}
+              />
+            )
+          })}
+        </div>
+
+        <div className="pointer-events-none relative z-[1] space-y-0.5">
+          {props.segments.length === 0 ? (
+            <div
+              className={`flex items-center justify-center rounded-xl border border-dashed border-border/50 text-muted ${props.emptyMinH}`}
+            >
+              <span className={`text-center ${props.eventTitleClass}`}>No events — click a date above to add.</span>
+            </div>
+          ) : (
+            Array.from({ length: props.laneCount }).map((_, lane) => (
+              <div key={lane} className={`grid grid-cols-7 gap-1 ${props.lanePy}`}>
+                {props.segments
+                  .filter((s) => s.lane === lane)
+                  .map((s) => (
+                    <button
+                      key={`${s.event.id}-${lane}`}
+                      type="button"
+                      draggable
+                      onDragStart={() =>
+                        props.setDragCtx({ eventId: s.event.id, grabDate: s.displayStart })
+                      }
+                      onDragEnd={() => {
+                        props.setDragCtx(null)
+                        props.setDragOverYmd(null)
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault()
+                        const ymd = ymdFromClientX(e.clientX)
+                        if (ymd) props.setDragOverYmd(ymd)
+                      }}
+                      onDrop={handleDropAtPointer}
+                      onClick={() => props.openEdit(s.event, s.displayStart)}
+                      className={`pointer-events-auto rounded-lg px-2 py-1.5 text-left font-medium text-white shadow-sm transition hover:-translate-y-0.5 hover:opacity-95 ${props.eventTitleClass}`}
+                      style={{
+                        backgroundColor: s.event.color,
+                        gridColumn: `${s.startIdx + 1} / ${s.endIdx + 2}`,
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="truncate">{s.event.title}</span>
+                        <span className="hidden shrink-0 opacity-90 sm:inline text-[10px]">
+                          {s.event.start_date === s.event.end_date
+                            ? s.event.start_date
+                            : `${s.event.start_date} → ${s.event.end_date}`}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function LdrCalendarPage() {
@@ -249,7 +417,7 @@ export function LdrCalendarPage() {
                 />
               </label>
               <p className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted">
-                Click a day to add an event. Drag event blocks to reschedule.
+                Click a date label to add. Drag events in the board below to reschedule.
               </p>
             </div>
           </div>
@@ -260,79 +428,20 @@ export function LdrCalendarPage() {
         ) : (
           <>
             <div className="overflow-x-auto p-4 md:p-6">
-              <div className="min-w-[860px] space-y-3">
-                <div className="grid grid-cols-7 gap-2">
-                  {weekDays.map((d, i) => {
-                    const ymd = toYMD(d)
-                    return (
-                      <button
-                        key={ymd}
-                        type="button"
-                        onClick={() => openCreate(ymd)}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDragEnter={() => setDragOverYmd(ymd)}
-                        onDragLeave={() => {
-                          if (dragOverYmd === ymd) setDragOverYmd(null)
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault()
-                          onDropOnDay(ymd)
-                        }}
-                        className={`rounded-xl border px-2 py-2 text-left ${
-                          dragOverYmd === ymd
-                            ? 'border-violet-500 bg-violet-500/10 ring-1 ring-violet-400/50'
-                            : 'border-border bg-surface hover:border-violet-400/40'
-                        }`}
-                      >
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">{dayLabels[i]}</p>
-                        <p className="text-lg font-semibold text-fg">{d.getDate()}</p>
-                      </button>
-                    )
-                  })}
-                </div>
-
-                <div className="rounded-2xl border border-border bg-canvas/35 p-2">
-                  {segments.length === 0 ? (
-                    <div className="flex min-h-[5rem] items-center justify-center rounded-xl border border-dashed border-border/60 text-sm text-muted">
-                      No events this week yet.
-                    </div>
-                  ) : (
-                    Array.from({ length: laneCount }).map((_, lane) => (
-                      <div key={lane} className="grid grid-cols-7 gap-2 py-1">
-                        {segments
-                          .filter((s) => s.lane === lane)
-                          .map((s) => (
-                            <button
-                              key={`${s.event.id}-${lane}`}
-                              type="button"
-                              draggable
-                              onDragStart={() => setDragCtx({ eventId: s.event.id, grabDate: s.displayStart })}
-                              onDragEnd={() => {
-                                setDragCtx(null)
-                                setDragOverYmd(null)
-                              }}
-                              onClick={() => openEdit(s.event, s.displayStart)}
-                              className="rounded-xl px-3 py-2 text-left text-xs font-medium text-white shadow-sm transition hover:-translate-y-0.5 hover:opacity-95"
-                              style={{
-                                backgroundColor: s.event.color,
-                                gridColumn: `${s.startIdx + 1} / ${s.endIdx + 2}`,
-                              }}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="truncate">{s.event.title}</span>
-                                <span className="shrink-0 text-[10px] opacity-90">
-                                  {s.event.start_date === s.event.end_date
-                                    ? s.event.start_date
-                                    : `${s.event.start_date} → ${s.event.end_date}`}
-                                </span>
-                              </div>
-                            </button>
-                          ))}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              <WeekEventBoard
+                weekDays={weekDays}
+                segments={segments}
+                laneCount={laneCount}
+                dragOverYmd={dragOverYmd}
+                setDragOverYmd={setDragOverYmd}
+                setDragCtx={setDragCtx}
+                onDropOnDay={onDropOnDay}
+                openCreate={openCreate}
+                openEdit={openEdit}
+                emptyMinH="min-h-[7rem]"
+                lanePy="py-1"
+                eventTitleClass="text-xs"
+              />
             </div>
 
             <div className="border-t border-border p-4 md:p-6">
@@ -344,74 +453,20 @@ export function LdrCalendarPage() {
                   return (
                     <div key={toYMD(ws)} className="overflow-x-auto">
                       <p className="mb-1 text-xs text-muted">{formatWeekTitle(ws)}</p>
-                      <div className="min-w-[860px] space-y-2 rounded-2xl border border-border bg-canvas/25 p-2">
-                        <div className="grid grid-cols-7 gap-2">
-                          {days.map((d, i) => {
-                            const ymd = toYMD(d)
-                            return (
-                              <button
-                                key={ymd}
-                                type="button"
-                                onClick={() => openCreate(ymd)}
-                                onDragOver={(e) => e.preventDefault()}
-                                onDragEnter={() => setDragOverYmd(ymd)}
-                                onDragLeave={() => {
-                                  if (dragOverYmd === ymd) setDragOverYmd(null)
-                                }}
-                                onDrop={(e) => {
-                                  e.preventDefault()
-                                  onDropOnDay(ymd)
-                                }}
-                                className={`rounded-xl border px-2 py-1.5 text-left ${
-                                  dragOverYmd === ymd
-                                    ? 'border-violet-500 bg-violet-500/10 ring-1 ring-violet-400/50'
-                                    : 'border-border bg-surface hover:border-violet-400/40'
-                                }`}
-                              >
-                                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                                  {dayLabels[i]}
-                                </p>
-                                <p className="text-sm font-semibold text-fg">{d.getDate()}</p>
-                              </button>
-                            )
-                          })}
-                        </div>
-                        {previewSegments.length === 0 ? (
-                          <div className="flex min-h-[3.25rem] items-center justify-center rounded-xl border border-dashed border-border/60 text-xs text-muted">
-                            No events
-                          </div>
-                        ) : (
-                          Array.from({ length: previewLaneCount }).map((_, lane) => (
-                            <div key={lane} className="grid grid-cols-7 gap-2 py-0.5">
-                              {previewSegments
-                                .filter((s) => s.lane === lane)
-                                .map((s) => (
-                                  <button
-                                    key={`${s.event.id}-${lane}`}
-                                    type="button"
-                                    draggable
-                                    onDragStart={() =>
-                                      setDragCtx({ eventId: s.event.id, grabDate: s.displayStart })
-                                    }
-                                    onDragEnd={() => {
-                                      setDragCtx(null)
-                                      setDragOverYmd(null)
-                                    }}
-                                    onClick={() => openEdit(s.event, s.displayStart)}
-                                    className="truncate rounded-lg px-2 py-1 text-left text-[10px] font-medium text-white shadow-sm"
-                                    style={{
-                                      backgroundColor: s.event.color,
-                                      gridColumn: `${s.startIdx + 1} / ${s.endIdx + 2}`,
-                                    }}
-                                    title={s.event.title}
-                                  >
-                                    {s.event.title}
-                                  </button>
-                                ))}
-                            </div>
-                          ))
-                        )}
-                      </div>
+                      <WeekEventBoard
+                        weekDays={days}
+                        segments={previewSegments}
+                        laneCount={previewLaneCount}
+                        dragOverYmd={dragOverYmd}
+                        setDragOverYmd={setDragOverYmd}
+                        setDragCtx={setDragCtx}
+                        onDropOnDay={onDropOnDay}
+                        openCreate={openCreate}
+                        openEdit={openEdit}
+                        emptyMinH="min-h-[5rem]"
+                        lanePy="py-0.5"
+                        eventTitleClass="text-[10px]"
+                      />
                     </div>
                   )
                 })}
