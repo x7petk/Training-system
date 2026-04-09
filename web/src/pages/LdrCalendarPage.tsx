@@ -3,7 +3,6 @@ import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import {
   addDays,
-  dateInRange,
   formatWeekTitle,
   parseYMD,
   startOfWeekMonday,
@@ -23,6 +22,41 @@ type WeekSegment = {
   displayStart: string
 }
 
+function buildWeekSegments(events: LdrEventRow[], weekDays: Date[]) {
+  const weekStartYmd = toYMD(weekDays[0])
+  const weekEndYmd = toYMD(weekDays[6])
+  const overlap = events
+    .filter((ev) => !(ev.end_date < weekStartYmd || ev.start_date > weekEndYmd))
+    .map((ev) => {
+      const visibleStart = ev.start_date < weekStartYmd ? weekStartYmd : ev.start_date
+      const visibleEnd = ev.end_date > weekEndYmd ? weekEndYmd : ev.end_date
+      const startIdx = weekDays.findIndex((d) => toYMD(d) === visibleStart)
+      const endIdx = weekDays.findIndex((d) => toYMD(d) === visibleEnd)
+      return { event: ev, visibleStart, startIdx, endIdx }
+    })
+    .filter((x) => x.startIdx >= 0 && x.endIdx >= 0)
+    .sort((a, b) => a.startIdx - b.startIdx || b.endIdx - a.endIdx)
+
+  const lanesEnd: number[] = []
+  const segments: WeekSegment[] = []
+  for (const x of overlap) {
+    let lane = lanesEnd.findIndex((end) => x.startIdx > end)
+    if (lane < 0) {
+      lane = lanesEnd.length
+      lanesEnd.push(-1)
+    }
+    lanesEnd[lane] = x.endIdx
+    segments.push({
+      event: x.event,
+      startIdx: x.startIdx,
+      endIdx: x.endIdx,
+      lane,
+      displayStart: x.visibleStart,
+    })
+  }
+  return { segments, laneCount: Math.max(1, lanesEnd.length) }
+}
+
 export function LdrCalendarPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()))
   const [events, setEvents] = useState<LdrEventRow[]>([])
@@ -38,7 +72,6 @@ export function LdrCalendarPage() {
 
   const weekDays = useMemo(() => weekDaysMondayFirst(weekStart), [weekStart])
   const weekStartYmd = toYMD(weekStart)
-  const weekEndYmd = toYMD(addDays(weekStart, 6))
   const loadEnd = toYMD(addDays(weekStart, 27))
 
   const load = useCallback(async () => {
@@ -143,38 +176,7 @@ export function LdrCalendarPage() {
     setDragOverYmd(null)
   }
 
-  const { segments, laneCount } = useMemo(() => {
-    const overlap = events
-      .filter((ev) => !(ev.end_date < weekStartYmd || ev.start_date > weekEndYmd))
-      .map((ev) => {
-        const visibleStart = ev.start_date < weekStartYmd ? weekStartYmd : ev.start_date
-        const visibleEnd = ev.end_date > weekEndYmd ? weekEndYmd : ev.end_date
-        const startIdx = weekDays.findIndex((d) => toYMD(d) === visibleStart)
-        const endIdx = weekDays.findIndex((d) => toYMD(d) === visibleEnd)
-        return { event: ev, visibleStart, startIdx, endIdx }
-      })
-      .filter((x) => x.startIdx >= 0 && x.endIdx >= 0)
-      .sort((a, b) => a.startIdx - b.startIdx || b.endIdx - a.endIdx)
-
-    const lanesEnd: number[] = []
-    const out: WeekSegment[] = []
-    for (const x of overlap) {
-      let lane = lanesEnd.findIndex((end) => x.startIdx > end)
-      if (lane < 0) {
-        lane = lanesEnd.length
-        lanesEnd.push(-1)
-      }
-      lanesEnd[lane] = x.endIdx
-      out.push({
-        event: x.event,
-        startIdx: x.startIdx,
-        endIdx: x.endIdx,
-        lane,
-        displayStart: x.visibleStart,
-      })
-    }
-    return { segments: out, laneCount: Math.max(1, lanesEnd.length) }
-  }, [events, weekDays, weekEndYmd, weekStartYmd])
+  const { segments, laneCount } = useMemo(() => buildWeekSegments(events, weekDays), [events, weekDays])
 
   const previewWeekStarts = [addDays(weekStart, 7), addDays(weekStart, 14), addDays(weekStart, 21)]
 
@@ -338,58 +340,77 @@ export function LdrCalendarPage() {
               <div className="mt-3 space-y-3">
                 {previewWeekStarts.map((ws) => {
                   const days = weekDaysMondayFirst(ws)
+                  const { segments: previewSegments, laneCount: previewLaneCount } = buildWeekSegments(events, days)
                   return (
                     <div key={toYMD(ws)} className="overflow-x-auto">
                       <p className="mb-1 text-xs text-muted">{formatWeekTitle(ws)}</p>
-                      <div className="grid min-w-[640px] grid-cols-7 gap-px rounded-lg bg-border ring-1 ring-border">
-                        {days.map((d) => {
-                          const ymd = toYMD(d)
-                          const dayEvents = events.filter((ev) => dateInRange(ymd, ev.start_date, ev.end_date))
-                          return (
-                            <div
-                              key={ymd}
-                              onDragOver={(e) => e.preventDefault()}
-                              onDragEnter={() => setDragOverYmd(ymd)}
-                              onDragLeave={() => {
-                                if (dragOverYmd === ymd) setDragOverYmd(null)
-                              }}
-                              onDrop={(e) => {
-                                e.preventDefault()
-                                onDropOnDay(ymd)
-                              }}
-                              className={`min-h-[4.75rem] p-1.5 ${
-                                dragOverYmd === ymd
-                                  ? 'bg-violet-500/10 ring-1 ring-inset ring-violet-400/50'
-                                  : 'bg-surface'
-                              }`}
-                            >
-                              <p className="text-center text-[10px] font-medium text-muted">{d.getDate()}</p>
-                              <div className="mt-1 space-y-1">
-                                {dayEvents.slice(0, 3).map((ev) => (
+                      <div className="min-w-[860px] space-y-2 rounded-2xl border border-border bg-canvas/25 p-2">
+                        <div className="grid grid-cols-7 gap-2">
+                          {days.map((d, i) => {
+                            const ymd = toYMD(d)
+                            return (
+                              <button
+                                key={ymd}
+                                type="button"
+                                onClick={() => openCreate(ymd)}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDragEnter={() => setDragOverYmd(ymd)}
+                                onDragLeave={() => {
+                                  if (dragOverYmd === ymd) setDragOverYmd(null)
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault()
+                                  onDropOnDay(ymd)
+                                }}
+                                className={`rounded-xl border px-2 py-1.5 text-left ${
+                                  dragOverYmd === ymd
+                                    ? 'border-violet-500 bg-violet-500/10 ring-1 ring-violet-400/50'
+                                    : 'border-border bg-surface hover:border-violet-400/40'
+                                }`}
+                              >
+                                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                                  {dayLabels[i]}
+                                </p>
+                                <p className="text-sm font-semibold text-fg">{d.getDate()}</p>
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {previewSegments.length === 0 ? (
+                          <div className="flex min-h-[3.25rem] items-center justify-center rounded-xl border border-dashed border-border/60 text-xs text-muted">
+                            No events
+                          </div>
+                        ) : (
+                          Array.from({ length: previewLaneCount }).map((_, lane) => (
+                            <div key={lane} className="grid grid-cols-7 gap-2 py-0.5">
+                              {previewSegments
+                                .filter((s) => s.lane === lane)
+                                .map((s) => (
                                   <button
-                                    key={ev.id}
+                                    key={`${s.event.id}-${lane}`}
                                     type="button"
                                     draggable
-                                    onDragStart={() => setDragCtx({ eventId: ev.id, grabDate: ymd })}
+                                    onDragStart={() =>
+                                      setDragCtx({ eventId: s.event.id, grabDate: s.displayStart })
+                                    }
                                     onDragEnd={() => {
                                       setDragCtx(null)
                                       setDragOverYmd(null)
                                     }}
-                                    onClick={() => openEdit(ev, ymd)}
-                                    className="truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium text-white"
-                                    style={{ backgroundColor: ev.color }}
-                                    title={ev.title}
+                                    onClick={() => openEdit(s.event, s.displayStart)}
+                                    className="truncate rounded-lg px-2 py-1 text-left text-[10px] font-medium text-white shadow-sm"
+                                    style={{
+                                      backgroundColor: s.event.color,
+                                      gridColumn: `${s.startIdx + 1} / ${s.endIdx + 2}`,
+                                    }}
+                                    title={s.event.title}
                                   >
-                                    {ev.title}
+                                    {s.event.title}
                                   </button>
                                 ))}
-                                {dayEvents.length > 3 ? (
-                                  <p className="text-[10px] text-muted">+{dayEvents.length - 3}</p>
-                                ) : null}
-                              </div>
                             </div>
-                          )
-                        })}
+                          ))
+                        )}
                       </div>
                     </div>
                   )

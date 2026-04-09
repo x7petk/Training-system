@@ -31,6 +31,12 @@ function shortLocationTag(p: LdrPersonRow): string {
   return n.length <= 4 ? n : n.slice(0, 4).toUpperCase()
 }
 
+function shortLocationTagFromName(name: string): string {
+  const n = name.trim()
+  if (!n) return ''
+  return n.length <= 4 ? n : n.slice(0, 4).toUpperCase()
+}
+
 function ragDotClass(r: LdrRag): string {
   if (r === 'none') return 'bg-slate-400'
   if (r === 'green') return 'bg-emerald-500'
@@ -42,6 +48,7 @@ export function LeadershipRosterPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()))
   const [activities, setActivities] = useState<LdrActivity[]>([])
   const [ldrPeople, setLdrPeople] = useState<LdrPersonRow[]>([])
+  const [locations, setLocations] = useState<{ id: string; name: string }[]>([])
   const [assignments, setAssignments] = useState<LdrAssignmentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -55,7 +62,7 @@ export function LeadershipRosterPage() {
   const load = useCallback(async () => {
     setError(null)
     setLoading(true)
-    const [actRes, peopleRes, asgRes] = await Promise.all([
+    const [actRes, peopleRes, locationsRes, asgRes] = await Promise.all([
       supabase.from('ldr_activities').select('id, name, sort_order').order('sort_order').order('name'),
       supabase
         .from('ldr_people')
@@ -64,18 +71,21 @@ export function LeadershipRosterPage() {
         )
         .order('first_name')
         .order('last_name'),
+      supabase.from('ldr_locations').select('id, name').order('sort_order').order('name'),
       supabase
         .from('ldr_assignments')
-        .select('id, ldr_person_id, activity_id, assignment_date, rag_status, comment')
+        .select('id, ldr_person_id, activity_id, assignment_date, ldr_location_id, rag_status, comment, ldr_locations(name)')
         .gte('assignment_date', weekStartStr)
         .lte('assignment_date', weekEndStr),
     ])
     if (actRes.error) setError(actRes.error.message)
     else if (peopleRes.error) setError(peopleRes.error.message)
+    else if (locationsRes.error) setError(locationsRes.error.message)
     else if (asgRes.error) setError(asgRes.error.message)
     else {
       setActivities((actRes.data ?? []) as LdrActivity[])
       setLdrPeople((peopleRes.data ?? []) as LdrPersonRow[])
+      setLocations((locationsRes.data ?? []) as { id: string; name: string }[])
       setAssignments((asgRes.data ?? []) as LdrAssignmentRow[])
     }
     setLoading(false)
@@ -113,10 +123,12 @@ export function LeadershipRosterPage() {
 
   async function addAssignment(activityId: string, date: string, ldrPersonId: string) {
     setError(null)
+    const person = ldrPeople.find((p) => p.id === ldrPersonId)
     const { error: e } = await supabase.from('ldr_assignments').insert({
       activity_id: activityId,
       assignment_date: date,
       ldr_person_id: ldrPersonId,
+      ldr_location_id: person?.location_id ?? null,
       rag_status: 'none',
       comment: '',
     })
@@ -127,7 +139,10 @@ export function LeadershipRosterPage() {
     await load()
   }
 
-  async function updateAssignment(id: string, patch: Partial<Pick<LdrAssignmentRow, 'rag_status' | 'comment'>>) {
+  async function updateAssignment(
+    id: string,
+    patch: Partial<Pick<LdrAssignmentRow, 'rag_status' | 'comment' | 'ldr_location_id'>>,
+  ) {
     setError(null)
     const { error: e } = await supabase.from('ldr_assignments').update(patch).eq('id', id)
     if (e) {
@@ -271,7 +286,12 @@ export function LeadershipRosterPage() {
                               {list.map((a) => {
                                 const lp = ldrPeople.find((p) => p.id === a.ldr_person_id)
                                 const nm = lp ? personName(lp) : '?'
-                                const locTag = lp ? shortLocationTag(lp) : ''
+                                const assignmentLocationName = ldrLocationName(a.ldr_locations)
+                                const locTag = assignmentLocationName
+                                  ? shortLocationTagFromName(assignmentLocationName)
+                                  : lp
+                                    ? shortLocationTag(lp)
+                                    : ''
                                 const c = personConflictOnDate(a.ldr_person_id, ymd)
                                 return (
                                   <span
@@ -320,6 +340,7 @@ export function LeadershipRosterPage() {
           activityName={activities.find((a) => a.id === cellModal.activityId)?.name ?? 'Activity'}
           date={cellModal.date}
           people={ldrPeople}
+          locations={locations}
           rows={assignmentsForCell(cellModal.activityId, cellModal.date)}
           onClose={() => setCellModal(null)}
           onAdd={(pid) => void addAssignment(cellModal.activityId, cellModal.date, pid)}
@@ -335,10 +356,11 @@ function CellEditorModal(props: {
   activityName: string
   date: string
   people: LdrPersonRow[]
+  locations: { id: string; name: string }[]
   rows: LdrAssignmentRow[]
   onClose: () => void
   onAdd: (ldrPersonId: string) => void
-  onUpdate: (id: string, patch: Partial<Pick<LdrAssignmentRow, 'rag_status' | 'comment'>>) => void
+  onUpdate: (id: string, patch: Partial<Pick<LdrAssignmentRow, 'rag_status' | 'comment' | 'ldr_location_id'>>) => void
   onRemove: (id: string) => void
 }) {
   const assigned = new Set(props.rows.map((r) => r.ldr_person_id))
@@ -356,12 +378,18 @@ function CellEditorModal(props: {
           ) : (
             props.rows.map((r) => {
               const p = props.people.find((x) => x.id === r.ldr_person_id)
-              const compact =
-                p != null ? `${p.initials}${shortLocationTag(p) ? ` · ${shortLocationTag(p)}` : ''}` : 'LD'
+              const assignmentLocationName = ldrLocationName(r.ldr_locations)
+              const compactLocation = assignmentLocationName
+                ? shortLocationTagFromName(assignmentLocationName)
+                : p
+                  ? shortLocationTag(p)
+                  : ''
+              const compact = p != null ? `${p.initials}${compactLocation ? ` · ${compactLocation}` : ''}` : 'LD'
               return (
                 <AssignmentRowEditor
                   key={r.id}
                   row={r}
+                  locations={props.locations}
                   personLabel={compact}
                   personFullName={p ? personName(p) : 'Person'}
                   personInitials={p?.initials ?? 'LD'}
@@ -415,11 +443,12 @@ function CellEditorModal(props: {
 
 function AssignmentRowEditor(props: {
   row: LdrAssignmentRow
+  locations: { id: string; name: string }[]
   personLabel: string
   personFullName: string
   personInitials: string
   personAvatarVariant: number
-  onUpdate: (id: string, patch: Partial<Pick<LdrAssignmentRow, 'rag_status' | 'comment'>>) => void
+  onUpdate: (id: string, patch: Partial<Pick<LdrAssignmentRow, 'rag_status' | 'comment' | 'ldr_location_id'>>) => void
   onRemove: (id: string) => void
 }) {
   const [comment, setComment] = useState(props.row.comment)
@@ -456,6 +485,25 @@ function AssignmentRowEditor(props: {
           <option value="green">Green</option>
           <option value="yellow">Yellow</option>
           <option value="red">Red</option>
+        </select>
+      </label>
+      <label className="mt-2 block text-xs font-medium uppercase tracking-wider text-muted">
+        Location
+        <select
+          value={props.row.ldr_location_id ?? ''}
+          onChange={(e) =>
+            props.onUpdate(props.row.id, {
+              ldr_location_id: e.target.value || null,
+            })
+          }
+          className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-2 text-sm"
+        >
+          <option value="">No location</option>
+          {props.locations.map((loc) => (
+            <option key={loc.id} value={loc.id}>
+              {loc.name}
+            </option>
+          ))}
         </select>
       </label>
       <label className="mt-2 block text-xs font-medium uppercase tracking-wider text-muted">

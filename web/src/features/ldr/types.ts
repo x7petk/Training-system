@@ -49,8 +49,10 @@ export type LdrAssignmentRow = {
   ldr_person_id: string
   activity_id: string
   assignment_date: string
+  ldr_location_id: string | null
   rag_status: LdrRag
   comment: string
+  ldr_locations?: { name: string } | { name: string }[] | null
 }
 
 export type LdrLocation = {

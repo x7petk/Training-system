@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { LayoutDashboard, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, LayoutDashboard, Pencil, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { LdrPersonAvatar } from '../features/ldr/LdrPersonAvatar'
 import {
@@ -377,6 +377,8 @@ function LdrAdminActivitiesPanel() {
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [editing, setEditing] = useState<LdrActivity | null>(null)
+  const [sortMode, setSortMode] = useState<'custom' | 'name_asc' | 'name_desc'>('custom')
+  const [reorderingId, setReorderingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -390,14 +392,67 @@ function LdrAdminActivitiesPanel() {
     void load()
   }, [load])
 
+  const sortedRows = useMemo(() => {
+    if (sortMode === 'custom') return rows
+    const collator = new Intl.Collator(undefined, { sensitivity: 'base' })
+    const sorted = [...rows].sort((a, b) => collator.compare(a.name, b.name))
+    return sortMode === 'name_desc' ? sorted.reverse() : sorted
+  }, [rows, sortMode])
+
   async function add() {
     setError(null)
     const n = name.trim()
     if (!n) return
-    const { error: e } = await supabase.from('ldr_activities').insert({ name: n, sort_order: rows.length })
+    const nextSortOrder = rows.reduce((max, row) => Math.max(max, row.sort_order), -1) + 1
+    const { error: e } = await supabase.from('ldr_activities').insert({ name: n, sort_order: nextSortOrder })
     if (e) setError(e.message)
     else {
       setName('')
+      await load()
+    }
+  }
+
+  async function applySortOrder() {
+    if (sortMode === 'custom') return
+    setError(null)
+    const updates = sortedRows.map((row, index) =>
+      supabase.from('ldr_activities').update({ sort_order: index }).eq('id', row.id),
+    )
+    const results = await Promise.all(updates)
+    const failed = results.find((res) => res.error)
+    if (failed?.error) {
+      setError(failed.error.message)
+      return
+    }
+    setSortMode('custom')
+    await load()
+  }
+
+  async function moveActivity(id: string, direction: -1 | 1) {
+    if (sortMode !== 'custom') {
+      setError('Switch Sort to "Custom order" to move activities manually.')
+      return
+    }
+    const index = rows.findIndex((r) => r.id === id)
+    if (index < 0) return
+    const target = index + direction
+    if (target < 0 || target >= rows.length) return
+
+    setError(null)
+    const nextRows = [...rows]
+    const [item] = nextRows.splice(index, 1)
+    nextRows.splice(target, 0, item)
+    setRows(nextRows)
+    setReorderingId(id)
+
+    const updates = nextRows.map((row, idx) =>
+      supabase.from('ldr_activities').update({ sort_order: idx }).eq('id', row.id),
+    )
+    const results = await Promise.all(updates)
+    const failed = results.find((res) => res.error)
+    setReorderingId(null)
+    if (failed?.error) {
+      setError(failed.error.message)
       await load()
     }
   }
@@ -445,11 +500,34 @@ function LdrAdminActivitiesPanel() {
           Add
         </button>
       </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <label className="text-xs font-medium uppercase tracking-wider text-muted">
+          Sort
+          <select
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as 'custom' | 'name_asc' | 'name_desc')}
+            className="ml-2 rounded-lg border border-border bg-canvas px-2 py-1.5 text-xs text-fg"
+          >
+            <option value="custom">Custom order</option>
+            <option value="name_asc">Name A-Z</option>
+            <option value="name_desc">Name Z-A</option>
+          </select>
+        </label>
+        {sortMode !== 'custom' ? (
+          <button
+            type="button"
+            onClick={() => void applySortOrder()}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-fg hover:border-accent/40"
+          >
+            Apply order to roster
+          </button>
+        ) : null}
+      </div>
       {loading ? (
         <p className="mt-6 text-sm text-muted">Loading…</p>
       ) : (
         <ul className="mt-6 divide-y divide-border">
-          {rows.map((r) => (
+          {sortedRows.map((r, idx) => (
             <li key={r.id} className="flex items-center justify-between gap-2 py-3">
               {editing?.id === r.id ? (
                 <input
@@ -461,6 +539,26 @@ function LdrAdminActivitiesPanel() {
                 <span className="font-medium text-fg">{r.name}</span>
               )}
               <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => void moveActivity(r.id, -1)}
+                  disabled={sortMode !== 'custom' || idx === 0 || reorderingId === r.id}
+                  className="rounded-lg p-2 text-muted hover:bg-black/[0.06] disabled:opacity-40"
+                  aria-label={`Move ${r.name} up`}
+                  title="Move up"
+                >
+                  <ArrowUp className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void moveActivity(r.id, 1)}
+                  disabled={sortMode !== 'custom' || idx === sortedRows.length - 1 || reorderingId === r.id}
+                  className="rounded-lg p-2 text-muted hover:bg-black/[0.06] disabled:opacity-40"
+                  aria-label={`Move ${r.name} down`}
+                  title="Move down"
+                >
+                  <ArrowDown className="size-4" />
+                </button>
                 {editing?.id === r.id ? (
                   <button
                     type="button"
