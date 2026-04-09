@@ -166,6 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false
     const isCancelled = () => cancelled
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- profile fetch updates auth state asynchronously
     void loadProfileForUser(user.id, isCancelled)
 
     return () => {

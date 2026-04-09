@@ -15,23 +15,31 @@ export type LdrSite = {
   is_active: boolean
 }
 
+export type LdrMasterCellJoin = {
+  name: string
+  master_plants?: { name: string } | { name: string }[] | null
+}
+
 export type LdrPersonRow = {
   id: string
-  person_id: string | null
+  workspace_id?: string
   site_id: string | null
+  /** @deprecated Use master_cell_id; kept for older rows. */
   location_id: string | null
+  master_cell_id: string | null
   status: LdrPersonStatus
   first_name: string
   last_name: string | null
   initials: string
   avatar_variant: number
-  ldr_locations?: { name: string } | { name: string }[] | null
+  master_cells?: LdrMasterCellJoin | LdrMasterCellJoin[] | null
 }
 
 export type LdrActivity = {
   id: string
   name: string
   sort_order: number
+  workspace_id?: string
 }
 
 export type LdrEventRow = {
@@ -49,16 +57,13 @@ export type LdrAssignmentRow = {
   ldr_person_id: string
   activity_id: string
   assignment_date: string
+  workspace_id?: string
+  /** @deprecated Use master_cell_id. */
   ldr_location_id: string | null
+  master_cell_id: string | null
   rag_status: LdrRag
   comment: string
-  ldr_locations?: { name: string } | { name: string }[] | null
-}
-
-export type LdrLocation = {
-  id: string
-  name: string
-  sort_order: number
+  master_cells?: LdrMasterCellJoin | LdrMasterCellJoin[] | null
 }
 
 export const LDR_PERSON_STATUS_OPTIONS: { value: LdrPersonStatus; label: string }[] = [
@@ -92,9 +97,40 @@ export function ldrInitialsFromNames(firstName: string, lastName: string): strin
   return (a + b).toUpperCase() || 'LD'
 }
 
-export function ldrLocationName(
-  v: { name: string } | { name: string }[] | null | undefined,
+function firstJoinRow<T>(v: T | T[] | null | undefined): T | undefined {
+  if (!v) return undefined
+  return Array.isArray(v) ? v[0] : v
+}
+
+/** Cell name only (from embedded master_cells). */
+export function ldrMasterCellName(
+  v: LdrMasterCellJoin | LdrMasterCellJoin[] | null | undefined,
 ): string {
-  if (!v) return ''
-  return Array.isArray(v) ? (v[0]?.name ?? '') : v.name
+  const row = firstJoinRow(v)
+  return row?.name?.trim() ?? ''
+}
+
+/** "Plant · Cell" for display. */
+export function ldrMasterCellLabel(
+  v: LdrMasterCellJoin | LdrMasterCellJoin[] | null | undefined,
+): string {
+  const row = firstJoinRow(v)
+  if (!row) return ''
+  const plant = firstJoinRow(row.master_plants)
+  const pn = plant?.name?.trim()
+  const cn = row.name?.trim() ?? ''
+  return pn ? `${pn} · ${cn}` : cn
+}
+
+/** Resolve display join from master_cell_id using client-side master data (avoids PostgREST embed). */
+export function ldrMasterCellJoinFromId(
+  masterCellId: string | null | undefined,
+  byId: ReadonlyMap<string, LdrMasterCellJoin>,
+): LdrMasterCellJoin | undefined {
+  if (!masterCellId) return undefined
+  return byId.get(masterCellId)
+}
+
+export function isMissingMasterCellColumnError(message: string | null | undefined): boolean {
+  return typeof message === 'string' && message.includes('master_cell_id')
 }

@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Grid3X3, KeyRound, LogOut, Network, UsersRound } from 'lucide-react'
+import { Database, Grid3X3, KeyRound, LogOut, Network, UsersRound } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 const cardClass =
@@ -10,6 +10,7 @@ export function AppHubPage() {
     signOut,
     user,
     isAdmin,
+    isSuperAdmin,
     canAccessSkillMatrix,
     canAccessLdrTools,
     canAccessRttSystems,
@@ -60,7 +61,7 @@ export function AppHubPage() {
           login.
         </p>
       ) : (
-        <div className="mx-auto grid max-w-5xl gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5">
+        <div className="mx-auto grid max-w-6xl gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 lg:gap-5">
           {canAccessSkillMatrix ? (
             <Link to="/matrix" className={cardClass}>
               <span className="flex size-14 items-center justify-center rounded-2xl bg-accent-dim text-accent transition-transform group-hover:scale-105">
@@ -88,6 +89,16 @@ export function AppHubPage() {
               </span>
               <span className="font-display text-xl font-semibold tracking-tight sm:text-2xl">RTT systems</span>
               <span className="text-xs text-muted">Systems workspace</span>
+            </Link>
+          ) : null}
+
+          {isSuperAdmin ? (
+            <Link to="/master-data" className={cardClass}>
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-teal-500/15 text-teal-800 transition-transform group-hover:scale-105 dark:text-teal-300">
+                <Database className="size-8" aria-hidden />
+              </span>
+              <span className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Master data</span>
+              <span className="text-xs text-muted">Sites, structure, and people</span>
             </Link>
           ) : null}
 

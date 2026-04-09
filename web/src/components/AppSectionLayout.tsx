@@ -1,4 +1,4 @@
-import { useState, type ComponentType, type ReactNode } from 'react'
+import { Suspense, useState, type ComponentType, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
@@ -24,12 +24,17 @@ export type SectionNavItem = {
 type AppSectionLayoutProps = {
   storageKey: string
   title: string
-  subtitle: string
+  /** Shown under the title when expanded; omit to hide. */
+  subtitle?: string
   headerIconClass: string
   HeaderIcon: IconComp
   navItems: SectionNavItem[]
   /** Extra nav nodes below primary items (e.g. footer links) */
   navFooter?: ReactNode
+  /** Rendered above the routed outlet (e.g. global filters). */
+  mainTop?: ReactNode
+  /** When set, wraps `<Outlet />` in `<Suspense>` for lazy route segments. */
+  outletFallback?: ReactNode
 }
 
 export function AppSectionLayout({
@@ -40,6 +45,8 @@ export function AppSectionLayout({
   HeaderIcon,
   navItems,
   navFooter,
+  mainTop,
+  outletFallback,
 }: AppSectionLayoutProps) {
   const { signOut, user } = useAuth()
   const navigate = useNavigate()
@@ -78,7 +85,7 @@ export function AppSectionLayout({
             {!desktopCollapsed ? (
               <div className="min-w-0">
                 <p className="truncate font-display text-sm font-semibold tracking-tight text-fg">{title}</p>
-                <p className="truncate text-xs text-muted">{subtitle}</p>
+                {subtitle ? <p className="truncate text-xs text-muted">{subtitle}</p> : null}
               </div>
             ) : null}
           </Link>
@@ -150,7 +157,14 @@ export function AppSectionLayout({
         </header>
         <main className="flex-1 p-4 md:p-8">
           <div className="mx-auto max-w-7xl">
-            <Outlet />
+            {mainTop ? <div className="mb-6">{mainTop}</div> : null}
+            {outletFallback ? (
+              <Suspense fallback={outletFallback}>
+                <Outlet />
+              </Suspense>
+            ) : (
+              <Outlet />
+            )}
           </div>
         </main>
       </div>

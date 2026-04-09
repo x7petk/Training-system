@@ -1,3 +1,4 @@
+import { lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AdminRoute } from './components/AdminRoute'
 import { SkillMatrixLayout } from './components/SkillMatrixLayout'
@@ -19,11 +20,20 @@ import { RegisterPage } from './pages/RegisterPage'
 import { UserGuidePage } from './pages/UserGuidePage'
 import { MatrixPage } from './pages/MatrixPage'
 import { LdrAdminRoute } from './components/LdrAdminRoute'
-import { LeadershipRosterPage } from './pages/LeadershipRosterPage'
-import { LdrCalendarPage } from './pages/LdrCalendarPage'
-import { LdrAdminPage } from './pages/LdrAdminPage'
+
+const LdrCalendarPage = lazy(() =>
+  import('./pages/LdrCalendarPage').then((m) => ({ default: m.LdrCalendarPage })),
+)
+const LeadershipRosterPage = lazy(() =>
+  import('./pages/LeadershipRosterPage').then((m) => ({ default: m.LeadershipRosterPage })),
+)
+const LdrAdminPage = lazy(() => import('./pages/LdrAdminPage').then((m) => ({ default: m.LdrAdminPage })))
 import { RttSystemsPage } from './pages/RttSystemsPage'
 import { LoginAccountsPage } from './pages/LoginAccountsPage'
+import { SuperAdminRoute } from './components/SuperAdminRoute'
+import { MasterDataLayout } from './components/MasterDataLayout'
+import { MasterDataStructurePage } from './pages/MasterDataStructurePage'
+import { MasterDataPeoplePage } from './pages/MasterDataPeoplePage'
 
 export default function App() {
   return (
@@ -122,6 +132,19 @@ export default function App() {
             }
           >
             <Route index element={<RttSystemsPage />} />
+          </Route>
+
+          <Route
+            path="master-data"
+            element={
+              <SuperAdminRoute>
+                <MasterDataLayout />
+              </SuperAdminRoute>
+            }
+          >
+            <Route index element={<Navigate to="structure" replace />} />
+            <Route path="structure" element={<MasterDataStructurePage />} />
+            <Route path="people" element={<MasterDataPeoplePage />} />
           </Route>
         </Route>
 

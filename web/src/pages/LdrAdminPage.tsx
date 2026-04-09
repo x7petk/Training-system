@@ -5,38 +5,59 @@ import { LdrPersonAvatar } from '../features/ldr/LdrPersonAvatar'
 import {
   LDR_AVATAR_VARIANTS,
   LDR_PERSON_STATUS_OPTIONS,
+  isMissingMasterCellColumnError,
   ldrInitialsFromNames,
-  ldrLocationName,
+  ldrMasterCellJoinFromId,
+  ldrMasterCellLabel,
   ldrPersonFullName,
   type LdrActivity,
-  type LdrLocation,
   type LdrPersonRow,
   type LdrPersonStatus,
 } from '../features/ldr/types'
+import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
+
+function visibleSiteActivitiesStorageKey(cellWorkspaceId: string, siteWorkspaceId: string) {
+  return `ldr.site-activities.visible.v1:${cellWorkspaceId}:${siteWorkspaceId}`
+}
+
+function loadVisibleSiteActivityIds(cellWorkspaceId: string, siteWorkspaceId: string): Set<string> | null {
+  try {
+    const raw = window.localStorage.getItem(visibleSiteActivitiesStorageKey(cellWorkspaceId, siteWorkspaceId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return null
+    return new Set(parsed.filter((v): v is string => typeof v === 'string'))
+  } catch {
+    return null
+  }
+}
+
+function saveVisibleSiteActivityIds(cellWorkspaceId: string, siteWorkspaceId: string, ids: string[]) {
+  try {
+    window.localStorage.setItem(visibleSiteActivitiesStorageKey(cellWorkspaceId, siteWorkspaceId), JSON.stringify(ids))
+  } catch {
+    /* ignore */
+  }
+}
 
 export function LdrAdminPage() {
-  const [tab, setTab] = useState<'people' | 'activities' | 'locations'>('people')
+  const [tab, setTab] = useState<'people' | 'activities' | 'cells'>('people')
   const tabs = useMemo(
     () => [
       { id: 'people' as const, label: 'People' },
       { id: 'activities' as const, label: 'Activities' },
-      { id: 'locations' as const, label: 'Locations' },
+      { id: 'cells' as const, label: 'Cells' },
     ],
     [],
   )
 
   return (
     <div className="space-y-6">
-      <header className="flex items-start gap-3">
+      <header className="flex items-center gap-3">
         <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-700 dark:text-violet-300">
           <LayoutDashboard className="size-6" aria-hidden />
         </span>
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">LDR Admin</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Build your LDR people list and create the activities that appear in the roster.
-          </p>
-        </div>
+        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">LDR Admin</h1>
       </header>
 
       <nav className="flex flex-wrap gap-2" aria-label="LDR admin sections">
@@ -58,41 +79,75 @@ export function LdrAdminPage() {
 
       {tab === 'people' ? <LdrAdminPeoplePanel /> : null}
       {tab === 'activities' ? <LdrAdminActivitiesPanel /> : null}
-      {tab === 'locations' ? <LdrAdminLocationsPanel /> : null}
+      {tab === 'cells' ? <LdrAdminCellsPanel /> : null}
     </div>
   )
 }
 
 function LdrAdminPeoplePanel() {
+  const { workspaceId, siteCellOptions, masterCellJoinById } = useLdrWorkspace()
   const [rows, setRows] = useState<LdrPersonRow[]>([])
-  const [locations, setLocations] = useState<LdrLocation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<'add' | { edit: LdrPersonRow } | null>(null)
 
   const load = useCallback(async () => {
     setError(null)
+    if (!workspaceId) {
+      setRows([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    const [pRes, lRes] = await Promise.all([
-      supabase
-        .from('ldr_people')
-        .select(
-          'id, person_id, site_id, location_id, status, first_name, last_name, initials, avatar_variant, ldr_locations(name)',
+    const pRes = await supabase
+      .from('ldr_people')
+      .select(
+        'id, site_id, location_id, master_cell_id, status, first_name, last_name, initials, avatar_variant',
+      )
+      .eq('workspace_id', workspaceId)
+      .order('first_name')
+      .order('last_name')
+    if (pRes.error && isMissingMasterCellColumnError(pRes.error.message)) {
+      const [legacyPeopleRes, legacyLocationsRes] = await Promise.all([
+        supabase
+          .from('ldr_people')
+          .select('id, site_id, location_id, status, first_name, last_name, initials, avatar_variant')
+          .eq('workspace_id', workspaceId)
+          .order('first_name')
+          .order('last_name'),
+        supabase.from('ldr_locations').select('id, name').eq('workspace_id', workspaceId),
+      ])
+      if (legacyPeopleRes.error) setError(legacyPeopleRes.error.message)
+      else if (legacyLocationsRes.error) setError(legacyLocationsRes.error.message)
+      else {
+        const legacyLocationById = new Map((legacyLocationsRes.data ?? []).map((row) => [row.id, row.name]))
+        const raw = (legacyPeopleRes.data ?? []) as LdrPersonRow[]
+        setRows(
+          raw.map((r) => ({
+            ...r,
+            master_cell_id: null,
+            master_cells: r.location_id ? { name: legacyLocationById.get(r.location_id) ?? '' } : undefined,
+          })),
         )
-        .order('first_name')
-        .order('last_name'),
-      supabase.from('ldr_locations').select('id, name, sort_order').order('sort_order').order('name'),
-    ])
+      }
+      setLoading(false)
+      return
+    }
     if (pRes.error) setError(pRes.error.message)
-    else if (lRes.error) setError(lRes.error.message)
     else {
-      setRows((pRes.data ?? []) as LdrPersonRow[])
-      setLocations((lRes.data ?? []) as LdrLocation[])
+      const raw = (pRes.data ?? []) as LdrPersonRow[]
+      setRows(
+        raw.map((r) => ({
+          ...r,
+          master_cells: ldrMasterCellJoinFromId(r.master_cell_id, masterCellJoinById),
+        })),
+      )
     }
     setLoading(false)
-  }, [])
+  }, [workspaceId, masterCellJoinById])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async load() updates people list after fetch
     void load()
   }, [load])
 
@@ -126,7 +181,7 @@ function LdrAdminPeoplePanel() {
                 <th className="py-3 pl-2">Photo</th>
                 <th className="py-3">Name</th>
                 <th className="py-3">Initials</th>
-                <th className="py-3">Location</th>
+                <th className="py-3">Cell</th>
                 <th className="py-3">Status</th>
                 <th className="w-28 py-3 pr-2 text-right">Actions</th>
               </tr>
@@ -141,7 +196,7 @@ function LdrAdminPeoplePanel() {
                     </td>
                     <td className="py-3 font-medium text-fg">{name}</td>
                     <td className="py-3 text-muted">{r.initials}</td>
-                    <td className="py-3 text-muted">{ldrLocationName(r.ldr_locations) || '—'}</td>
+                    <td className="py-3 text-muted">{ldrMasterCellLabel(r.master_cells) || '—'}</td>
                     <td className="py-3 text-muted">{r.status}</td>
                     <td className="py-3 pr-2 text-right">
                       <button
@@ -169,11 +224,13 @@ function LdrAdminPeoplePanel() {
         </div>
       )}
 
-      {dialog ? (
+      {dialog && workspaceId ? (
         <LdrPersonDialog
+          key={dialog === 'add' ? 'ldr-person-add' : dialog.edit.id}
           mode={dialog === 'add' ? 'add' : 'edit'}
           initial={dialog === 'add' ? null : dialog.edit}
-          locations={locations}
+          cellOptions={siteCellOptions}
+          workspaceId={workspaceId}
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null)
@@ -196,70 +253,88 @@ async function deleteLdrPerson(id: string, load: () => Promise<void>, setError: 
 function LdrPersonDialog(props: {
   mode: 'add' | 'edit'
   initial: LdrPersonRow | null
-  locations: LdrLocation[]
+  cellOptions: { id: string; label: string }[]
+  workspaceId: string
   onClose: () => void
   onSaved: () => void
 }) {
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [initials, setInitials] = useState('')
-  const [avatarVariant, setAvatarVariant] = useState<number>(1)
-  const [status, setStatus] = useState<LdrPersonStatus>('available')
-  const [locationId, setLocationId] = useState<string>('')
+  const defaultForm =
+    props.mode === 'edit' && props.initial
+      ? {
+          firstName: props.initial.first_name,
+          lastName: props.initial.last_name ?? '',
+          initials: props.initial.initials,
+          avatarVariant: props.initial.avatar_variant,
+          status: props.initial.status,
+          masterCellId: props.initial.master_cell_id ?? '',
+        }
+      : {
+          firstName: '',
+          lastName: '',
+          initials: '',
+          avatarVariant: 1,
+          status: 'available' as LdrPersonStatus,
+          masterCellId: '',
+        }
+
+  const [firstName, setFirstName] = useState(defaultForm.firstName)
+  const [lastName, setLastName] = useState(defaultForm.lastName)
+  const [initials, setInitials] = useState(defaultForm.initials)
+  const [avatarVariant, setAvatarVariant] = useState(defaultForm.avatarVariant)
+  const [status, setStatus] = useState<LdrPersonStatus>(defaultForm.status)
+  const [masterCellId, setMasterCellId] = useState(defaultForm.masterCellId)
   const [err, setErr] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (props.mode === 'edit' && props.initial) {
-      setFirstName(props.initial.first_name)
-      setLastName(props.initial.last_name ?? '')
-      setInitials(props.initial.initials)
-      setAvatarVariant(props.initial.avatar_variant)
-      setStatus(props.initial.status)
-      setLocationId(props.initial.location_id ?? '')
-      return
-    }
-    setFirstName('')
-    setLastName('')
-    setInitials('')
-    setAvatarVariant(1)
-    setStatus('available')
-    setLocationId('')
-  }, [props.mode, props.initial])
-
-  useEffect(() => {
-    if (props.mode === 'add') {
-      setInitials(ldrInitialsFromNames(firstName, lastName))
-    }
-  }, [firstName, lastName, props.mode])
+  const derivedInitialsAdd = ldrInitialsFromNames(firstName, lastName)
+  const initialsValue = props.mode === 'add' ? derivedInitialsAdd : initials
 
   async function save() {
     setErr(null)
     const cleanFirst = firstName.trim()
     const cleanLast = lastName.trim()
-    const cleanInitials = initials.trim().toUpperCase()
+    const cleanInitials = (props.mode === 'add' ? derivedInitialsAdd : initials).trim().toUpperCase()
     if (!cleanFirst || !cleanInitials) {
       setErr('First name and initials are required.')
       return
     }
     const payload = {
+      workspace_id: props.workspaceId,
       first_name: cleanFirst,
       last_name: cleanLast || null,
       initials: cleanInitials,
       avatar_variant: avatarVariant,
       status,
-      location_id: locationId || null,
-      person_id: null,
+      master_cell_id: masterCellId || null,
+      location_id: null,
       site_id: null,
     }
     if (props.mode === 'add') {
       const { error: e } = await supabase.from('ldr_people').insert(payload)
-      if (e) {
+      if (e && isMissingMasterCellColumnError(e.message)) {
+        const { master_cell_id, ...legacyPayload } = payload
+        void master_cell_id
+        const { error: legacyErr } = await supabase.from('ldr_people').insert(legacyPayload)
+        if (legacyErr) {
+          setErr(legacyErr.message)
+          return
+        }
+      } else if (e) {
         setErr(e.message)
         return
       }
     } else if (props.initial) {
-      const { error: e } = await supabase.from('ldr_people').update(payload).eq('id', props.initial.id)
-      if (e) {
+      const { workspace_id, ...updatePayload } = payload
+      void workspace_id
+      const { error: e } = await supabase.from('ldr_people').update(updatePayload).eq('id', props.initial.id)
+      if (e && isMissingMasterCellColumnError(e.message)) {
+        const { master_cell_id: legacyMc, ...legacyPayload } = updatePayload
+        void legacyMc
+        const { error: legacyErr } = await supabase.from('ldr_people').update(legacyPayload).eq('id', props.initial.id)
+        if (legacyErr) {
+          setErr(legacyErr.message)
+          return
+        }
+      } else if (e) {
         setErr(e.message)
         return
       }
@@ -298,9 +373,11 @@ function LdrPersonDialog(props: {
           <label className="block text-xs font-medium uppercase tracking-wider text-muted">
             Initials
             <input
-              value={initials}
-              onChange={(e) => setInitials(e.target.value.toUpperCase().slice(0, 3))}
-              className="mt-1 w-full rounded-xl border border-border bg-canvas px-3 py-2 text-sm"
+              value={initialsValue}
+              readOnly={props.mode === 'add'}
+              title={props.mode === 'add' ? 'Derived from name while adding' : undefined}
+              onChange={props.mode === 'add' ? undefined : (e) => setInitials(e.target.value.toUpperCase().slice(0, 3))}
+              className="mt-1 w-full rounded-xl border border-border bg-canvas px-3 py-2 text-sm read-only:bg-surface-raised/80 read-only:text-muted"
             />
           </label>
           <label className="block text-xs font-medium uppercase tracking-wider text-muted">
@@ -318,22 +395,22 @@ function LdrPersonDialog(props: {
             </select>
           </label>
           <label className="block text-xs font-medium uppercase tracking-wider text-muted">
-            Location
+            Cell
             <select
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
+              value={masterCellId}
+              onChange={(e) => setMasterCellId(e.target.value)}
               className="mt-1 w-full rounded-xl border border-border bg-canvas px-3 py-2 text-sm"
             >
-              <option value="">No location</option>
-              {props.locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name}
+              <option value="">No cell</option>
+              {props.cellOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
                 </option>
               ))}
             </select>
           </label>
           <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-muted">Photo placeholder</p>
+            <p className="text-xs font-medium uppercase tracking-wider text-muted">Colour</p>
             <div className="mt-2 flex flex-wrap gap-3">
               {LDR_AVATAR_VARIANTS.map((variant) => (
                 <button
@@ -372,7 +449,12 @@ function LdrPersonDialog(props: {
 }
 
 function LdrAdminActivitiesPanel() {
+  const { workspaceId, scopeLevel, siteId } = useLdrWorkspace()
   const [rows, setRows] = useState<LdrActivity[]>([])
+  const [siteRows, setSiteRows] = useState<LdrActivity[]>([])
+  const [siteWorkspaceId, setSiteWorkspaceId] = useState<string | null>(null)
+  const [visibleSiteActivityIds, setVisibleSiteActivityIds] = useState<Set<string>>(new Set())
+  const [visibilityLoadedKey, setVisibilityLoadedKey] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
@@ -381,14 +463,67 @@ function LdrAdminActivitiesPanel() {
   const [reorderingId, setReorderingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
+    if (!workspaceId) {
+      setRows([])
+      setSiteRows([])
+      setVisibilityLoadedKey(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    const { data, error: e } = await supabase.from('ldr_activities').select('id, name, sort_order').order('sort_order').order('name')
+    const { data, error: e } = await supabase
+      .from('ldr_activities')
+      .select('id, name, sort_order')
+      .eq('workspace_id', workspaceId)
+      .order('sort_order')
+      .order('name')
     if (e) setError(e.message)
     else setRows((data ?? []) as LdrActivity[])
+
+    if (scopeLevel === 'cell' && siteId) {
+      const { data: sw, error: swErr } = await supabase.rpc('ldr_ensure_workspace_site', { p_master_site_id: siteId })
+      const swid = !swErr && typeof sw === 'string' ? sw : null
+      setSiteWorkspaceId(swid)
+      if (swErr) setError(swErr.message)
+      if (swid) {
+        const { data: sActs, error: sActsErr } = await supabase
+          .from('ldr_activities')
+          .select('id, name, sort_order')
+          .eq('workspace_id', swid)
+          .order('sort_order')
+          .order('name')
+        if (sActsErr) setError(sActsErr.message)
+        else {
+          const siteActivities = (sActs ?? []) as LdrActivity[]
+          setSiteRows(siteActivities)
+          if (workspaceId) {
+            const key = visibleSiteActivitiesStorageKey(workspaceId, swid)
+            const stored = loadVisibleSiteActivityIds(workspaceId, swid)
+            if (stored == null) {
+              setVisibleSiteActivityIds(new Set(siteActivities.map((a) => a.id)))
+            } else {
+              const valid = siteActivities.filter((a) => stored.has(a.id)).map((a) => a.id)
+              setVisibleSiteActivityIds(new Set(valid))
+            }
+            setVisibilityLoadedKey(key)
+          }
+        }
+      } else {
+        setSiteRows([])
+        setVisibleSiteActivityIds(new Set())
+        setVisibilityLoadedKey(null)
+      }
+    } else {
+      setSiteWorkspaceId(null)
+      setSiteRows([])
+      setVisibleSiteActivityIds(new Set())
+      setVisibilityLoadedKey(null)
+    }
     setLoading(false)
-  }, [])
+  }, [workspaceId, scopeLevel, siteId])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async load() updates activities after fetch
     void load()
   }, [load])
 
@@ -402,15 +537,24 @@ function LdrAdminActivitiesPanel() {
   async function add() {
     setError(null)
     const n = name.trim()
-    if (!n) return
+    if (!n || !workspaceId) return
     const nextSortOrder = rows.reduce((max, row) => Math.max(max, row.sort_order), -1) + 1
-    const { error: e } = await supabase.from('ldr_activities').insert({ name: n, sort_order: nextSortOrder })
+    const { error: e } = await supabase
+      .from('ldr_activities')
+      .insert({ workspace_id: workspaceId, name: n, sort_order: nextSortOrder })
     if (e) setError(e.message)
     else {
       setName('')
       await load()
     }
   }
+
+  useEffect(() => {
+    if (scopeLevel !== 'cell' || !workspaceId || !siteWorkspaceId) return
+    const key = visibleSiteActivitiesStorageKey(workspaceId, siteWorkspaceId)
+    if (visibilityLoadedKey !== key) return
+    saveVisibleSiteActivityIds(workspaceId, siteWorkspaceId, [...visibleSiteActivityIds])
+  }, [scopeLevel, workspaceId, siteWorkspaceId, visibleSiteActivityIds, visibilityLoadedKey])
 
   async function applySortOrder() {
     if (sortMode === 'custom') return
@@ -500,6 +644,57 @@ function LdrAdminActivitiesPanel() {
           Add
         </button>
       </div>
+      {scopeLevel === 'cell' ? (
+        <div className="mt-3 rounded-xl border border-border bg-surface px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted">Show site activities in cell roster</p>
+            <button
+              type="button"
+              onClick={() => setVisibleSiteActivityIds(new Set(siteRows.map((r) => r.id)))}
+              className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-fg hover:border-accent/40"
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setVisibleSiteActivityIds(new Set())}
+              className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-fg hover:border-accent/40"
+            >
+              None
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {siteRows.map((r) => {
+              const checked = visibleSiteActivityIds.has(r.id)
+              return (
+                <label
+                  key={r.id}
+                  className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-xs ${
+                    checked
+                      ? 'border-teal-600/55 bg-teal-600/20 text-slate-950 shadow-sm dark:border-teal-300/55 dark:bg-teal-400/35 dark:text-slate-950'
+                      : 'border-border bg-canvas text-fg'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => {
+                      setVisibleSiteActivityIds((prev) => {
+                        const next = new Set(prev)
+                        if (e.target.checked) next.add(r.id)
+                        else next.delete(r.id)
+                        return next
+                      })
+                    }}
+                    className="size-3.5 accent-teal-700 dark:accent-teal-300"
+                  />
+                  {r.name}
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <label className="text-xs font-medium uppercase tracking-wider text-muted">
           Sort
@@ -594,134 +789,23 @@ function LdrAdminActivitiesPanel() {
   )
 }
 
-function LdrAdminLocationsPanel() {
-  const [rows, setRows] = useState<LdrLocation[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [name, setName] = useState('')
-  const [editing, setEditing] = useState<LdrLocation | null>(null)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    const { data, error: e } = await supabase
-      .from('ldr_locations')
-      .select('id, name, sort_order')
-      .order('sort_order')
-      .order('name')
-    if (e) setError(e.message)
-    else setRows((data ?? []) as LdrLocation[])
-    setLoading(false)
-  }, [])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  async function add() {
-    setError(null)
-    const n = name.trim()
-    if (!n) return
-    const { error: e } = await supabase
-      .from('ldr_locations')
-      .insert({ name: n, sort_order: rows.length })
-    if (e) setError(e.message)
-    else {
-      setName('')
-      await load()
-    }
-  }
-
-  async function saveEdit() {
-    if (!editing) return
-    setError(null)
-    const { error: e } = await supabase
-      .from('ldr_locations')
-      .update({ name: editing.name.trim() })
-      .eq('id', editing.id)
-    if (e) setError(e.message)
-    else {
-      setEditing(null)
-      await load()
-    }
-  }
-
-  async function remove(id: string) {
-    if (!window.confirm('Delete this location? People linked to it will become no-location.')) return
-    setError(null)
-    const { error: e } = await supabase.from('ldr_locations').delete().eq('id', id)
-    if (e) setError(e.message)
-    else await load()
-  }
+function LdrAdminCellsPanel() {
+  const { status, siteCellOptions, siteId } = useLdrWorkspace()
 
   return (
     <section className="rounded-2xl border border-border bg-surface-raised/50 p-4 backdrop-blur-sm md:p-6">
-      <h2 className="font-display text-lg font-semibold">Locations</h2>
-      <p className="mt-1 text-sm text-muted">Create locations used next to initials in roster assignments.</p>
-      {error ? (
-        <p className="mt-2 text-sm text-danger" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="New location name"
-          className="min-w-[12rem] flex-1 rounded-xl border border-border bg-canvas px-3 py-2 text-sm"
-        />
-        <button
-          type="button"
-          onClick={() => void add()}
-          className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white"
-        >
-          <Plus className="size-4" />
-          Add
-        </button>
-      </div>
-
-      {loading ? (
+      <h2 className="font-display text-lg font-semibold">Cells</h2>
+      {status !== 'ready' ? (
         <p className="mt-6 text-sm text-muted">Loading…</p>
+      ) : !siteId ? (
+        <p className="mt-6 text-sm text-muted">Select a site above.</p>
+      ) : siteCellOptions.length === 0 ? (
+        <p className="mt-6 text-sm text-muted">No cells for this site yet. Add plants and cells in Master data.</p>
       ) : (
         <ul className="mt-6 divide-y divide-border">
-          {rows.map((r) => (
-            <li key={r.id} className="flex items-center justify-between gap-2 py-3">
-              {editing?.id === r.id ? (
-                <input
-                  value={editing.name}
-                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                  className="flex-1 rounded-lg border border-border bg-canvas px-2 py-1.5 text-sm"
-                />
-              ) : (
-                <span className="font-medium text-fg">{r.name}</span>
-              )}
-              <div className="flex gap-1">
-                {editing?.id === r.id ? (
-                  <button
-                    type="button"
-                    onClick={() => void saveEdit()}
-                    className="rounded-lg px-2 py-1 text-sm font-medium text-accent"
-                  >
-                    Save
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setEditing({ ...r })}
-                    className="rounded-lg p-2 text-muted hover:bg-black/[0.06]"
-                    aria-label={`Edit ${r.name}`}
-                  >
-                    <Pencil className="size-4" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void remove(r.id)}
-                  className="rounded-lg p-2 text-muted hover:bg-danger/10 hover:text-danger"
-                  aria-label={`Delete ${r.name}`}
-                >
-                  <Trash2 className="size-4" />
-                </button>
-              </div>
+          {siteCellOptions.map((opt) => (
+            <li key={opt.id} className="py-2.5 text-sm font-medium text-fg">
+              {opt.label}
             </li>
           ))}
         </ul>

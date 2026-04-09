@@ -11,6 +11,7 @@ import {
 } from '../features/ldr/ldrWeekUtils'
 import type { LdrEventRow } from '../features/ldr/types'
 import { EVENT_COLOR_PRESETS } from '../features/ldr/types'
+import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
 
 const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -77,6 +78,20 @@ type WeekBoardProps = {
 }
 
 function WeekEventBoard(props: WeekBoardProps) {
+  const {
+    weekDays,
+    segments,
+    laneCount,
+    dragOverYmd,
+    setDragOverYmd,
+    setDragCtx,
+    onDropOnDay,
+    openCreate,
+    openEdit,
+    emptyMinH,
+    lanePy,
+    eventTitleClass,
+  } = props
   const boardRef = useRef<HTMLDivElement>(null)
 
   const ymdFromClientX = useCallback(
@@ -88,39 +103,39 @@ function WeekEventBoard(props: WeekBoardProps) {
       const x = clientX - rect.left
       const col = Math.floor((x / rect.width) * 7)
       const idx = Math.max(0, Math.min(6, col))
-      return toYMD(props.weekDays[idx])
+      return toYMD(weekDays[idx])
     },
-    [props.weekDays],
+    [weekDays],
   )
 
   const handleDragOverBoard = useCallback(
     (e: DragEvent) => {
       e.preventDefault()
       const ymd = ymdFromClientX(e.clientX)
-      if (ymd) props.setDragOverYmd(ymd)
+      if (ymd) setDragOverYmd(ymd)
     },
-    [props, ymdFromClientX],
+    [ymdFromClientX, setDragOverYmd],
   )
 
   const handleDropAtPointer = useCallback(
     (e: DragEvent) => {
       e.preventDefault()
       const ymd = ymdFromClientX(e.clientX)
-      if (ymd) props.onDropOnDay(ymd)
+      if (ymd) onDropOnDay(ymd)
     },
-    [props, ymdFromClientX],
+    [ymdFromClientX, onDropOnDay],
   )
 
   return (
     <div className="min-w-[720px] space-y-1">
       <div className="grid grid-cols-7 gap-1">
-        {props.weekDays.map((d, i) => {
+        {weekDays.map((d, i) => {
           const ymd = toYMD(d)
           return (
             <button
               key={ymd}
               type="button"
-              onClick={() => props.openCreate(ymd)}
+              onClick={() => openCreate(ymd)}
               className="rounded-lg border border-border/60 bg-surface/80 px-1 py-1 text-center text-[11px] font-semibold uppercase tracking-tight text-fg hover:border-accent/40 hover:bg-surface"
             >
               {compactDayLine(d, i)}
@@ -132,37 +147,37 @@ function WeekEventBoard(props: WeekBoardProps) {
       <div
         ref={boardRef}
         className={`relative rounded-2xl border border-border bg-canvas/35 p-1.5 ${
-          props.segments.length === 0 ? props.emptyMinH : 'min-h-[8.5rem]'
+          segments.length === 0 ? emptyMinH : 'min-h-[8.5rem]'
         }`}
         onDragOver={handleDragOverBoard}
         onDrop={handleDropAtPointer}
       >
         <div className="pointer-events-none absolute inset-1.5 z-0 grid grid-cols-7 gap-1">
-          {props.weekDays.map((d) => {
+          {weekDays.map((d) => {
             const ymd = toYMD(d)
             return (
               <div
                 key={`drop-${ymd}`}
                 className={`pointer-events-auto min-h-full rounded-lg border border-dashed transition-colors ${
-                  props.dragOverYmd === ymd
+                  dragOverYmd === ymd
                     ? 'border-violet-500 bg-violet-500/15'
                     : 'border-transparent bg-transparent hover:border-border/40'
                 }`}
                 onDragOver={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  props.setDragOverYmd(ymd)
+                  setDragOverYmd(ymd)
                 }}
-                onDragEnter={() => props.setDragOverYmd(ymd)}
+                onDragEnter={() => setDragOverYmd(ymd)}
                 onDragLeave={(e) => {
                   const related = e.relatedTarget as Node | null
                   if (related && e.currentTarget.contains(related)) return
-                  if (props.dragOverYmd === ymd) props.setDragOverYmd(null)
+                  if (dragOverYmd === ymd) setDragOverYmd(null)
                 }}
                 onDrop={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  props.onDropOnDay(ymd)
+                  onDropOnDay(ymd)
                 }}
               />
             )
@@ -170,37 +185,38 @@ function WeekEventBoard(props: WeekBoardProps) {
         </div>
 
         <div className="pointer-events-none relative z-[1] space-y-0.5">
-          {props.segments.length === 0 ? (
+          {segments.length === 0 ? (
             <div
-              className={`flex items-center justify-center rounded-xl border border-dashed border-border/50 text-muted ${props.emptyMinH}`}
+              className={`flex items-center justify-center rounded-xl border border-dashed border-border/50 text-muted ${emptyMinH}`}
             >
-              <span className={`text-center ${props.eventTitleClass}`}>No events — click a date above to add.</span>
+              <span className={`text-center ${eventTitleClass}`}>No events — click a date above to add.</span>
             </div>
           ) : (
-            Array.from({ length: props.laneCount }).map((_, lane) => (
-              <div key={lane} className={`grid grid-cols-7 gap-1 ${props.lanePy}`}>
-                {props.segments
+            Array.from({ length: laneCount }).map((_, lane) => (
+              <div key={lane} className={`grid grid-cols-7 gap-1 ${lanePy}`}>
+                {segments
                   .filter((s) => s.lane === lane)
                   .map((s) => (
                     <button
                       key={`${s.event.id}-${lane}`}
                       type="button"
+                      title={s.event.notes?.trim() ? `${s.event.title}\n${s.event.notes.trim()}` : s.event.title}
                       draggable
                       onDragStart={() =>
-                        props.setDragCtx({ eventId: s.event.id, grabDate: s.displayStart })
+                        setDragCtx({ eventId: s.event.id, grabDate: s.displayStart })
                       }
                       onDragEnd={() => {
-                        props.setDragCtx(null)
-                        props.setDragOverYmd(null)
+                        setDragCtx(null)
+                        setDragOverYmd(null)
                       }}
                       onDragOver={(e) => {
                         e.preventDefault()
                         const ymd = ymdFromClientX(e.clientX)
-                        if (ymd) props.setDragOverYmd(ymd)
+                        if (ymd) setDragOverYmd(ymd)
                       }}
                       onDrop={handleDropAtPointer}
-                      onClick={() => props.openEdit(s.event, s.displayStart)}
-                      className={`pointer-events-auto rounded-lg px-2 py-1.5 text-left font-medium text-white shadow-sm transition hover:-translate-y-0.5 hover:opacity-95 ${props.eventTitleClass}`}
+                      onClick={() => openEdit(s.event, s.displayStart)}
+                      className={`pointer-events-auto rounded-lg px-2 py-1.5 text-left font-medium text-white shadow-sm transition hover:-translate-y-0.5 hover:opacity-95 ${eventTitleClass}`}
                       style={{
                         backgroundColor: s.event.color,
                         gridColumn: `${s.startIdx + 1} / ${s.endIdx + 2}`,
@@ -226,6 +242,7 @@ function WeekEventBoard(props: WeekBoardProps) {
 }
 
 export function LdrCalendarPage() {
+  const { workspaceId } = useLdrWorkspace()
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()))
   const [events, setEvents] = useState<LdrEventRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -244,19 +261,26 @@ export function LdrCalendarPage() {
 
   const load = useCallback(async () => {
     setError(null)
+    if (!workspaceId) {
+      setEvents([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
     const { data, error: eErr } = await supabase
       .from('ldr_events')
       .select('id, title, site_id, start_date, end_date, color, notes')
+      .eq('workspace_id', workspaceId)
       .lte('start_date', loadEnd)
       .gte('end_date', weekStartYmd)
       .order('start_date')
     if (eErr) setError(eErr.message)
     else setEvents((data ?? []) as LdrEventRow[])
     setLoading(false)
-  }, [loadEnd, weekStartYmd])
+  }, [workspaceId, loadEnd, weekStartYmd])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async load() updates list state after fetch
     void load()
   }, [load])
 
@@ -264,85 +288,96 @@ export function LdrCalendarPage() {
     setWeekStart((w) => addDays(w, delta * 7))
   }
 
-  function openCreate(day: string) {
+  const openCreate = useCallback((day: string) => {
     setModal({ mode: 'create', day })
-  }
+  }, [])
 
-  function openEdit(ev: LdrEventRow, grabDate: string) {
+  const openEdit = useCallback((ev: LdrEventRow, grabDate: string) => {
     setModal({ mode: 'edit', event: ev, grabDate })
-  }
+  }, [])
 
-  async function saveEvent(payload: {
-    id?: string
-    title: string
-    start_date: string
-    end_date: string
-    color: string
-    notes: string
-  }) {
-    setError(null)
-    const normalized = {
-      ...payload,
-      start_date: payload.start_date <= payload.end_date ? payload.start_date : payload.end_date,
-      end_date: payload.start_date <= payload.end_date ? payload.end_date : payload.start_date,
-    }
-    if (normalized.id) {
-      const { error: uErr } = await supabase.from('ldr_events').update(normalized).eq('id', normalized.id)
-      if (uErr) {
-        setError(uErr.message)
+  const saveEvent = useCallback(
+    async (payload: {
+      id?: string
+      title: string
+      start_date: string
+      end_date: string
+      color: string
+      notes: string
+    }) => {
+      setError(null)
+      const normalized = {
+        ...payload,
+        start_date: payload.start_date <= payload.end_date ? payload.start_date : payload.end_date,
+        end_date: payload.start_date <= payload.end_date ? payload.end_date : payload.start_date,
+      }
+      if (normalized.id) {
+        const { error: uErr } = await supabase.from('ldr_events').update(normalized).eq('id', normalized.id)
+        if (uErr) {
+          setError(uErr.message)
+          return
+        }
+      } else {
+        if (!workspaceId) return
+        const { error: iErr } = await supabase.from('ldr_events').insert({
+          workspace_id: workspaceId,
+          title: normalized.title,
+          site_id: null,
+          start_date: normalized.start_date,
+          end_date: normalized.end_date,
+          color: normalized.color,
+          notes: normalized.notes,
+        })
+        if (iErr) {
+          setError(iErr.message)
+          return
+        }
+      }
+      setModal(null)
+      await load()
+    },
+    [workspaceId, load],
+  )
+
+  const deleteEvent = useCallback(
+    async (id: string) => {
+      setError(null)
+      const { error: dErr } = await supabase.from('ldr_events').delete().eq('id', id)
+      if (dErr) {
+        setError(dErr.message)
         return
       }
-    } else {
-      const { error: iErr } = await supabase.from('ldr_events').insert({
-        title: normalized.title,
-        site_id: null,
-        start_date: normalized.start_date,
-        end_date: normalized.end_date,
-        color: normalized.color,
-        notes: normalized.notes,
+      setModal(null)
+      await load()
+    },
+    [load],
+  )
+
+  const onDropOnDay = useCallback(
+    (targetYmd: string) => {
+      if (!dragCtx) return
+      const ev = events.find((e) => e.id === dragCtx.eventId)
+      if (!ev) return
+      const grab = parseYMD(dragCtx.grabDate)
+      const target = parseYMD(targetYmd)
+      const delta = Math.round((target.getTime() - grab.getTime()) / (24 * 60 * 60 * 1000))
+      const ns = parseYMD(ev.start_date)
+      const ne = parseYMD(ev.end_date)
+      ns.setDate(ns.getDate() + delta)
+      ne.setDate(ne.getDate() + delta)
+      void saveEvent({
+        id: ev.id,
+        title: ev.title,
+        start_date: toYMD(ns),
+        end_date: toYMD(ne),
+        color: ev.color,
+        notes: ev.notes,
       })
-      if (iErr) {
-        setError(iErr.message)
-        return
-      }
-    }
-    setModal(null)
-    await load()
-  }
-
-  async function deleteEvent(id: string) {
-    setError(null)
-    const { error: dErr } = await supabase.from('ldr_events').delete().eq('id', id)
-    if (dErr) {
-      setError(dErr.message)
-      return
-    }
-    setModal(null)
-    await load()
-  }
-
-  function onDropOnDay(targetYmd: string) {
-    if (!dragCtx) return
-    const ev = events.find((e) => e.id === dragCtx.eventId)
-    if (!ev) return
-    const grab = parseYMD(dragCtx.grabDate)
-    const target = parseYMD(targetYmd)
-    const delta = Math.round((target.getTime() - grab.getTime()) / (24 * 60 * 60 * 1000))
-    const ns = parseYMD(ev.start_date)
-    const ne = parseYMD(ev.end_date)
-    ns.setDate(ns.getDate() + delta)
-    ne.setDate(ne.getDate() + delta)
-    void saveEvent({
-      id: ev.id,
-      title: ev.title,
-      start_date: toYMD(ns),
-      end_date: toYMD(ne),
-      color: ev.color,
-      notes: ev.notes,
-    })
-    setDragCtx(null)
-    setDragOverYmd(null)
-  }
+      setDragCtx(null)
+      setDragOverYmd(null)
+    },
+    [dragCtx, events, saveEvent],
+  )
 
   const { segments, laneCount } = useMemo(() => buildWeekSegments(events, weekDays), [events, weekDays])
 
@@ -351,17 +386,11 @@ export function LdrCalendarPage() {
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
+        <div className="flex items-center gap-3">
           <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-700 dark:text-violet-300">
             <CalendarDays className="size-6" aria-hidden />
           </span>
-          <div>
-            <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Calendar</h1>
-            <p className="mt-1 max-w-2xl text-sm text-muted">
-              Create one-day or multi-day events to keep the leadership team informed about this week and the following
-              weeks.
-            </p>
-          </div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Calendar</h1>
         </div>
         <button
           type="button"
@@ -416,9 +445,6 @@ export function LdrCalendarPage() {
                   className="rounded-lg border border-border bg-canvas px-2 py-1.5 text-sm text-fg"
                 />
               </label>
-              <p className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted">
-                Click a date label to add. Drag events in the board below to reschedule.
-              </p>
             </div>
           </div>
         </div>
