@@ -18,8 +18,10 @@ import { ReportPage } from './pages/ReportPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { UserGuidePage } from './pages/UserGuidePage'
 import { MatrixPage } from './pages/MatrixPage'
+import { LdrAdminRoute } from './components/LdrAdminRoute'
 import { LeadershipRosterPage } from './pages/LeadershipRosterPage'
 import { LdrCalendarPage } from './pages/LdrCalendarPage'
+import { LdrAdminPage } from './pages/LdrAdminPage'
 import { RttSystemsPage } from './pages/RttSystemsPage'
 import { LoginAccountsPage } from './pages/LoginAccountsPage'
 
@@ -98,9 +100,17 @@ export default function App() {
               </SectionAccessRoute>
             }
           >
-            <Route index element={<Navigate to="roster" replace />} />
-            <Route path="roster" element={<LeadershipRosterPage />} />
+            <Route index element={<Navigate to="calendar" replace />} />
             <Route path="calendar" element={<LdrCalendarPage />} />
+            <Route path="roster" element={<LeadershipRosterPage />} />
+            <Route
+              path="admin"
+              element={
+                <LdrAdminRoute>
+                  <LdrAdminPage />
+                </LdrAdminRoute>
+              }
+            />
           </Route>
 
           <Route
