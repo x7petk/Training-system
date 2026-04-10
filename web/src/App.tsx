@@ -31,6 +31,10 @@ const LdrAdminPage = lazy(() => import('./pages/LdrAdminPage').then((m) => ({ de
 const LdrToolsUserGuidePage = lazy(() =>
   import('./pages/LdrToolsUserGuidePage').then((m) => ({ default: m.LdrToolsUserGuidePage })),
 )
+const HcListPage = lazy(() => import('./pages/HcListPage').then((m) => ({ default: m.HcListPage })))
+const HcNewPage = lazy(() => import('./pages/HcNewPage').then((m) => ({ default: m.HcNewPage })))
+const HcRecordPage = lazy(() => import('./pages/HcRecordPage').then((m) => ({ default: m.HcRecordPage })))
+const HcReportPage = lazy(() => import('./pages/HcReportPage').then((m) => ({ default: m.HcReportPage })))
 import { RttSystemsPage } from './pages/RttSystemsPage'
 import { LoginAccountsPage } from './pages/LoginAccountsPage'
 import { SuperAdminRoute } from './components/SuperAdminRoute'
@@ -116,6 +120,10 @@ export default function App() {
             <Route index element={<Navigate to="calendar" replace />} />
             <Route path="calendar" element={<LdrCalendarPage />} />
             <Route path="roster" element={<LeadershipRosterPage />} />
+            <Route path="health-checks/report" element={<HcReportPage />} />
+            <Route path="health-checks/new" element={<HcNewPage />} />
+            <Route path="health-checks/:recordId" element={<HcRecordPage />} />
+            <Route path="health-checks" element={<HcListPage />} />
             <Route path="user-guide" element={<LdrToolsUserGuidePage />} />
             <Route
               path="admin"

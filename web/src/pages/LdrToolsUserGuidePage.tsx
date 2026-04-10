@@ -4,7 +4,8 @@ const quickStart = [
   'Open LDR tools from App Hub, then choose Site or Cell in the scope bar.',
   'Use Calendar to add or drag events for the current week and next weeks.',
   'Use Roster to assign people per activity/day and update cell, RAG, and comments.',
-  'Use Admin (admin/super admin) to maintain LDR people and activity lists.',
+  'Use Health Checks to start or resume checks at cell level; HC Report for trends and history (no scope bar on that page — all accessible locations).',
+  'Use Admin (admin/super admin) to maintain LDR people, activity lists, and HC types/templates.',
 ] as const
 
 const runFlow = [
@@ -32,8 +33,10 @@ const designProcessBlocks = [
     body: [
       'Calendar — shared leadership dates: multi-day events, colours, and notes. Use it so everyone sees the same week context before you fill the roster.',
       'Roster — who is on which activity and day: people, optional cell tag (site view), RAG, comments, and drag between days/activities.',
-      'Admin — lists you maintain so Roster stays usable: LDR people, activity names/order, and (in cell scope) which site activities also appear on the cell roster.',
-      'User Guide — this page; it does not change data. Use Calendar, Roster, and Admin after you finish reading.',
+      'Health Checks — run standardised checks at a cell: draft/save, submit with score and RAG. From Roster, Complete HC opens a new check with assignment link, completion date, and location prefilled; submitting can sync RAG and comments back to the assignment.',
+      'HC Report — submitted checks only: compact filters (date range, type, completer). No site/cell scope bar on this page; the report includes all HC records you can access under LDR (RLS). Summary cards, RAG distribution, weekly volume/avg trend, by-type and by-completer tables, and a record list.',
+      'Admin — lists you maintain so Roster stays usable: LDR people, activity names/order, (in cell scope) site-activity visibility for the cell roster, plus HC Types and HC Templates for health-check content.',
+      'User Guide — this page; it does not change data. Use Calendar, Roster, Health Checks, and Admin after you finish reading.',
     ],
   },
   {

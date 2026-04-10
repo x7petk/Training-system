@@ -1,4 +1,4 @@
-import { BookOpenText, CalendarDays, LayoutDashboard, Users, UsersRound } from 'lucide-react'
+import { BookOpenText, CalendarDays, ClipboardList, FileBarChart, LayoutDashboard, Users, UsersRound } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { AppSectionLayout } from './AppSectionLayout'
 import { useAuth } from '../hooks/useAuth'
@@ -8,7 +8,9 @@ import { LdrScopeFilterBar } from '../features/ldr/LdrScopeFilterBar'
 export function LdrToolsLayout() {
   const { isAdmin, profileReady } = useAuth()
   const location = useLocation()
-  const showScopeFilter = !location.pathname.startsWith('/ldr-tools/user-guide')
+  const showScopeFilter =
+    !location.pathname.startsWith('/ldr-tools/user-guide') &&
+    location.pathname !== '/ldr-tools/health-checks/report'
   return (
     <LdrWorkspaceProvider>
       <AppSectionLayout
@@ -27,12 +29,14 @@ export function LdrToolsLayout() {
           </div>
         }
         navItems={[
-        { to: '/ldr-tools/calendar', label: 'Calendar', icon: CalendarDays, end: true },
-        { to: '/ldr-tools/roster', label: 'Roster', icon: Users, end: true },
-        ...(profileReady && isAdmin
-          ? [{ to: '/ldr-tools/admin', label: 'Admin', icon: LayoutDashboard, end: true }]
-          : []),
-      ]}
+          { to: '/ldr-tools/calendar', label: 'Calendar', icon: CalendarDays, end: true },
+          { to: '/ldr-tools/roster', label: 'Roster', icon: Users, end: true },
+          { to: '/ldr-tools/health-checks', label: 'Health Checks', icon: ClipboardList, end: true },
+          { to: '/ldr-tools/health-checks/report', label: 'HC Report', icon: FileBarChart, end: true },
+          ...(profileReady && isAdmin
+            ? [{ to: '/ldr-tools/admin', label: 'Admin', icon: LayoutDashboard, end: true }]
+            : []),
+        ]}
         accountFooter={
           <Link
             to="/ldr-tools/user-guide"

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, ChevronLeft, ChevronRight, Users } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { LdrPersonAvatar } from '../features/ldr/LdrPersonAvatar'
 import {
@@ -27,10 +28,10 @@ import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
 const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 const LDR_RAG_OPTIONS = [
-  { value: 'none' as const, label: 'None', active: 'border-slate-400 bg-slate-100 text-slate-900' },
-  { value: 'green' as const, label: 'Green', active: 'border-emerald-500 bg-emerald-100 text-emerald-950' },
-  { value: 'yellow' as const, label: 'Yellow', active: 'border-amber-400 bg-amber-100 text-amber-950' },
-  { value: 'red' as const, label: 'Red', active: 'border-rose-500 bg-rose-100 text-rose-950' },
+  { value: 'none' as const, label: 'None', active: 'border-slate-500 bg-slate-200 text-slate-950' },
+  { value: 'green' as const, label: 'Green', active: 'border-emerald-600 bg-emerald-200 text-emerald-950' },
+  { value: 'yellow' as const, label: 'Yellow', active: 'border-amber-600 bg-amber-200 text-amber-950' },
+  { value: 'red' as const, label: 'Red', active: 'border-rose-600 bg-rose-200 text-rose-950' },
 ] as const
 
 function personName(p: LdrPersonRow): string {
@@ -74,6 +75,20 @@ function assignmentCellSelectValue(
 ): string {
   if (row.master_cell_id && siteCells.some((c) => c.id === row.master_cell_id)) return row.master_cell_id
   return masterCellIdForLegacyLocation(row.ldr_location_id, legacyLocations, siteCells)
+}
+
+/** Master cell for HC deep link: assignment cell, else current cell scope when at cell level. */
+function effectiveMasterCellForHc(
+  row: Pick<LdrAssignmentRow, 'master_cell_id' | 'ldr_location_id'>,
+  legacyLocations: { id: string; name: string }[],
+  siteCells: { id: string; label: string }[],
+  scopeLevel: 'site' | 'cell',
+  contextMasterCellId: string,
+): string {
+  const v = assignmentCellSelectValue(row, legacyLocations, siteCells)
+  if (v) return v
+  if (scopeLevel === 'cell' && contextMasterCellId) return contextMasterCellId
+  return ''
 }
 
 function personDefaultCellForPicker(
@@ -127,6 +142,7 @@ function ragDotClass(r: LdrRag): string {
 }
 
 export function LeadershipRosterPage() {
+  const navigate = useNavigate()
   const { workspaceId, scopeLevel, siteId, cellId, siteCellOptions, masterCellJoinById } = useLdrWorkspace()
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()))
   const [activities, setActivities] = useState<LdrActivity[]>([])
@@ -138,6 +154,8 @@ export function LeadershipRosterPage() {
   const [error, setError] = useState<string | null>(null)
   const [cellModal, setCellModal] = useState<{ activityId: string; date: string } | null>(null)
   const [dragAssignmentId, setDragAssignmentId] = useState<string | null>(null)
+  /** Activities (LDR) that have a linked HC type with an active template — roster can open Complete HC. */
+  const [hcReadyByActivityId, setHcReadyByActivityId] = useState<Map<string, { hcTypeId: string }>>(() => new Map())
 
   const weekDays = useMemo(() => weekDaysMondayFirst(weekStart), [weekStart])
   const weekStartStr = toYMD(weekStart)
@@ -418,9 +436,56 @@ export function LeadershipRosterPage() {
   }, [workspaceId, scopeLevel, siteId, cellId, weekStartStr, weekEndStr, siteCellOptions, masterCellJoinById])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async load() updates list state after fetch
-    void load()
+    queueMicrotask(() => {
+      void load()
+    })
   }, [load])
+
+  useEffect(() => {
+    const activityIds = activities.map((a) => a.id)
+    if (activityIds.length === 0) {
+      queueMicrotask(() => setHcReadyByActivityId(new Map()))
+      return
+    }
+    let cancelled = false
+    async function loadHcReadiness() {
+      if (cancelled) return
+      const typesRes = await supabase
+        .from('hc_types')
+        .select('id, ldr_activity_id')
+        .eq('active', true)
+        .in('ldr_activity_id', activityIds)
+      if (cancelled) return
+      if (typesRes.error) {
+        setHcReadyByActivityId(new Map())
+        return
+      }
+      const rows = (typesRes.data ?? []) as { id: string; ldr_activity_id: string }[]
+      if (rows.length === 0) {
+        setHcReadyByActivityId(new Map())
+        return
+      }
+      const typeIds = rows.map((r) => r.id)
+      const tplRes = await supabase
+        .from('hc_templates')
+        .select('hc_type_id')
+        .eq('active', true)
+        .in('hc_type_id', typeIds)
+      if (cancelled) return
+      const withTpl = new Set((tplRes.data ?? []).map((t: { hc_type_id: string }) => t.hc_type_id))
+      const m = new Map<string, { hcTypeId: string }>()
+      for (const r of rows) {
+        if (withTpl.has(r.id)) m.set(r.ldr_activity_id, { hcTypeId: r.id })
+      }
+      setHcReadyByActivityId(m)
+    }
+    queueMicrotask(() => {
+      void loadHcReadiness()
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activities])
 
   const conflictKeys = useMemo(() => {
     const m = new Map<string, Set<string>>()
@@ -779,14 +844,27 @@ export function LeadershipRosterPage() {
 
       {cellModal ? (
         <CellEditorModal
+          rosterActivityId={cellModal.activityId}
           activityName={activityNameById.get(cellModal.activityId) ?? 'Activity'}
           date={cellModal.date}
           people={ldrPeople}
           currentWorkspaceId={workspaceId ?? ''}
           scopeLevel={scopeLevel}
+          contextMasterCellId={cellId}
           cells={siteCellOptions}
           legacyLdrLocations={legacyLdrLocations}
           rows={assignmentsForCell(cellModal.activityId, cellModal.date)}
+          hcTemplateReadyForActivity={hcReadyByActivityId.has(cellModal.activityId)}
+          onStartHealthCheck={(payload) => {
+            const q = new URLSearchParams({
+              activityId: payload.activityId,
+              masterCellId: payload.masterCellId,
+              completionDate: payload.completionDate,
+              assignmentId: payload.assignmentId,
+            })
+            navigate(`/ldr-tools/health-checks/new?${q.toString()}`)
+            setCellModal(null)
+          }}
           onClose={() => setCellModal(null)}
           onAdd={(pid, opts) => void addAssignment(cellModal.activityId, cellModal.date, pid, opts)}
           onUpdate={(id, patch) => void updateAssignment(id, patch)}
@@ -798,14 +876,23 @@ export function LeadershipRosterPage() {
 }
 
 function CellEditorModal(props: {
+  rosterActivityId: string
   activityName: string
   date: string
   people: LdrPersonRow[]
   currentWorkspaceId: string
   scopeLevel: 'site' | 'cell'
+  contextMasterCellId: string
   cells: { id: string; label: string }[]
   legacyLdrLocations: { id: string; name: string }[]
   rows: LdrAssignmentRow[]
+  hcTemplateReadyForActivity: boolean
+  onStartHealthCheck: (payload: {
+    activityId: string
+    masterCellId: string
+    completionDate: string
+    assignmentId: string
+  }) => void
   onClose: () => void
   onAdd: (ldrPersonId: string, opts?: { masterCellId?: string; rag_status?: LdrRag; comment?: string }) => void
   onUpdate: (id: string, patch: Partial<Pick<LdrAssignmentRow, 'rag_status' | 'comment' | 'master_cell_id'>>) => void
@@ -823,9 +910,36 @@ function CellEditorModal(props: {
 
   return (
     <dialog open className="fixed inset-0 z-50 flex max-h-none max-w-none items-center justify-center bg-black/40 p-4 text-fg [color-scheme:light]">
-      <div className="max-h-[min(90vh,40rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-surface p-6 text-fg shadow-glow">
-        <h3 className="font-display text-lg font-semibold text-fg">{props.activityName}</h3>
-        <p className="mt-1 text-sm text-muted">{props.date}</p>
+      <div className="flex max-h-[min(90vh,40rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface text-fg shadow-glow">
+        <div className="shrink-0 border-b border-border bg-surface px-6 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="flex items-baseline gap-2 font-display text-lg font-semibold text-fg">
+                <span>{props.activityName}</span>
+                <span className="text-sm font-medium text-muted">{props.date}</span>
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={props.onClose}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-fg hover:bg-surface-raised"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+        <div className="overflow-y-auto px-6 py-4">
+        {props.hcTemplateReadyForActivity ? (
+          <p className="mt-2 rounded-lg border border-zinc-300 bg-zinc-100 px-3 py-2 text-xs text-black">
+            This activity has an active health check template. Use <strong className="font-semibold text-black">Complete HC</strong>{' '}
+            on an assignment to open the check with site, plant, cell, and completion date prefilled.
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-muted">
+            Link this activity under LDR Admin → HC Types and set an active template to enable Complete HC from the
+            roster.
+          </p>
+        )}
 
         <div className="mt-4 space-y-4">
           {props.rows.length === 0 ? (
@@ -840,6 +954,13 @@ function CellEditorModal(props: {
                   ? shortCellTag(p)
                   : ''
               const compact = p != null ? `${p.initials}${compactLocation ? ` · ${compactLocation}` : ''}` : 'LD'
+              const effCell = effectiveMasterCellForHc(
+                r,
+                props.legacyLdrLocations,
+                props.cells,
+                props.scopeLevel,
+                props.contextMasterCellId,
+              )
               return (
                 <AssignmentRowEditor
                   key={r.id}
@@ -850,6 +971,28 @@ function CellEditorModal(props: {
                   personFullName={p ? personName(p) : 'Person'}
                   personInitials={p?.initials ?? 'LD'}
                   personAvatarVariant={p?.avatar_variant ?? 1}
+                  showCompleteHcButton={props.hcTemplateReadyForActivity}
+                  completeHcEnabled={!!effCell && !!p}
+                  completeHcTitle={
+                    !effCell
+                      ? 'Choose a cell for this assignment (or use cell-level scope)'
+                      : !p
+                        ? 'Person not found for this assignment'
+                        : undefined
+                  }
+                  onCompleteHc={
+                    props.hcTemplateReadyForActivity
+                      ? () => {
+                          if (!effCell || !p) return
+                          props.onStartHealthCheck({
+                            activityId: props.rosterActivityId,
+                            masterCellId: effCell,
+                            completionDate: props.date,
+                            assignmentId: r.id,
+                          })
+                        }
+                      : undefined
+                  }
                   onUpdate={props.onUpdate}
                   onRemove={props.onRemove}
                 />
@@ -978,14 +1121,8 @@ function CellEditorModal(props: {
             </div>
           ) : null}
         </div>
+        </div>
 
-        <button
-          type="button"
-          onClick={props.onClose}
-          className="mt-6 w-full rounded-xl border border-border py-2 text-sm font-medium text-fg"
-        >
-          Close
-        </button>
       </div>
     </dialog>
   )
@@ -999,6 +1136,10 @@ function AssignmentRowEditor(props: {
   personFullName: string
   personInitials: string
   personAvatarVariant: number
+  showCompleteHcButton: boolean
+  completeHcEnabled: boolean
+  completeHcTitle?: string
+  onCompleteHc?: () => void
   onUpdate: (id: string, patch: Partial<Pick<LdrAssignmentRow, 'rag_status' | 'comment' | 'master_cell_id'>>) => void
   onRemove: (id: string) => void
 }) {
@@ -1014,13 +1155,27 @@ function AssignmentRowEditor(props: {
             <p className="text-[11px] text-muted">{props.personFullName}</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => props.onRemove(props.row.id)}
-          className="text-xs font-medium text-danger hover:underline"
-        >
-          Remove
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {props.showCompleteHcButton ? (
+            <button
+              type="button"
+              title={props.completeHcTitle}
+              disabled={!props.completeHcEnabled}
+              onClick={() => props.onCompleteHc?.()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-400 bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <ClipboardCheck className="size-3.5 shrink-0" aria-hidden />
+              Complete HC
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => props.onRemove(props.row.id)}
+            className="text-xs font-medium text-danger hover:underline"
+          >
+            Remove
+          </button>
+        </div>
       </div>
       <div className="mt-2">
         <p className="text-xs font-medium uppercase tracking-wider text-muted">RAG</p>

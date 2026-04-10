@@ -50,6 +50,12 @@ type Ctx = {
   setSiteId: (id: string) => void
   setPlantId: (id: string) => void
   setCellId: (id: string) => void
+  /** Resolve site + plant + master cell from a master cell id (for deep links / HC from roster). */
+  resolveMasterCellScope: (masterCellId: string | null | undefined) => {
+    siteId: string
+    plantId: string
+    cellId: string
+  } | null
 }
 
 const LdrWorkspaceContext = createContext<Ctx | null>(null)
@@ -241,6 +247,18 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
     return m
   }, [allPlants, allCells])
 
+  const resolveMasterCellScope = useCallback(
+    (masterCellId: string | null | undefined) => {
+      if (!masterCellId) return null
+      const cell = allCells.find((c) => c.id === masterCellId)
+      if (!cell) return null
+      const plant = allPlants.find((p) => p.id === cell.plant_id)
+      if (!plant) return null
+      return { siteId: plant.site_id, plantId: plant.id, cellId: cell.id }
+    },
+    [allCells, allPlants],
+  )
+
   const value = useMemo<Ctx>(
     () => ({
       status,
@@ -259,6 +277,7 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
       setSiteId,
       setPlantId,
       setCellId,
+      resolveMasterCellScope,
     }),
     [
       status,
@@ -277,6 +296,7 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
       setSiteId,
       setPlantId,
       setCellId,
+      resolveMasterCellScope,
     ],
   )
 

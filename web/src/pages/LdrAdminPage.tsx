@@ -15,6 +15,7 @@ import {
   type LdrPersonStatus,
 } from '../features/ldr/types'
 import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
+import { LdrAdminHcTemplatesPanel, LdrAdminHcTypesPanel } from '../features/health-checks/HcAdminPanels'
 
 function visibleSiteActivitiesStorageKey(cellWorkspaceId: string, siteWorkspaceId: string) {
   return `ldr.site-activities.visible.v1:${cellWorkspaceId}:${siteWorkspaceId}`
@@ -41,12 +42,14 @@ function saveVisibleSiteActivityIds(cellWorkspaceId: string, siteWorkspaceId: st
 }
 
 export function LdrAdminPage() {
-  const [tab, setTab] = useState<'people' | 'activities' | 'cells'>('people')
+  const [tab, setTab] = useState<'people' | 'activities' | 'cells' | 'hc_types' | 'hc_templates'>('people')
   const tabs = useMemo(
     () => [
       { id: 'people' as const, label: 'People' },
       { id: 'activities' as const, label: 'Activities' },
       { id: 'cells' as const, label: 'Cells' },
+      { id: 'hc_types' as const, label: 'HC Types' },
+      { id: 'hc_templates' as const, label: 'HC Templates' },
     ],
     [],
   )
@@ -80,6 +83,8 @@ export function LdrAdminPage() {
       {tab === 'people' ? <LdrAdminPeoplePanel /> : null}
       {tab === 'activities' ? <LdrAdminActivitiesPanel /> : null}
       {tab === 'cells' ? <LdrAdminCellsPanel /> : null}
+      {tab === 'hc_types' ? <LdrAdminHcTypesPanel /> : null}
+      {tab === 'hc_templates' ? <LdrAdminHcTemplatesPanel /> : null}
     </div>
   )
 }
