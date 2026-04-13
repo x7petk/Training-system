@@ -63,3 +63,15 @@ Open [http://localhost:5173](http://localhost:5173). After migration + admin pro
 ### Production
 
 Build: `cd web && npm run build`. Deploy the `web/dist` output (e.g. Vercel/Netlify) and set the same `VITE_*` env vars there; update Supabase redirect URLs for the live domain.
+
+### LDR tools smoke checks
+
+From `web/`:
+
+```bash
+npm run test
+npm run lint
+npm run build
+```
+
+These are the baseline gates used after LDR tools changes (roster/calendar/checks/reports/admin/user guide).

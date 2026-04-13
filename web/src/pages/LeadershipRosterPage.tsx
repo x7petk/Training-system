@@ -24,6 +24,10 @@ import {
   type LdrRag,
 } from '../features/ldr/types'
 import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
+import {
+  consumeLdrRosterReturnScope,
+  stashLdrRosterReturnScope,
+} from '../features/ldr/ldrRosterReturnScope'
 
 const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -143,7 +147,21 @@ function ragDotClass(r: LdrRag): string {
 
 export function LeadershipRosterPage() {
   const navigate = useNavigate()
-  const { workspaceId, scopeLevel, siteId, cellId, siteCellOptions, masterCellJoinById } = useLdrWorkspace()
+  const {
+    status: ldrStatus,
+    workspaceId,
+    scopeLevel,
+    siteId,
+    plantId,
+    cellId,
+    sites,
+    siteCellOptions,
+    masterCellJoinById,
+    setScopeLevel,
+    setSiteId,
+    setPlantId,
+    setCellId,
+  } = useLdrWorkspace()
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()))
   const [activities, setActivities] = useState<LdrActivity[]>([])
   const [ldrPeople, setLdrPeople] = useState<LdrPersonRow[]>([])
@@ -156,6 +174,24 @@ export function LeadershipRosterPage() {
   const [dragAssignmentId, setDragAssignmentId] = useState<string | null>(null)
   /** Activities (LDR) that have a linked HC type with an active template — roster can open Complete HC. */
   const [hcReadyByActivityId, setHcReadyByActivityId] = useState<Map<string, { hcTypeId: string }>>(() => new Map())
+  /** SOS / QOS / PPO: activity is system-linked and has at least one active type template. */
+  const [obsReadyByActivityId, setObsReadyByActivityId] = useState<Map<string, { sos: boolean; qos: boolean; ppo: boolean }>>(
+    () => new Map(),
+  )
+
+  /** After HC / obs flows change workspace to cell scope, restore roster site vs cell choice when returning here. */
+  useEffect(() => {
+    if (ldrStatus !== 'ready' || sites.length === 0) return
+    const returned = consumeLdrRosterReturnScope()
+    if (!returned) return
+    if (!sites.some((s) => s.id === returned.siteId)) return
+    setScopeLevel(returned.scopeLevel)
+    setSiteId(returned.siteId)
+    if (returned.scopeLevel === 'cell') {
+      setPlantId(returned.plantId)
+      setCellId(returned.cellId)
+    }
+  }, [ldrStatus, sites, setScopeLevel, setSiteId, setPlantId, setCellId])
 
   const weekDays = useMemo(() => weekDaysMondayFirst(weekStart), [weekStart])
   const weekStartStr = toYMD(weekStart)
@@ -481,6 +517,121 @@ export function LeadershipRosterPage() {
     }
     queueMicrotask(() => {
       void loadHcReadiness()
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activities])
+
+  useEffect(() => {
+    const activityIds = activities.map((a) => a.id)
+    const workspaceIds = [...new Set(activities.map((a) => a.workspace_id).filter((v): v is string => Boolean(v)))]
+    if (activityIds.length === 0) {
+      queueMicrotask(() => setObsReadyByActivityId(new Map()))
+      return
+    }
+    let cancelled = false
+    async function loadObsReadiness() {
+      if (cancelled) return
+      const [linksRes, sosTypesRes, qosTypesRes, ppoTypesRes] = await Promise.all([
+        workspaceIds.length
+          ? supabase
+              .from('obs_system_activity_links')
+              .select('workspace_id, kind, ldr_activity_id')
+              .in('workspace_id', workspaceIds)
+          : Promise.resolve({
+              data: [] as { workspace_id: string; kind: 'sos' | 'qos' | 'ppo'; ldr_activity_id: string }[],
+              error: null,
+            }),
+        workspaceIds.length
+          ? supabase.from('sos_types').select('id, workspace_id').eq('active', true).in('workspace_id', workspaceIds)
+          : Promise.resolve({ data: [] as { id: string; workspace_id: string }[], error: null }),
+        workspaceIds.length
+          ? supabase.from('qos_types').select('id, workspace_id').eq('active', true).in('workspace_id', workspaceIds)
+          : Promise.resolve({ data: [] as { id: string; workspace_id: string }[], error: null }),
+        workspaceIds.length
+          ? supabase.from('ppo_types').select('id, workspace_id').eq('active', true).in('workspace_id', workspaceIds)
+          : Promise.resolve({ data: [] as { id: string; workspace_id: string }[], error: null }),
+      ])
+      if (cancelled) return
+      if (linksRes.error || sosTypesRes.error || qosTypesRes.error || ppoTypesRes.error) {
+        setObsReadyByActivityId(new Map())
+        return
+      }
+      const links = (linksRes.data ?? []) as { workspace_id: string; kind: 'sos' | 'qos' | 'ppo'; ldr_activity_id: string }[]
+      const sosTypes = (sosTypesRes.data ?? []) as { id: string; workspace_id: string }[]
+      const qosTypes = (qosTypesRes.data ?? []) as { id: string; workspace_id: string }[]
+      const ppoTypes = (ppoTypesRes.data ?? []) as { id: string; workspace_id: string }[]
+
+      const [sosTpl, qosTpl, ppoTpl] = await Promise.all([
+        sosTypes.length
+          ? supabase
+              .from('sos_templates')
+              .select('sos_type_id')
+              .eq('active', true)
+              .in(
+                'sos_type_id',
+                sosTypes.map((t) => t.id),
+              )
+          : Promise.resolve({ data: [] as { sos_type_id: string }[] }),
+        qosTypes.length
+          ? supabase
+              .from('qos_templates')
+              .select('qos_type_id')
+              .eq('active', true)
+              .in(
+                'qos_type_id',
+                qosTypes.map((t) => t.id),
+              )
+          : Promise.resolve({ data: [] as { qos_type_id: string }[] }),
+        ppoTypes.length
+          ? supabase
+              .from('ppo_templates')
+              .select('ppo_type_id')
+              .eq('active', true)
+              .in(
+                'ppo_type_id',
+                ppoTypes.map((t) => t.id),
+              )
+          : Promise.resolve({ data: [] as { ppo_type_id: string }[] }),
+      ])
+      if (cancelled) return
+
+      const sosWith = new Set((sosTpl.data ?? []).map((r: { sos_type_id: string }) => r.sos_type_id))
+      const qosWith = new Set((qosTpl.data ?? []).map((r: { qos_type_id: string }) => r.qos_type_id))
+      const ppoWith = new Set((ppoTpl.data ?? []).map((r: { ppo_type_id: string }) => r.ppo_type_id))
+
+      const sosReadyWs = new Set<string>()
+      for (const t of sosTypes) {
+        if (sosWith.has(t.id)) sosReadyWs.add(t.workspace_id)
+      }
+      const qosReadyWs = new Set<string>()
+      for (const t of qosTypes) {
+        if (qosWith.has(t.id)) qosReadyWs.add(t.workspace_id)
+      }
+      const ppoReadyWs = new Set<string>()
+      for (const t of ppoTypes) {
+        if (ppoWith.has(t.id)) ppoReadyWs.add(t.workspace_id)
+      }
+
+      const linkedByActivity = new Map<string, { kind: 'sos' | 'qos' | 'ppo'; workspace_id: string }>()
+      for (const l of links) {
+        linkedByActivity.set(l.ldr_activity_id, { kind: l.kind, workspace_id: l.workspace_id })
+      }
+
+      const m = new Map<string, { sos: boolean; qos: boolean; ppo: boolean }>()
+      for (const id of activityIds) {
+        const linked = linkedByActivity.get(id)
+        m.set(id, {
+          sos: linked?.kind === 'sos' ? sosReadyWs.has(linked.workspace_id) : false,
+          qos: linked?.kind === 'qos' ? qosReadyWs.has(linked.workspace_id) : false,
+          ppo: linked?.kind === 'ppo' ? ppoReadyWs.has(linked.workspace_id) : false,
+        })
+      }
+      setObsReadyByActivityId(m)
+    }
+    queueMicrotask(() => {
+      void loadObsReadiness()
     })
     return () => {
       cancelled = true
@@ -855,7 +1006,9 @@ export function LeadershipRosterPage() {
           legacyLdrLocations={legacyLdrLocations}
           rows={assignmentsForCell(cellModal.activityId, cellModal.date)}
           hcTemplateReadyForActivity={hcReadyByActivityId.has(cellModal.activityId)}
+          obsReady={obsReadyByActivityId.get(cellModal.activityId) ?? { sos: false, qos: false, ppo: false }}
           onStartHealthCheck={(payload) => {
+            stashLdrRosterReturnScope({ scopeLevel, siteId, plantId, cellId })
             const q = new URLSearchParams({
               activityId: payload.activityId,
               masterCellId: payload.masterCellId,
@@ -863,6 +1016,17 @@ export function LeadershipRosterPage() {
               assignmentId: payload.assignmentId,
             })
             navigate(`/ldr-tools/health-checks/new?${q.toString()}`)
+            setCellModal(null)
+          }}
+          onStartObs={(obsKind, payload) => {
+            stashLdrRosterReturnScope({ scopeLevel, siteId, plantId, cellId })
+            const q = new URLSearchParams({
+              activityId: payload.activityId,
+              masterCellId: payload.masterCellId,
+              completionDate: payload.completionDate,
+              assignmentId: payload.assignmentId,
+            })
+            navigate(`/ldr-tools/${obsKind}/new?${q.toString()}`)
             setCellModal(null)
           }}
           onClose={() => setCellModal(null)}
@@ -887,18 +1051,24 @@ function CellEditorModal(props: {
   legacyLdrLocations: { id: string; name: string }[]
   rows: LdrAssignmentRow[]
   hcTemplateReadyForActivity: boolean
+  obsReady: { sos: boolean; qos: boolean; ppo: boolean }
   onStartHealthCheck: (payload: {
     activityId: string
     masterCellId: string
     completionDate: string
     assignmentId: string
   }) => void
+  onStartObs: (
+    kind: 'sos' | 'qos' | 'ppo',
+    payload: { activityId: string; masterCellId: string; completionDate: string; assignmentId: string },
+  ) => void
   onClose: () => void
   onAdd: (ldrPersonId: string, opts?: { masterCellId?: string; rag_status?: LdrRag; comment?: string }) => void
   onUpdate: (id: string, patch: Partial<Pick<LdrAssignmentRow, 'rag_status' | 'comment' | 'master_cell_id'>>) => void
   onRemove: (id: string) => void
 }) {
   const assignedIds = useMemo(() => new Set(props.rows.map((r) => r.ldr_person_id)), [props.rows])
+  const peopleById = useMemo(() => new Map(props.people.map((p) => [p.id, p])), [props.people])
   const addable = useMemo(
     () => props.people.filter((p) => !assignedIds.has(p.id) && (p.workspace_id ?? props.currentWorkspaceId) === props.currentWorkspaceId),
     [props.people, assignedIds, props.currentWorkspaceId],
@@ -929,15 +1099,27 @@ function CellEditorModal(props: {
           </div>
         </div>
         <div className="overflow-y-auto px-6 py-4">
-        {props.hcTemplateReadyForActivity ? (
+        {props.hcTemplateReadyForActivity ||
+        props.obsReady.sos ||
+        props.obsReady.qos ||
+        props.obsReady.ppo ? (
           <p className="mt-2 rounded-lg border border-zinc-300 bg-zinc-100 px-3 py-2 text-xs text-black">
-            This activity has an active health check template. Use <strong className="font-semibold text-black">Complete HC</strong>{' '}
-            on an assignment to open the check with site, plant, cell, and completion date prefilled.
+            {props.hcTemplateReadyForActivity ? (
+              <>
+                HC: use <strong className="font-semibold text-black">Complete HC</strong> on an assignment when an active HC template exists.
+              </>
+            ) : null}
+            {props.obsReady.sos || props.obsReady.qos || props.obsReady.ppo ? (
+              <span className="block">
+                SOS / QOS / PPO: use the matching complete buttons when that system activity is linked and at least one
+                active type template exists (LDR Admin → types + templates).
+              </span>
+            ) : null}
           </p>
         ) : (
           <p className="mt-2 text-xs text-muted">
-            Link this activity under LDR Admin → HC Types and set an active template to enable Complete HC from the
-            roster.
+            Link this activity under LDR Admin (HC type or SOS/QOS/PPO system link) and set active templates to enable
+            completion shortcuts from the roster.
           </p>
         )}
 
@@ -946,7 +1128,7 @@ function CellEditorModal(props: {
             <p className="text-sm text-muted">No assignments yet.</p>
           ) : (
             props.rows.map((r) => {
-              const p = props.people.find((x) => x.id === r.ldr_person_id)
+              const p = peopleById.get(r.ldr_person_id)
               const assignmentCellName = ldrMasterCellName(r.master_cells)
               const compactLocation = assignmentCellName
                 ? shortLocationTagFromName(assignmentCellName)
@@ -971,27 +1153,36 @@ function CellEditorModal(props: {
                   personFullName={p ? personName(p) : 'Person'}
                   personInitials={p?.initials ?? 'LD'}
                   personAvatarVariant={p?.avatar_variant ?? 1}
+                  rosterActivityId={props.rosterActivityId}
+                  assignmentDate={props.date}
+                  effectiveMasterCellId={effCell}
+                  obsReady={props.obsReady}
                   showCompleteHcButton={props.hcTemplateReadyForActivity}
-                  completeHcEnabled={!!effCell && !!p}
+                  completeHcEnabled={!!p}
                   completeHcTitle={
-                    !effCell
-                      ? 'Choose a cell for this assignment (or use cell-level scope)'
-                      : !p
-                        ? 'Person not found for this assignment'
-                        : undefined
+                    !p ? 'Person not found for this assignment' : undefined
                   }
                   onCompleteHc={
                     props.hcTemplateReadyForActivity
                       ? () => {
-                          if (!effCell || !p) return
+                          if (!p) return
                           props.onStartHealthCheck({
                             activityId: props.rosterActivityId,
-                            masterCellId: effCell,
+                            masterCellId: effCell ?? '',
                             completionDate: props.date,
                             assignmentId: r.id,
                           })
                         }
                       : undefined
+                  }
+                  onStartObs={props.onStartObs}
+                  completeObsEnabled={!!effCell && !!p}
+                  completeObsTitle={
+                    !effCell
+                      ? 'Choose a cell for this assignment (or use cell-level scope)'
+                      : !p
+                        ? 'Person not found for this assignment'
+                        : undefined
                   }
                   onUpdate={props.onUpdate}
                   onRemove={props.onRemove}
@@ -1015,7 +1206,7 @@ function CellEditorModal(props: {
                         setSelectedCellId('')
                         return
                       }
-                      const person = props.people.find((p) => p.id === id)
+                      const person = peopleById.get(id)
                       setSelectedCellId(
                         person ? personDefaultCellForPicker(person, props.legacyLdrLocations, props.cells) : '',
                       )
@@ -1136,10 +1327,20 @@ function AssignmentRowEditor(props: {
   personFullName: string
   personInitials: string
   personAvatarVariant: number
+  rosterActivityId: string
+  assignmentDate: string
+  effectiveMasterCellId: string | null
+  obsReady: { sos: boolean; qos: boolean; ppo: boolean }
   showCompleteHcButton: boolean
   completeHcEnabled: boolean
   completeHcTitle?: string
   onCompleteHc?: () => void
+  onStartObs: (
+    kind: 'sos' | 'qos' | 'ppo',
+    payload: { activityId: string; masterCellId: string; completionDate: string; assignmentId: string },
+  ) => void
+  completeObsEnabled: boolean
+  completeObsTitle?: string
   onUpdate: (id: string, patch: Partial<Pick<LdrAssignmentRow, 'rag_status' | 'comment' | 'master_cell_id'>>) => void
   onRemove: (id: string) => void
 }) {
@@ -1166,6 +1367,66 @@ function AssignmentRowEditor(props: {
             >
               <ClipboardCheck className="size-3.5 shrink-0" aria-hidden />
               Complete HC
+            </button>
+          ) : null}
+          {props.obsReady.sos ? (
+            <button
+              type="button"
+              title={props.completeObsTitle}
+              disabled={!props.completeObsEnabled}
+              onClick={() => {
+                if (!props.completeObsEnabled || !props.effectiveMasterCellId) return
+                props.onStartObs('sos', {
+                  activityId: props.rosterActivityId,
+                  masterCellId: props.effectiveMasterCellId,
+                  completionDate: props.assignmentDate,
+                  assignmentId: props.row.id,
+                })
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-400 bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <ClipboardCheck className="size-3.5 shrink-0" aria-hidden />
+              Complete SOS
+            </button>
+          ) : null}
+          {props.obsReady.qos ? (
+            <button
+              type="button"
+              title={props.completeObsTitle}
+              disabled={!props.completeObsEnabled}
+              onClick={() => {
+                if (!props.completeObsEnabled || !props.effectiveMasterCellId) return
+                props.onStartObs('qos', {
+                  activityId: props.rosterActivityId,
+                  masterCellId: props.effectiveMasterCellId,
+                  completionDate: props.assignmentDate,
+                  assignmentId: props.row.id,
+                })
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-400 bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <ClipboardCheck className="size-3.5 shrink-0" aria-hidden />
+              Complete QOS
+            </button>
+          ) : null}
+          {props.obsReady.ppo ? (
+            <button
+              type="button"
+              title={props.completeObsTitle}
+              disabled={!props.completeObsEnabled}
+              onClick={() => {
+                if (!props.completeObsEnabled || !props.effectiveMasterCellId) return
+                props.onStartObs('ppo', {
+                  activityId: props.rosterActivityId,
+                  masterCellId: props.effectiveMasterCellId,
+                  completionDate: props.assignmentDate,
+                  assignmentId: props.row.id,
+                })
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-400 bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <ClipboardCheck className="size-3.5 shrink-0" aria-hidden />
+              Complete PPO
             </button>
           ) : null}
           <button

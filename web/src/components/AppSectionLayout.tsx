@@ -21,6 +21,18 @@ export type SectionNavItem = {
   end?: boolean
 }
 
+export type SectionNavGroup = {
+  type: 'group'
+  label: string
+  items: SectionNavItem[]
+}
+
+export type SectionNavEntry = SectionNavItem | SectionNavGroup
+
+function isNavGroup(entry: SectionNavEntry): entry is SectionNavGroup {
+  return 'type' in entry && entry.type === 'group'
+}
+
 type AppSectionLayoutProps = {
   storageKey: string
   title: string
@@ -28,7 +40,7 @@ type AppSectionLayoutProps = {
   subtitle?: string
   headerIconClass: string
   HeaderIcon: IconComp
-  navItems: SectionNavItem[]
+  navItems: SectionNavEntry[]
   /** Extra nav nodes below primary items (e.g. footer links) */
   navFooter?: ReactNode
   /** Extra account/action nodes shown under "Sign out" in desktop sidebar. */
@@ -61,6 +73,11 @@ export function AppSectionLayout({
     setDesktopCollapsed((prev) => {
       const next = !prev
       window.localStorage.setItem(storageKey, next ? '1' : '0')
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new CustomEvent('app-section-sidebar-toggle', { detail: { storageKey, collapsed: next } }),
+        )
+      })
       return next
     })
   }
@@ -104,18 +121,51 @@ export function AppSectionLayout({
         </div>
 
         <nav className="flex gap-1 p-2 md:flex-col" aria-label={`${title} navigation`}>
-          {navItems.map((item) => {
-            const Icon = item.icon
+          {navItems.map((entry, entryIdx) => {
+            if (isNavGroup(entry)) {
+              return (
+                <div
+                  key={`nav-group-${entry.label}-${entryIdx}`}
+                  className={entryIdx > 0 ? 'mt-2 border-t border-border pt-2' : ''}
+                >
+                  {!desktopCollapsed ? (
+                    <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">
+                      {entry.label}
+                    </p>
+                  ) : entryIdx > 0 ? (
+                    <div className="mx-1 mb-1 h-px shrink-0 bg-border md:mb-1" aria-hidden />
+                  ) : null}
+                  <div className="flex flex-col gap-1">
+                    {entry.items.map((item) => {
+                      const Icon = item.icon
+                      return (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          end={item.end}
+                          className={navClass(desktopCollapsed)}
+                          title={desktopCollapsed ? item.label : undefined}
+                        >
+                          <Icon className="size-4 shrink-0 opacity-80" aria-hidden />
+                          {!desktopCollapsed ? item.label : null}
+                        </NavLink>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            }
+            const Icon = entry.icon
             return (
               <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
+                key={entry.to}
+                to={entry.to}
+                end={entry.end}
                 className={navClass(desktopCollapsed)}
-                title={desktopCollapsed ? item.label : undefined}
+                title={desktopCollapsed ? entry.label : undefined}
               >
                 <Icon className="size-4 shrink-0 opacity-80" aria-hidden />
-                {!desktopCollapsed ? item.label : null}
+                {!desktopCollapsed ? entry.label : null}
               </NavLink>
             )
           })}

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type TextareaHTMLAttributes } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ClipboardList } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useAppSectionSidebarDockLeftClass } from '../hooks/useAppSectionSidebarDockInset'
 import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
 import { ldrMasterCellJoinFromId, ldrMasterCellLabel } from '../features/ldr/types'
 import {
@@ -24,6 +25,8 @@ import {
   hasPendingHcLdrAssignment,
 } from '../features/health-checks/hcRosterAssignmentLink'
 
+const LDR_TOOLS_SIDEBAR_STORAGE_KEY = 'ldr-tools.sidebar-collapsed'
+
 type Line = {
   answerId: string
   templateQuestionId: string
@@ -34,6 +37,31 @@ type Line = {
   answer: 'pass' | 'fail' | null
   comment: string
   sortOrder: number
+}
+
+function AutoGrowTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useRef<HTMLTextAreaElement | null>(null)
+  const value = props.value
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = '0px'
+    el.style.height = `${el.scrollHeight}px`
+  }, [value])
+  return (
+    <textarea
+      {...props}
+      ref={ref}
+      rows={1}
+      className={`${props.className ?? ''} resize-none overflow-hidden`}
+      onInput={(e) => {
+        const el = e.currentTarget
+        el.style.height = '0px'
+        el.style.height = `${el.scrollHeight}px`
+        props.onInput?.(e)
+      }}
+    />
+  )
 }
 
 function buildLines(
@@ -79,9 +107,12 @@ export function HcRecordPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [expandedHelp, setExpandedHelp] = useState<Record<string, boolean>>({})
   const [submitNotice, setSubmitNotice] = useState<string | null>(null)
   const [rosterLinkPending, setRosterLinkPending] = useState(false)
+  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastSavedDraftRef = useRef('')
 
   const scheduledCompletionDate = searchParams.get('completionDate') ?? ''
 
@@ -127,6 +158,11 @@ export function HcRecordPage() {
     setOperatorName(rec.operator_name ?? '')
     setOverallComment(rec.overall_comment ?? '')
     setLines(buildLines(answers, submitted, qById))
+    lastSavedDraftRef.current = JSON.stringify({
+      operatorName: rec.operator_name ?? '',
+      overallComment: rec.overall_comment ?? '',
+      lines: buildLines(answers, submitted, qById).map((l) => ({ id: l.answerId, answer: l.answer, comment: l.comment })),
+    })
     setLoading(false)
   }, [recordId])
 
@@ -172,42 +208,58 @@ export function HcRecordPage() {
     setLines((prev) => prev.map((l) => (l.answerId === id ? { ...l, ...patch } : l)))
   }
 
-  async function saveDraft() {
-    if (!recordId || !record || submitted || !isOwner) return
-    setSaving(true)
-    setError(null)
-    const recUp = await supabase
-      .from('hc_records')
-      .update({
-        operator_name: operatorName.trim() || null,
-        overall_comment: overallComment.trim() || null,
-      })
-      .eq('id', recordId)
-      .is('completed_at', null)
-    if (recUp.error) {
-      setSaving(false)
-      setError(recUp.error.message)
-      return
+  const draftSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        operatorName,
+        overallComment,
+        lines: lines.map((l) => ({ id: l.answerId, answer: l.answer, comment: l.comment })),
+      }),
+    [operatorName, overallComment, lines],
+  )
+
+  useEffect(() => {
+    if (!recordId || !record || readOnly || loading) return
+    if (draftSnapshot === lastSavedDraftRef.current) return
+    if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current)
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      void (async () => {
+        setAutoSaveState('saving')
+        const recUp = await supabase
+          .from('hc_records')
+          .update({
+            operator_name: operatorName.trim() || null,
+            overall_comment: overallComment.trim() || null,
+          })
+          .eq('id', recordId)
+          .is('completed_at', null)
+        if (recUp.error) {
+          setAutoSaveState('error')
+          return
+        }
+        for (const l of lines) {
+          const scoreVal = l.answer === 'pass' ? 1 : l.answer === 'fail' ? 0 : null
+          const up = await supabase
+            .from('hc_answers')
+            .update({
+              answer: l.answer,
+              score_value: scoreVal,
+              comment: l.comment.trim(),
+            })
+            .eq('id', l.answerId)
+          if (up.error) {
+            setAutoSaveState('error')
+            return
+          }
+        }
+        lastSavedDraftRef.current = draftSnapshot
+        setAutoSaveState('saved')
+      })()
+    }, 800)
+    return () => {
+      if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current)
     }
-    for (const l of lines) {
-      const scoreVal = l.answer === 'pass' ? 1 : l.answer === 'fail' ? 0 : null
-      const up = await supabase
-        .from('hc_answers')
-        .update({
-          answer: l.answer,
-          score_value: scoreVal,
-          comment: l.comment.trim(),
-        })
-        .eq('id', l.answerId)
-      if (up.error) {
-        setSaving(false)
-        setError(up.error.message)
-        return
-      }
-    }
-    setSaving(false)
-    await load()
-  }
+  }, [draftSnapshot, loading, readOnly, recordId, record, operatorName, overallComment, lines])
 
   async function submitCheck() {
     if (!recordId || !record || submitted || !isOwner) return
@@ -341,6 +393,8 @@ export function HcRecordPage() {
   }
 
   const canDelete = Boolean(isAdmin && recordId && record)
+  const showActionDock = Boolean(!readOnly || canDelete)
+  const dockLeftClass = useAppSectionSidebarDockLeftClass(LDR_TOOLS_SIDEBAR_STORAGE_KEY)
 
   async function deleteRecord() {
     if (!recordId || !canDelete) return
@@ -379,7 +433,7 @@ export function HcRecordPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className={`space-y-6 ${showActionDock ? 'pb-24 md:pb-28' : ''}`}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <Link
@@ -424,13 +478,13 @@ export function HcRecordPage() {
 
       {submitNotice ? (
         <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-600/30 bg-emerald-600/10 px-4 py-3 text-sm text-emerald-950 dark:text-emerald-100"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-400/70 bg-emerald-100 px-4 py-3 text-sm text-black dark:border-emerald-500 dark:bg-emerald-200 dark:text-black"
           role="status"
         >
           <span>{submitNotice}</span>
           <button
             type="button"
-            className="shrink-0 rounded-lg border border-emerald-700/30 px-2 py-1 text-xs font-medium text-emerald-900 hover:bg-emerald-600/15 dark:text-emerald-50"
+            className="shrink-0 rounded-lg border border-black/30 bg-white/70 px-2 py-1 text-xs font-medium text-black hover:bg-white dark:bg-white/80 dark:text-black"
             onClick={() => setSubmitNotice(null)}
           >
             Dismiss
@@ -471,9 +525,9 @@ export function HcRecordPage() {
         </div>
         <label className="block text-xs font-medium text-muted sm:col-span-2">
           Overall comment (optional)
-          <textarea
+          <AutoGrowTextarea
             disabled={readOnly}
-            className="mt-1 min-h-[4rem] w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm disabled:opacity-60"
+            className="mt-1 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm disabled:opacity-60"
             value={overallComment}
             onChange={(e) => setOverallComment(e.target.value)}
           />
@@ -486,13 +540,41 @@ export function HcRecordPage() {
             key={l.answerId}
             className="rounded-2xl border border-border-strong bg-surface p-5 shadow-sm"
           >
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <h2 className="text-base font-semibold text-fg">{l.questionText}</h2>
-              {l.isCritical ? (
-                <span className="shrink-0 rounded-full bg-red-600/15 px-2 py-0.5 text-xs font-semibold text-red-800 dark:text-red-200">
-                  Critical
-                </span>
-              ) : null}
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <h2 className="min-w-0 flex-1 text-base font-semibold text-fg">{l.questionText}</h2>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {l.isCritical ? (
+                  <span className="shrink-0 rounded-full border border-red-800 bg-white px-2 py-0.5 text-xs font-semibold text-red-900 dark:border-red-300 dark:bg-surface dark:text-red-200">
+                    Critical
+                  </span>
+                ) : null}
+                <div className="inline-flex rounded-xl border border-border bg-white p-1 dark:bg-surface">
+                  <button
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => setLine(l.answerId, { answer: 'pass' })}
+                    className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition-colors ${
+                      l.answer === 'pass'
+                        ? 'bg-emerald-600 text-white shadow-sm dark:bg-emerald-500'
+                        : 'text-fg/80 hover:bg-surface-raised'
+                    }`}
+                  >
+                    PASS
+                  </button>
+                  <button
+                    type="button"
+                    disabled={readOnly}
+                    onClick={() => setLine(l.answerId, { answer: 'fail' })}
+                    className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition-colors ${
+                      l.answer === 'fail'
+                        ? 'bg-red-600 text-white shadow-sm dark:bg-red-500'
+                        : 'text-fg/80 hover:bg-surface-raised'
+                    }`}
+                  >
+                    FAIL
+                  </button>
+                </div>
+              </div>
             </div>
             <div className="mt-3 rounded-xl border border-border bg-surface-raised/40 px-4 py-3 text-sm text-fg/85">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted">Expected standard</div>
@@ -513,41 +595,12 @@ export function HcRecordPage() {
               </div>
             ) : null}
 
-            <div className="mt-4 flex flex-wrap gap-3">
-              <div className="inline-flex rounded-xl border border-border p-1">
-                <button
-                  type="button"
-                  disabled={readOnly}
-                  onClick={() => setLine(l.answerId, { answer: 'pass' })}
-                  className={`rounded-lg px-5 py-2 text-sm font-semibold transition-colors ${
-                    l.answer === 'pass'
-                      ? 'bg-emerald-600 text-white shadow-sm dark:bg-emerald-500'
-                      : 'text-fg/70 hover:bg-surface-raised'
-                  }`}
-                >
-                  PASS
-                </button>
-                <button
-                  type="button"
-                  disabled={readOnly}
-                  onClick={() => setLine(l.answerId, { answer: 'fail' })}
-                  className={`rounded-lg px-5 py-2 text-sm font-semibold transition-colors ${
-                    l.answer === 'fail'
-                      ? 'bg-red-600 text-white shadow-sm dark:bg-red-500'
-                      : 'text-fg/70 hover:bg-surface-raised'
-                  }`}
-                >
-                  FAIL
-                </button>
-              </div>
-            </div>
-
             <label className="mt-4 block text-xs font-medium text-muted">
               Comment{l.answer === 'fail' ? ' (required if FAIL)' : ' (optional if PASS)'}
-              <textarea
+              <AutoGrowTextarea
                 disabled={readOnly}
                 placeholder="Required if FAIL – describe issue or action"
-                className="mt-1 min-h-[4rem] w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm disabled:opacity-60"
+                className="mt-1 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm disabled:opacity-60"
                 value={l.comment}
                 onChange={(e) => setLine(l.answerId, { comment: e.target.value })}
               />
@@ -567,38 +620,45 @@ export function HcRecordPage() {
         ))}
       </div>
 
-      {!readOnly || canDelete ? (
-        <div className="flex flex-wrap gap-3 border-t border-border pt-6">
-          {!readOnly ? (
-            <>
+      {showActionDock ? (
+        <div
+          className={`fixed bottom-0 right-0 z-40 border-t border-border bg-surface/95 pt-3 shadow-[0_-6px_24px_rgba(0,0,0,0.06)] backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))] ${dockLeftClass}`}
+          role="toolbar"
+          aria-label="Health check actions"
+        >
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-end gap-2 px-4 md:px-8">
+            {!readOnly ? (
+              <>
+                <span className="rounded-xl border border-border bg-white px-3 py-2 text-xs font-semibold text-slate-900 dark:bg-surface dark:text-fg">
+                  {autoSaveState === 'saving'
+                    ? 'Autosaving...'
+                    : autoSaveState === 'saved'
+                      ? 'Draft saved'
+                      : autoSaveState === 'error'
+                        ? 'Autosave failed'
+                        : 'Autosave on'}
+                </span>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void submitCheck()}
+                  className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50 dark:bg-teal-500"
+                >
+                  Submit
+                </button>
+              </>
+            ) : null}
+            {canDelete ? (
               <button
                 type="button"
                 disabled={saving}
-                onClick={() => void saveDraft()}
-                className="rounded-xl border border-border px-5 py-2.5 text-sm font-semibold text-fg hover:bg-surface-raised"
+                onClick={() => void deleteRecord()}
+                className="rounded-xl border border-red-800 bg-white px-4 py-2 text-sm font-semibold text-red-900 hover:bg-red-50 dark:border-red-300 dark:bg-surface dark:text-red-200"
               >
-                {saving ? 'Saving…' : 'Save draft'}
+                Delete HC
               </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void submitCheck()}
-                className="rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50 dark:bg-teal-500"
-              >
-                Submit
-              </button>
-            </>
-          ) : null}
-          {canDelete ? (
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => void deleteRecord()}
-              className="rounded-xl border border-red-600/40 px-5 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-600/10 dark:text-red-300"
-            >
-              Delete HC
-            </button>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>

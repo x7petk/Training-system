@@ -1,5 +1,15 @@
-import { BookOpenText, CalendarDays, ClipboardList, FileBarChart, LayoutDashboard, Users, UsersRound } from 'lucide-react'
-import { Link, useLocation } from 'react-router-dom'
+import {
+  BookOpenText,
+  CalendarDays,
+  ClipboardList,
+  Factory,
+  FileBarChart,
+  LayoutDashboard,
+  ListChecks,
+  Users,
+  UsersRound,
+} from 'lucide-react'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { AppSectionLayout } from './AppSectionLayout'
 import { useAuth } from '../hooks/useAuth'
 import { LdrWorkspaceProvider } from '../features/ldr/LdrWorkspaceContext'
@@ -10,7 +20,7 @@ export function LdrToolsLayout() {
   const location = useLocation()
   const showScopeFilter =
     !location.pathname.startsWith('/ldr-tools/user-guide') &&
-    location.pathname !== '/ldr-tools/health-checks/report'
+    !(location.pathname.startsWith('/ldr-tools/') && location.pathname.includes('/report'))
   return (
     <LdrWorkspaceProvider>
       <AppSectionLayout
@@ -31,20 +41,52 @@ export function LdrToolsLayout() {
         navItems={[
           { to: '/ldr-tools/calendar', label: 'Calendar', icon: CalendarDays, end: true },
           { to: '/ldr-tools/roster', label: 'Roster', icon: Users, end: true },
-          { to: '/ldr-tools/health-checks', label: 'Health Checks', icon: ClipboardList, end: true },
-          { to: '/ldr-tools/health-checks/report', label: 'HC Report', icon: FileBarChart, end: true },
-          ...(profileReady && isAdmin
-            ? [{ to: '/ldr-tools/admin', label: 'Admin', icon: LayoutDashboard, end: true }]
-            : []),
+          {
+            type: 'group',
+            label: 'LDR checks',
+            items: [
+              { to: '/ldr-tools/health-checks', label: 'Health Checks', icon: ClipboardList, end: true },
+              { to: '/ldr-tools/sos', label: 'SOS', icon: ListChecks, end: true },
+              { to: '/ldr-tools/qos', label: 'QOS', icon: ClipboardList, end: true },
+              { to: '/ldr-tools/ppo', label: 'PPO', icon: Factory, end: true },
+            ],
+          },
+          {
+            type: 'group',
+            label: 'Reports',
+            items: [
+              { to: '/ldr-tools/health-checks/report', label: 'HC Report', icon: FileBarChart, end: true },
+              { to: '/ldr-tools/sos/report', label: 'SOS Report', icon: FileBarChart, end: true },
+              { to: '/ldr-tools/qos/report', label: 'QOS Report', icon: FileBarChart, end: true },
+              { to: '/ldr-tools/ppo/report', label: 'PPO Report', icon: FileBarChart, end: true },
+            ],
+          },
         ]}
         accountFooter={
-          <Link
-            to="/ldr-tools/user-guide"
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted transition-colors hover:bg-black/[0.06] hover:text-fg"
-          >
-            <BookOpenText className="size-4" aria-hidden />
-            User Guide
-          </Link>
+          <>
+            <Link
+              to="/ldr-tools/user-guide"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted transition-colors hover:bg-black/[0.06] hover:text-fg"
+            >
+              <BookOpenText className="size-4" aria-hidden />
+              User Guide
+            </Link>
+            {profileReady && isAdmin ? (
+              <NavLink
+                to="/ldr-tools/admin"
+                end
+                className={({ isActive }) =>
+                  [
+                    'mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
+                    isActive ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                  ].join(' ')
+                }
+              >
+                <LayoutDashboard className="size-4 shrink-0 opacity-80" aria-hidden />
+                Admin
+              </NavLink>
+            ) : null}
+          </>
         }
       />
     </LdrWorkspaceProvider>

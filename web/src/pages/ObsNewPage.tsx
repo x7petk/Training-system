@@ -4,17 +4,23 @@ import { ArrowLeft, ClipboardList } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
-import type { HcTemplateRow, HcTypeRow } from '../features/health-checks/types'
-import {
-  findSubmittedHcDuplicateSameDay,
-  HC_DUPLICATE_SUBMIT_MESSAGE,
-} from '../features/health-checks/hcSubmitDuplicate'
-import {
-  isMissingHcLdrAssignmentColumnError,
-  setPendingHcLdrAssignment,
-} from '../features/health-checks/hcRosterAssignmentLink'
+import { findSubmittedObsDuplicateSameDay, obsDuplicateSubmitMessage } from '../features/observations/obsSubmitDuplicate'
+import { isMissingObsLdrAssignmentColumnError, setPendingObsLdrAssignment } from '../features/observations/obsRosterAssignmentLink'
+import type { ObsKind } from '../features/observations/obsKind'
+import { obsBasePath, obsLabel, obsTitle } from '../features/observations/obsKind'
 
-export function HcNewPage() {
+type TypeRow = {
+  id: string
+  name: string
+  description: string | null
+  active: boolean
+  sort_order: number
+  workspace_id: string
+}
+
+type TemplateRow = { id: string; version: number; name: string; active: boolean }
+
+export function ObsNewPage({ kind }: { kind: ObsKind }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { user } = useAuth()
@@ -39,15 +45,14 @@ export function HcNewPage() {
   const qMasterCellId = searchParams.get('masterCellId') ?? ''
   const qCompletionDate = searchParams.get('completionDate') ?? ''
   const qAssignmentId = searchParams.get('assignmentId') ?? ''
-  const rosterAssignmentId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    qAssignmentId,
-  )
+  const rosterAssignmentId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(qAssignmentId)
     ? qAssignmentId
     : null
 
-  const [types, setTypes] = useState<HcTypeRow[]>([])
-  const [hcTypeId, setHcTypeId] = useState('')
-  const [template, setTemplate] = useState<HcTemplateRow | null>(null)
+  const [types, setTypes] = useState<TypeRow[]>([])
+  const [linkedActivityId, setLinkedActivityId] = useState('')
+  const [typeId, setTypeId] = useState('')
+  const [template, setTemplate] = useState<TemplateRow | null>(null)
   const [completionDate, setCompletionDate] = useState(() => {
     const m = qCompletionDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
     if (m) return qCompletionDate
@@ -65,6 +70,15 @@ export function HcNewPage() {
   const plantsForSite = useMemo(() => plants.filter((p) => p.site_id === siteId), [plants, siteId])
   const cellsForPlant = useMemo(() => cells.filter((c) => c.plant_id === plantId), [cells, plantId])
 
+  const typesTable = kind === 'sos' ? 'sos_types' : kind === 'qos' ? 'qos_types' : 'ppo_types'
+  const tplTable = kind === 'sos' ? 'sos_templates' : kind === 'qos' ? 'qos_templates' : 'ppo_templates'
+  const tplFk = kind === 'sos' ? 'sos_type_id' : kind === 'qos' ? 'qos_type_id' : 'ppo_type_id'
+  const qTable =
+    kind === 'sos' ? 'sos_template_questions' : kind === 'qos' ? 'qos_template_questions' : 'ppo_template_questions'
+  const recTable = kind === 'sos' ? 'sos_records' : kind === 'qos' ? 'qos_records' : 'ppo_records'
+  const recTypeFk = kind === 'sos' ? 'sos_type_id' : kind === 'qos' ? 'qos_type_id' : 'ppo_type_id'
+  const ansTable = kind === 'qos' ? 'qos_answers' : kind === 'ppo' ? 'ppo_answers' : null
+
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -74,38 +88,42 @@ export function HcNewPage() {
         return
       }
       setLoadingTypes(true)
-      const res = await supabase
-        .from('hc_types')
-        .select('id, name, description, active, sort_order, ldr_activity_id, ldr_activities!inner(workspace_id)')
-        .eq('active', true)
-        .eq('ldr_activities.workspace_id', workspaceId)
-        .order('sort_order')
-        .order('name')
+      const [typesRes, linkRes] = await Promise.all([
+        supabase
+          .from(typesTable)
+          .select('id, workspace_id, name, description, active, sort_order')
+          .eq('active', true)
+          .eq('workspace_id', workspaceId)
+          .order('sort_order')
+          .order('name'),
+        supabase
+          .from('obs_system_activity_links')
+          .select('ldr_activity_id')
+          .eq('workspace_id', workspaceId)
+          .eq('kind', kind)
+          .maybeSingle(),
+      ])
       if (cancelled) return
-      if (res.error) {
+      if (typesRes.error) {
         setLoadingTypes(false)
-        setError(res.error.message)
+        setError(typesRes.error.message)
         setTypes([])
         return
       }
-      let list = (res.data ?? []) as HcTypeRow[]
-      /** Roster link: activity may live in site workspace while HC page uses cell workspace — merge type by activity id. */
-      if (qActivityId) {
-        const extraRes = await supabase
-          .from('hc_types')
-          .select('id, name, description, active, sort_order, ldr_activity_id')
-          .eq('ldr_activity_id', qActivityId)
-          .eq('active', true)
-          .maybeSingle()
-        if (cancelled) return
-        if (extraRes.data) {
-          const row = extraRes.data as HcTypeRow
-          if (!list.some((t) => t.id === row.id)) {
-            list = [...list, row].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
-          }
-          setHcTypeId(row.id)
-        }
+      if (linkRes.error) {
+        setLoadingTypes(false)
+        setError(linkRes.error.message)
+        setTypes([])
+        return
       }
+      const list = (typesRes.data ?? []) as TypeRow[]
+      const linked = ((linkRes.data as { ldr_activity_id?: string } | null)?.ldr_activity_id ?? '') as string
+      setLinkedActivityId(linked)
+      setTypeId((prev) => {
+        if (prev && list.some((t) => t.id === prev)) return prev
+        if (list.length === 1) return list[0].id
+        return ''
+      })
       if (cancelled) return
       setLoadingTypes(false)
       setTypes(list)
@@ -116,7 +134,7 @@ export function HcNewPage() {
     return () => {
       cancelled = true
     }
-  }, [workspaceId, qActivityId])
+  }, [workspaceId, kind, typesTable])
 
   const lastRosterPrefillSig = useRef('')
   const rosterPrefillSig =
@@ -124,7 +142,6 @@ export function HcNewPage() {
       ? `${qActivityId}|${qMasterCellId}|${qCompletionDate}|${rosterAssignmentId ?? ''}`
       : ''
 
-  /** Prefill from roster deep link: ?activityId=&masterCellId=&completionDate= */
   useEffect(() => {
     if (ldrStatus !== 'ready' || !rosterPrefillSig) return
     if (lastRosterPrefillSig.current === rosterPrefillSig) return
@@ -200,41 +217,45 @@ export function HcNewPage() {
     setCellId,
   ])
 
-  const loadActiveTemplate = useCallback(async (typeId: string) => {
-    if (!typeId) {
-      setTemplate(null)
-      return
-    }
-    setLoadingTemplate(true)
-    setError(null)
-    const res = await supabase
-      .from('hc_templates')
-      .select('id, hc_type_id, name, version, description, active, threshold_score')
-      .eq('hc_type_id', typeId)
-      .eq('active', true)
-      .maybeSingle()
-    setLoadingTemplate(false)
-    if (res.error) {
-      setError(res.error.message)
-      setTemplate(null)
-      return
-    }
-    setTemplate((res.data as HcTemplateRow) ?? null)
-    if (!res.data) {
-      setError('No active template for this type. Ask an admin to activate one in LDR Admin → HC Templates.')
-    }
-  }, [])
+  const loadActiveTemplate = useCallback(
+    async (tid: string) => {
+      if (!tid) {
+        setTemplate(null)
+        return
+      }
+      setLoadingTemplate(true)
+      setError(null)
+      const res = await supabase
+        .from(tplTable)
+        .select('id, name, version, active')
+        .eq(tplFk, tid)
+        .eq('active', true)
+        .maybeSingle()
+      setLoadingTemplate(false)
+      if (res.error) {
+        setError(res.error.message)
+        setTemplate(null)
+        return
+      }
+      setTemplate((res.data as TemplateRow) ?? null)
+      if (!res.data) {
+        const n = obsLabel(kind)
+        setError(`No active template for this type. Ask an admin to activate one in LDR Admin → ${n} Templates.`)
+      }
+    },
+    [tplTable, tplFk, kind],
+  )
 
   useEffect(() => {
     queueMicrotask(() => {
-      void loadActiveTemplate(hcTypeId)
+      void loadActiveTemplate(typeId)
     })
-  }, [hcTypeId, loadActiveTemplate])
+  }, [typeId, loadActiveTemplate])
 
   const displayName =
-    (user?.user_metadata?.display_name as string | undefined)?.trim() ||
-    user?.email?.split('@')[0] ||
-    'User'
+    (user?.user_metadata?.display_name as string | undefined)?.trim() || user?.email?.split('@')[0] || 'User'
+
+  const base = obsBasePath(kind)
 
   async function handleStart() {
     setError(null)
@@ -242,8 +263,16 @@ export function HcNewPage() {
       setError('Select site, plant, and cell (use the scope bar or pickers below).')
       return
     }
-    if (!hcTypeId || !template) {
-      setError('Select a health check type with an active template.')
+    if (!typeId || !template) {
+      setError('Select a type with an active template.')
+      return
+    }
+    if (!linkedActivityId) {
+      setError(`No ${obsLabel(kind)} activity is linked for this site. Ask admin to set it in LDR Admin → ${obsLabel(kind)} Types.`)
+      return
+    }
+    if (qActivityId && qActivityId !== linkedActivityId) {
+      setError(`This assignment is not linked to ${obsLabel(kind)}. Use “Complete ${obsLabel(kind)}” on the matching activity.`)
       return
     }
     if (!user?.id) {
@@ -252,9 +281,9 @@ export function HcNewPage() {
     }
 
     setStarting(true)
-    const dup = await findSubmittedHcDuplicateSameDay(supabase, {
+    const dup = await findSubmittedObsDuplicateSameDay(supabase, kind, {
       completedByUserId: user.id,
-      hcTypeId: hcTypeId,
+      typeId,
       masterCellId: cellId,
       ldrAssignmentId: rosterAssignmentId,
     })
@@ -265,26 +294,23 @@ export function HcNewPage() {
     }
     if (dup.duplicateId) {
       setStarting(false)
-      setError(HC_DUPLICATE_SUBMIT_MESSAGE)
+      setError(obsDuplicateSubmitMessage(kind))
       return
     }
 
-    const qRes = await supabase
-      .from('hc_template_questions')
-      .select('id, sort_order')
-      .eq('template_id', template.id)
-      .eq('active', true)
-      .order('sort_order')
-      .order('question_text')
+    const qRes =
+      kind === 'sos'
+        ? { data: [] as { id: string; sort_order: number }[], error: null }
+        : await supabase.from(qTable).select('id, sort_order').eq('template_id', template.id).eq('active', true).order('sort_order')
 
-    if (qRes.error || !qRes.data?.length) {
+    if (kind !== 'sos' && (qRes.error || !qRes.data?.length)) {
       setStarting(false)
       setError(qRes.error?.message ?? 'This template has no active questions.')
       return
     }
 
-    const baseRecord = {
-      hc_type_id: hcTypeId,
+    const baseRecord: Record<string, unknown> = {
+      [recTypeFk]: typeId,
       template_id: template.id,
       master_site_id: siteId,
       master_plant_id: plantId,
@@ -295,21 +321,15 @@ export function HcNewPage() {
     }
 
     let recordRes = await supabase
-      .from('hc_records')
-      .insert(
-        rosterAssignmentId ? { ...baseRecord, ldr_assignment_id: rosterAssignmentId } : baseRecord,
-      )
+      .from(recTable)
+      .insert(rosterAssignmentId ? { ...baseRecord, ldr_assignment_id: rosterAssignmentId } : baseRecord)
       .select('id')
       .single()
 
-    if (
-      recordRes.error &&
-      rosterAssignmentId &&
-      isMissingHcLdrAssignmentColumnError(recordRes.error.message)
-    ) {
-      recordRes = await supabase.from('hc_records').insert(baseRecord).select('id').single()
+    if (recordRes.error && rosterAssignmentId && isMissingObsLdrAssignmentColumnError(recordRes.error.message)) {
+      recordRes = await supabase.from(recTable).insert(baseRecord).select('id').single()
       if (!recordRes.error && recordRes.data?.id) {
-        setPendingHcLdrAssignment(recordRes.data.id, rosterAssignmentId)
+        setPendingObsLdrAssignment(kind, recordRes.data.id, rosterAssignmentId)
       }
     }
 
@@ -319,25 +339,33 @@ export function HcNewPage() {
       return
     }
 
-    const recordId = recordRes.data.id
-    const answerRows = qRes.data.map((row) => ({
-      hc_record_id: recordId,
-      template_question_id: row.id,
-      sort_order: row.sort_order,
-    }))
+    const recordId = (recordRes.data as { id: string }).id
 
-    const ansRes = await supabase.from('hc_answers').insert(answerRows)
-    if (ansRes.error) {
-      await supabase.from('hc_records').delete().eq('id', recordId)
-      setStarting(false)
-      setError(ansRes.error.message)
-      return
+    if (kind !== 'sos' && ansTable && qRes.data?.length) {
+      const recFk = kind === 'qos' ? 'qos_record_id' : 'ppo_record_id'
+      const answerRows = qRes.data.map((row: { id: string; sort_order: number }) => ({
+        [recFk]: recordId,
+        template_question_id: row.id,
+        sort_order: row.sort_order,
+        answer: 'na',
+        score_value: null,
+        comment: '',
+        operator_name: null,
+        operator_user_id: null,
+      }))
+      const ansRes = await supabase.from(ansTable).insert(answerRows)
+      if (ansRes.error) {
+        await supabase.from(recTable).delete().eq('id', recordId)
+        setStarting(false)
+        setError(ansRes.error.message)
+        return
+      }
     }
 
     setStarting(false)
     const q = new URLSearchParams()
     if (completionDate) q.set('completionDate', completionDate)
-    navigate(`/ldr-tools/health-checks/${recordId}${q.toString() ? `?${q.toString()}` : ''}`)
+    navigate(`${base}/${recordId}${q.toString() ? `?${q.toString()}` : ''}`)
   }
 
   const selectClass =
@@ -347,18 +375,18 @@ export function HcNewPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="flex items-center gap-3">
         <Link
-          to="/ldr-tools/health-checks"
+          to={base}
           className="inline-flex size-10 items-center justify-center rounded-xl border border-border text-muted hover:bg-surface-raised"
           aria-label="Back to list"
         >
           <ArrowLeft className="size-5" />
         </Link>
-        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-teal-500/15 text-teal-700 dark:text-teal-300">
+        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-800 dark:text-sky-200">
           <ClipboardList className="size-6" aria-hidden />
         </span>
         <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">New health check</h1>
-          <p className="text-sm text-muted">Choose location, type, then start answering on the next screen.</p>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">New {obsLabel(kind)}</h1>
+          <p className="text-sm text-muted">{obsTitle(kind)} — choose location and type, then continue on the next screen.</p>
         </div>
       </div>
 
@@ -374,6 +402,7 @@ export function HcNewPage() {
           <label className="block text-xs font-medium text-muted">
             Site
             <select className={`mt-1 ${selectClass}`} value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+              <option value="">—</option>
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -404,67 +433,63 @@ export function HcNewPage() {
             </select>
           </label>
         </div>
+      </div>
 
-        <h2 className="pt-2 text-sm font-semibold text-fg">Check</h2>
-        <label className="block text-xs font-medium text-muted">
-          HC type (from LDR activities)
-          <select
-            className={`mt-1 ${selectClass}`}
-            value={hcTypeId}
-            onChange={(e) => setHcTypeId(e.target.value)}
-            disabled={loadingTypes || !workspaceId}
-          >
-            <option value="">— Select —</option>
+      <div className="space-y-4 rounded-2xl border border-border bg-surface p-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-fg">Type</h2>
+        {!linkedActivityId ? (
+          <p className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100">
+            No linked {obsLabel(kind)} activity for this site yet. Ask admin to configure this in LDR Admin → {obsLabel(kind)} Types.
+          </p>
+        ) : null}
+        {qActivityId && linkedActivityId && qActivityId !== linkedActivityId ? (
+          <p className="rounded-xl border border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger">
+            This roster assignment does not belong to the linked {obsLabel(kind)} activity.
+          </p>
+        ) : null}
+        {loadingTypes ? (
+          <p className="text-sm text-muted">Loading types…</p>
+        ) : (
+          <select className={selectClass} value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+            <option value="">— Select type —</option>
             {types.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
             ))}
           </select>
-        </label>
-        {!workspaceId ? (
-          <p className="text-sm text-amber-800 dark:text-amber-200">
-            Set site/cell scope in the bar above until the workspace loads — HC types are tied to activities in that
-            workspace.
+        )}
+        {loadingTemplate ? <p className="text-xs text-muted">Checking template…</p> : null}
+        {template ? (
+          <p className="text-xs text-muted">
+            Active template: <span className="font-medium text-fg">{template.name}</span> (v{template.version})
           </p>
         ) : null}
-        {loadingTemplate ? (
-          <p className="text-sm text-muted">Loading template…</p>
-        ) : template ? (
-          <p className="text-sm text-fg/80">
-            Active template: <strong className="font-medium text-fg">{template.name}</strong> (v{template.version})
-          </p>
-        ) : hcTypeId ? null : (
-          <p className="text-sm text-muted">Select a type to load its active template.</p>
-        )}
-
-        <label className="block text-xs font-medium text-muted">
-          Completion date
-          <input
-            type="date"
-            className={`mt-1 ${selectClass}`}
-            value={completionDate}
-            onChange={(e) => setCompletionDate(e.target.value)}
-          />
-        </label>
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={() => void handleStart()}
-          disabled={starting || loadingTemplate || !template}
-          className="rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50 dark:bg-teal-500 dark:hover:bg-teal-600"
-        >
-          {starting ? 'Starting…' : 'Start check'}
-        </button>
-        <Link
-          to="/ldr-tools/health-checks"
-          className="rounded-xl border border-border px-5 py-2.5 text-sm font-medium text-fg hover:bg-surface-raised"
-        >
+      <div className="flex flex-wrap justify-end gap-2">
+        <Link to={base} className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-fg hover:bg-surface-raised">
           Cancel
         </Link>
+        <button
+          type="button"
+          disabled={starting || loadingTypes || !linkedActivityId || Boolean(qActivityId && qActivityId !== linkedActivityId)}
+          onClick={() => void handleStart()}
+          className="rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-500"
+        >
+          {starting ? 'Starting…' : 'Start'}
+        </button>
       </div>
     </div>
   )
+}
+
+export function SosNewPage() {
+  return <ObsNewPage kind="sos" />
+}
+export function QosNewPage() {
+  return <ObsNewPage kind="qos" />
+}
+export function PpoNewPage() {
+  return <ObsNewPage kind="ppo" />
 }

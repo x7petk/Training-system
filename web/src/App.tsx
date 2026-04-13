@@ -35,6 +35,18 @@ const HcListPage = lazy(() => import('./pages/HcListPage').then((m) => ({ defaul
 const HcNewPage = lazy(() => import('./pages/HcNewPage').then((m) => ({ default: m.HcNewPage })))
 const HcRecordPage = lazy(() => import('./pages/HcRecordPage').then((m) => ({ default: m.HcRecordPage })))
 const HcReportPage = lazy(() => import('./pages/HcReportPage').then((m) => ({ default: m.HcReportPage })))
+const SosListPage = lazy(() => import('./pages/ObsListPage').then((m) => ({ default: m.SosListPage })))
+const QosListPage = lazy(() => import('./pages/ObsListPage').then((m) => ({ default: m.QosListPage })))
+const PpoListPage = lazy(() => import('./pages/ObsListPage').then((m) => ({ default: m.PpoListPage })))
+const SosNewPage = lazy(() => import('./pages/ObsNewPage').then((m) => ({ default: m.SosNewPage })))
+const QosNewPage = lazy(() => import('./pages/ObsNewPage').then((m) => ({ default: m.QosNewPage })))
+const PpoNewPage = lazy(() => import('./pages/ObsNewPage').then((m) => ({ default: m.PpoNewPage })))
+const SosRecordPage = lazy(() => import('./pages/ObsRecordPage').then((m) => ({ default: m.SosRecordPage })))
+const QosRecordPage = lazy(() => import('./pages/ObsRecordPage').then((m) => ({ default: m.QosRecordPage })))
+const PpoRecordPage = lazy(() => import('./pages/ObsRecordPage').then((m) => ({ default: m.PpoRecordPage })))
+const SosReportPage = lazy(() => import('./pages/ObsReportPage').then((m) => ({ default: m.SosReportPage })))
+const QosReportPage = lazy(() => import('./pages/ObsReportPage').then((m) => ({ default: m.QosReportPage })))
+const PpoReportPage = lazy(() => import('./pages/ObsReportPage').then((m) => ({ default: m.PpoReportPage })))
 import { RttSystemsPage } from './pages/RttSystemsPage'
 import { LoginAccountsPage } from './pages/LoginAccountsPage'
 import { SuperAdminRoute } from './components/SuperAdminRoute'
@@ -124,6 +136,18 @@ export default function App() {
             <Route path="health-checks/new" element={<HcNewPage />} />
             <Route path="health-checks/:recordId" element={<HcRecordPage />} />
             <Route path="health-checks" element={<HcListPage />} />
+            <Route path="sos/report" element={<SosReportPage />} />
+            <Route path="sos/new" element={<SosNewPage />} />
+            <Route path="sos/:recordId" element={<SosRecordPage />} />
+            <Route path="sos" element={<SosListPage />} />
+            <Route path="qos/report" element={<QosReportPage />} />
+            <Route path="qos/new" element={<QosNewPage />} />
+            <Route path="qos/:recordId" element={<QosRecordPage />} />
+            <Route path="qos" element={<QosListPage />} />
+            <Route path="ppo/report" element={<PpoReportPage />} />
+            <Route path="ppo/new" element={<PpoNewPage />} />
+            <Route path="ppo/:recordId" element={<PpoRecordPage />} />
+            <Route path="ppo" element={<PpoListPage />} />
             <Route path="user-guide" element={<LdrToolsUserGuidePage />} />
             <Route
               path="admin"

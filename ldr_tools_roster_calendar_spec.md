@@ -24,8 +24,19 @@ Access gates:
 Inside `LDR tools`:
 - `Calendar` -> `/ldr-tools/calendar`
 - `Roster` -> `/ldr-tools/roster`
-- `Admin` (admin/super-admin) -> `/ldr-tools/admin`
-- `User Guide` (footer link below Sign out) -> `/ldr-tools/user-guide`
+- `LDR checks` nav group:
+  - `Health Checks` -> `/ldr-tools/health-checks`
+  - `SOS` -> `/ldr-tools/sos`
+  - `QOS` -> `/ldr-tools/qos`
+  - `PPO` -> `/ldr-tools/ppo`
+- `Reports` nav group:
+  - `HC Report` -> `/ldr-tools/health-checks/report`
+  - `SOS Report` -> `/ldr-tools/sos/report`
+  - `QOS Report` -> `/ldr-tools/qos/report`
+  - `PPO Report` -> `/ldr-tools/ppo/report`
+- Footer links:
+  - `User Guide` -> `/ldr-tools/user-guide`
+  - `Admin` (admin/super-admin) -> `/ldr-tools/admin` (shown below User Guide)
 
 UI notes:
 - Intro/description text was intentionally removed from page headers for Calendar, Roster, and LDR Admin.
@@ -149,12 +160,13 @@ These feed LDR scope selection and LDR cell labels.
 
 New LDR guide page:
 - `/ldr-tools/user-guide`
-- Linked from LDR sidebar footer below Sign out.
+- Linked from LDR sidebar footer.
 - Explains practical run flow for LDR apps:
   - set scope
   - plan in calendar
   - execute in roster
   - maintain in admin
+- Includes current nav grouping notes (LDR checks + Reports) and sticky action bar behaviour on record pages.
 
 ---
 
@@ -165,10 +177,27 @@ New LDR guide page:
   - `ldrWeekUtils`
   - `types` helper (`isMissingMasterCellColumnError`)
 - LDR avatars are memoized and use solid fill variants.
+- Roster -> HC/Obs return scope is stashed/restored so users return to the same site/cell scope after completing a record.
+- HC/Obs record pages use a fixed bottom action dock (autosave state, submit, delete) aligned to the sidebar width state.
+- HC/Obs roster prefill now uses in-memory master-cell joins for legacy location matching (avoids an extra `master_cells` round-trip on each deep-link open).
 
 ---
 
-## 10) Deploy Rule (Operational)
+## 10) Verification Snapshot (2026-04-13)
+
+LDR-focused checks executed on `web/`:
+- `npm run test` -> pass (`10/10`)
+- `npm run lint` -> pass
+- `npm run build` -> pass
+
+Bug/perf fixes made during this pass:
+- Fixed observation new-page roster prefill race in React Strict Mode (same robust pattern as HC).
+- Added observation fallback prefill by `assignmentId` when `masterCellId` is empty.
+- Reduced roster modal row rendering overhead by memoizing people lookups (`Map` instead of repeated `.find()` per row).
+
+---
+
+## 11) Deploy Rule (Operational)
 
 Production deployment target is:
 - Vercel project: `training-system-seven`

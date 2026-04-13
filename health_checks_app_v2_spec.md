@@ -432,6 +432,8 @@ Suggested tables (names indicative):
 
 ## 17. Changelog
 
+- **v2.2:** UX + reliability pass (2026-04-13): record page action controls use a sticky bottom dock (autosave status + submit + delete) so operators can submit from the end of long checklists; submit success notice uses high-contrast black text.
+- **v2.2:** Roster deep-link prefill hardening: Strict Mode-safe prefill execution and assignment fallback path (including legacy `ldr_location_id` mapping) now run without extra master-cells network fetch by using cached master-cell joins.
 - **v2.2:** HC Report — compact filters (date / type / completer); **scope bar hidden** on report route and **no** site/plant/cell query filter (RLS-wide). **RAG distribution**, **weekly trends** (Mon-week volume + avg), **by completer**, expanded summary bands; completer filter fed by dedicated query.
 - **v2.2:** Roster **Complete HC** — `completionDate` query param; optional `ldr_assignment_id`; submit syncs RAG + comments to assignment; duplicate rule uses **scheduled assignment day** when linked.
 - **v2.2:** HC delete — **admin-only** (DB policy + UI).

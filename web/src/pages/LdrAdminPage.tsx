@@ -16,6 +16,7 @@ import {
 } from '../features/ldr/types'
 import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
 import { LdrAdminHcTemplatesPanel, LdrAdminHcTypesPanel } from '../features/health-checks/HcAdminPanels'
+import { LdrAdminObsTemplatesPanel, LdrAdminObsTypesPanel } from '../features/observations/ObsAdminPanels'
 
 function visibleSiteActivitiesStorageKey(cellWorkspaceId: string, siteWorkspaceId: string) {
   return `ldr.site-activities.visible.v1:${cellWorkspaceId}:${siteWorkspaceId}`
@@ -42,7 +43,19 @@ function saveVisibleSiteActivityIds(cellWorkspaceId: string, siteWorkspaceId: st
 }
 
 export function LdrAdminPage() {
-  const [tab, setTab] = useState<'people' | 'activities' | 'cells' | 'hc_types' | 'hc_templates'>('people')
+  const [tab, setTab] = useState<
+    | 'people'
+    | 'activities'
+    | 'cells'
+    | 'hc_types'
+    | 'hc_templates'
+    | 'sos_types'
+    | 'sos_templates'
+    | 'qos_types'
+    | 'qos_templates'
+    | 'ppo_types'
+    | 'ppo_templates'
+  >('people')
   const tabs = useMemo(
     () => [
       { id: 'people' as const, label: 'People' },
@@ -50,6 +63,12 @@ export function LdrAdminPage() {
       { id: 'cells' as const, label: 'Cells' },
       { id: 'hc_types' as const, label: 'HC Types' },
       { id: 'hc_templates' as const, label: 'HC Templates' },
+      { id: 'sos_types' as const, label: 'SOS Types' },
+      { id: 'sos_templates' as const, label: 'SOS Templates' },
+      { id: 'qos_types' as const, label: 'QOS Types' },
+      { id: 'qos_templates' as const, label: 'QOS Templates' },
+      { id: 'ppo_types' as const, label: 'PPO Types' },
+      { id: 'ppo_templates' as const, label: 'PPO Templates' },
     ],
     [],
   )
@@ -85,6 +104,12 @@ export function LdrAdminPage() {
       {tab === 'cells' ? <LdrAdminCellsPanel /> : null}
       {tab === 'hc_types' ? <LdrAdminHcTypesPanel /> : null}
       {tab === 'hc_templates' ? <LdrAdminHcTemplatesPanel /> : null}
+      {tab === 'sos_types' ? <LdrAdminObsTypesPanel kind="sos" /> : null}
+      {tab === 'sos_templates' ? <LdrAdminObsTemplatesPanel kind="sos" /> : null}
+      {tab === 'qos_types' ? <LdrAdminObsTypesPanel kind="qos" /> : null}
+      {tab === 'qos_templates' ? <LdrAdminObsTemplatesPanel kind="qos" /> : null}
+      {tab === 'ppo_types' ? <LdrAdminObsTypesPanel kind="ppo" /> : null}
+      {tab === 'ppo_templates' ? <LdrAdminObsTemplatesPanel kind="ppo" /> : null}
     </div>
   )
 }
