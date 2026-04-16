@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect -- intentional workspace resolution + roster auto-select */
 /* eslint-disable react-refresh/only-export-components -- colocated provider + useLdrWorkspace hook */
 import {
   createContext,
@@ -5,21 +6,31 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
+import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import type { LdrMasterCellJoin } from './types'
+import { isHcObsScopedPath } from './ldrHcObsScope'
 
 /** Master data seed: Darfield site (default LDR workspace for migrated data). */
 const LDR_DEFAULT_MASTER_SITE_ID = 'b1000001-0000-4000-8000-000000000001'
 
 const STORAGE_KEY = 'ldr-tools.workspace.v1'
+const STORAGE_KEY_HC_OBS = 'ldr-tools.hc-obs-filter.v1'
 
 export type LdrScopeLevel = 'site' | 'cell'
 
 type StoredSelection = {
   level: LdrScopeLevel
+  siteId: string
+  plantId: string
+  cellId: string
+}
+
+type HcObsStored = {
   siteId: string
   plantId: string
   cellId: string
@@ -35,9 +46,15 @@ type Ctx = {
   status: 'loading' | 'ready' | 'error'
   error: string | null
   workspaceId: string | null
+  /** Workspace for HC / Observation System (cell workspace when a cell is selected, else site). */
+  hcObsWorkspaceId: string | null
   scopeLevel: LdrScopeLevel
   setScopeLevel: (l: LdrScopeLevel) => void
   sites: MasterSite[]
+  /** All plants (master data). */
+  allPlants: MasterPlant[]
+  /** All cells (master data). */
+  allCells: MasterCell[]
   plants: MasterPlant[]
   cells: MasterCell[]
   /** Master cells under the currently selected site (all plants), for LDR location pickers. */
@@ -50,6 +67,13 @@ type Ctx = {
   setSiteId: (id: string) => void
   setPlantId: (id: string) => void
   setCellId: (id: string) => void
+  /** Site / plant / cell for Health Checks & Observation System lists, reports, and new flows (independent of Calendar/Roster scope). */
+  hcObsSiteId: string
+  hcObsPlantId: string
+  hcObsCellId: string
+  setHcObsSiteId: (id: string) => void
+  setHcObsPlantId: (id: string) => void
+  setHcObsCellId: (id: string) => void
   /** Resolve site + plant + master cell from a master cell id (for deep links / HC from roster). */
   resolveMasterCellScope: (masterCellId: string | null | undefined) => {
     siteId: string
@@ -86,14 +110,40 @@ function saveStored(s: StoredSelection) {
   }
 }
 
+function loadHcObsStored(): HcObsStored | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_HC_OBS)
+    if (!raw) return null
+    const p = JSON.parse(raw) as Partial<HcObsStored>
+    if (typeof p.siteId !== 'string') return null
+    return {
+      siteId: p.siteId,
+      plantId: typeof p.plantId === 'string' ? p.plantId : '',
+      cellId: typeof p.cellId === 'string' ? p.cellId : '',
+    }
+  } catch {
+    return null
+  }
+}
+
+function saveHcObsStored(s: HcObsStored) {
+  try {
+    localStorage.setItem(STORAGE_KEY_HC_OBS, JSON.stringify(s))
+  } catch {
+    /* ignore */
+  }
+}
+
 function sortMaster<T extends { sort_order: number; name: string }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
 }
 
 export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
+  const location = useLocation()
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [error, setError] = useState<string | null>(null)
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
+  const [hcObsWorkspaceId, setHcObsWorkspaceId] = useState<string | null>(null)
   const [scopeLevel, setScopeLevelState] = useState<LdrScopeLevel>('site')
   const [sites, setSites] = useState<MasterSite[]>([])
   const [allPlants, setAllPlants] = useState<MasterPlant[]>([])
@@ -101,6 +151,10 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
   const [siteId, setSiteIdState] = useState('')
   const [plantId, setPlantIdState] = useState('')
   const [cellId, setCellIdState] = useState('')
+  const [hcObsSiteId, setHcObsSiteIdState] = useState('')
+  const [hcObsPlantId, setHcObsPlantIdState] = useState('')
+  const [hcObsCellId, setHcObsCellIdState] = useState('')
+  const prevPathnameRef = useRef<string>('')
 
   const setScopeLevel = useCallback((l: LdrScopeLevel) => {
     setScopeLevelState(l)
@@ -121,6 +175,21 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
     setCellIdState(id)
   }, [])
 
+  const setHcObsSiteId = useCallback((id: string) => {
+    setHcObsSiteIdState(id)
+    setHcObsPlantIdState('')
+    setHcObsCellIdState('')
+  }, [])
+
+  const setHcObsPlantId = useCallback((id: string) => {
+    setHcObsPlantIdState(id)
+    setHcObsCellIdState('')
+  }, [])
+
+  const setHcObsCellId = useCallback((id: string) => {
+    setHcObsCellIdState(id)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     async function loadMasterData() {
@@ -138,9 +207,11 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
         return
       }
       const list = sortMaster((sitesRes.data ?? []) as MasterSite[])
+      const plantsList = sortMaster((plantsRes.data ?? []) as MasterPlant[])
+      const cellsList = sortMaster((cellsRes.data ?? []) as MasterCell[])
       setSites(list)
-      setAllPlants(sortMaster((plantsRes.data ?? []) as MasterPlant[]))
-      setAllCells(sortMaster((cellsRes.data ?? []) as MasterCell[]))
+      setAllPlants(plantsList)
+      setAllCells(cellsList)
       const stored = loadStored()
       const fallbackSite = list.find((s) => s.id === LDR_DEFAULT_MASTER_SITE_ID)?.id ?? list[0]?.id ?? ''
       if (stored) {
@@ -151,6 +222,29 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
       } else {
         setSiteIdState(fallbackSite)
       }
+      const hcStored = loadHcObsStored()
+      if (hcStored && list.some((s) => s.id === hcStored.siteId)) {
+        setHcObsSiteIdState(hcStored.siteId)
+        setHcObsPlantIdState(
+          hcStored.plantId && plantsList.some((p) => p.id === hcStored.plantId && p.site_id === hcStored.siteId)
+            ? hcStored.plantId
+            : '',
+        )
+        const plantOk =
+          hcStored.plantId &&
+          plantsList.some((p) => p.id === hcStored.plantId && p.site_id === hcStored.siteId)
+        setHcObsCellIdState(
+          plantOk &&
+            hcStored.cellId &&
+            cellsList.some((c) => c.id === hcStored.cellId && c.plant_id === hcStored.plantId)
+            ? hcStored.cellId
+            : '',
+        )
+      } else {
+        setHcObsSiteIdState(fallbackSite)
+        setHcObsPlantIdState('')
+        setHcObsCellIdState('')
+      }
       setStatus('ready')
     }
     void loadMasterData()
@@ -158,6 +252,22 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
   }, [])
+
+  /** When navigating from Calendar/Roster into HC/Obs, mirror location from roster scope. */
+  useEffect(() => {
+    const cur = location.pathname
+    const prev = prevPathnameRef.current
+    prevPathnameRef.current = cur
+    if (status !== 'ready') return
+    const nowHc = isHcObsScopedPath(cur)
+    const prevHc = isHcObsScopedPath(prev)
+    if (nowHc && !prevHc) {
+      setHcObsSiteIdState(siteId)
+      setHcObsPlantIdState(plantId)
+      setHcObsCellIdState(cellId)
+      saveHcObsStored({ siteId, plantId, cellId })
+    }
+  }, [location.pathname, status, siteId, plantId, cellId])
 
   const plants = useMemo(
     () => sortMaster(allPlants.filter((plant) => plant.site_id === siteId)),
@@ -181,7 +291,6 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (status !== 'ready' || !siteId) return
     if (scopeLevel === 'cell' && (!plantId || !cellId)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear workspace until cell scope is fully selected
       setWorkspaceId(null)
       setError(null)
       return
@@ -221,6 +330,38 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
   }, [status, scopeLevel, siteId, plantId, cellId])
+
+  useEffect(() => {
+    if (status !== 'ready' || !hcObsSiteId) return
+    let cancelled = false
+    async function resolveHcObsWs() {
+      setHcObsWorkspaceId(null)
+      if (hcObsCellId) {
+        const { data, error: e } = await supabase.rpc('ldr_ensure_workspace_cell', {
+          p_master_cell_id: hcObsCellId,
+        })
+        if (cancelled) return
+        if (!e) {
+          const id = typeof data === 'string' ? data : null
+          if (id) setHcObsWorkspaceId(id)
+        }
+      } else {
+        const { data, error: e } = await supabase.rpc('ldr_ensure_workspace_site', {
+          p_master_site_id: hcObsSiteId,
+        })
+        if (cancelled) return
+        if (!e) {
+          const id = typeof data === 'string' ? data : null
+          if (id) setHcObsWorkspaceId(id)
+        }
+      }
+      saveHcObsStored({ siteId: hcObsSiteId, plantId: hcObsPlantId, cellId: hcObsCellId })
+    }
+    void resolveHcObsWs()
+    return () => {
+      cancelled = true
+    }
+  }, [status, hcObsSiteId, hcObsPlantId, hcObsCellId])
 
   const siteCellOptions = useMemo<LdrSiteCellOption[]>(() => {
     if (!siteId) return []
@@ -264,9 +405,12 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
       status,
       error,
       workspaceId,
+      hcObsWorkspaceId,
       scopeLevel,
       setScopeLevel,
       sites,
+      allPlants,
+      allCells,
       plants,
       cells,
       siteCellOptions,
@@ -277,15 +421,24 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
       setSiteId,
       setPlantId,
       setCellId,
+      hcObsSiteId,
+      hcObsPlantId,
+      hcObsCellId,
+      setHcObsSiteId,
+      setHcObsPlantId,
+      setHcObsCellId,
       resolveMasterCellScope,
     }),
     [
       status,
       error,
       workspaceId,
+      hcObsWorkspaceId,
       scopeLevel,
       setScopeLevel,
       sites,
+      allPlants,
+      allCells,
       plants,
       cells,
       siteCellOptions,
@@ -296,6 +449,12 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
       setSiteId,
       setPlantId,
       setCellId,
+      hcObsSiteId,
+      hcObsPlantId,
+      hcObsCellId,
+      setHcObsSiteId,
+      setHcObsPlantId,
+      setHcObsCellId,
       resolveMasterCellScope,
     ],
   )

@@ -37,8 +37,6 @@ const HcNewPage = lazy(() => import('./pages/HcNewPage').then((m) => ({ default:
 const HcRecordPage = lazy(() => import('./pages/HcRecordPage').then((m) => ({ default: m.HcRecordPage })))
 const HcReportPage = lazy(() => import('./pages/HcReportPage').then((m) => ({ default: m.HcReportPage })))
 const SosListPage = lazy(() => import('./pages/ObsListPage').then((m) => ({ default: m.SosListPage })))
-const QosListPage = lazy(() => import('./pages/ObsListPage').then((m) => ({ default: m.QosListPage })))
-const PpoListPage = lazy(() => import('./pages/ObsListPage').then((m) => ({ default: m.PpoListPage })))
 const SosNewPage = lazy(() => import('./pages/ObsNewPage').then((m) => ({ default: m.SosNewPage })))
 const QosNewPage = lazy(() => import('./pages/ObsNewPage').then((m) => ({ default: m.QosNewPage })))
 const PpoNewPage = lazy(() => import('./pages/ObsNewPage').then((m) => ({ default: m.PpoNewPage })))
@@ -46,8 +44,6 @@ const SosRecordPage = lazy(() => import('./pages/ObsRecordPage').then((m) => ({ 
 const QosRecordPage = lazy(() => import('./pages/ObsRecordPage').then((m) => ({ default: m.QosRecordPage })))
 const PpoRecordPage = lazy(() => import('./pages/ObsRecordPage').then((m) => ({ default: m.PpoRecordPage })))
 const SosReportPage = lazy(() => import('./pages/ObsReportPage').then((m) => ({ default: m.SosReportPage })))
-const QosReportPage = lazy(() => import('./pages/ObsReportPage').then((m) => ({ default: m.QosReportPage })))
-const PpoReportPage = lazy(() => import('./pages/ObsReportPage').then((m) => ({ default: m.PpoReportPage })))
 import { RttSystemsSectionPage } from './pages/RttSystemsSectionPage'
 
 const Plan24Page = lazy(() => import('./pages/Plan24Page').then((m) => ({ default: m.Plan24Page })))
@@ -150,14 +146,14 @@ export default function App() {
             <Route path="sos/new" element={<SosNewPage />} />
             <Route path="sos/:recordId" element={<SosRecordPage />} />
             <Route path="sos" element={<SosListPage />} />
-            <Route path="qos/report" element={<QosReportPage />} />
+            <Route path="qos/report" element={<Navigate to="/ldr-tools/sos/report?tab=qos" replace />} />
             <Route path="qos/new" element={<QosNewPage />} />
             <Route path="qos/:recordId" element={<QosRecordPage />} />
-            <Route path="qos" element={<QosListPage />} />
-            <Route path="ppo/report" element={<PpoReportPage />} />
+            <Route path="qos" element={<Navigate to="/ldr-tools/sos?tab=qos" replace />} />
+            <Route path="ppo/report" element={<Navigate to="/ldr-tools/sos/report?tab=ppo" replace />} />
             <Route path="ppo/new" element={<PpoNewPage />} />
             <Route path="ppo/:recordId" element={<PpoRecordPage />} />
-            <Route path="ppo" element={<PpoListPage />} />
+            <Route path="ppo" element={<Navigate to="/ldr-tools/sos?tab=ppo" replace />} />
             <Route path="user-guide" element={<LdrToolsUserGuidePage />} />
             <Route
               path="admin"

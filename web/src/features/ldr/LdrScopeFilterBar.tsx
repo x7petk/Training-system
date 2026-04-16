@@ -1,4 +1,5 @@
 import { Building2, Factory, LayoutGrid } from 'lucide-react'
+import { LdrLocationCreateActionButton } from './LdrLocationCreateActionButton'
 import { useLdrWorkspace, type LdrScopeLevel } from './LdrWorkspaceContext'
 
 function ScopeLevelToggle(props: {
@@ -87,7 +88,8 @@ export function LdrScopeFilterBar() {
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-border-strong bg-surface px-3 py-2 shadow-sm sm:px-4">
-      <div className="flex min-w-max items-center gap-2">
+      <div className="flex min-w-max flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
         <div
           className="inline-flex shrink-0 rounded-xl border border-border bg-slate-950/5 p-1 dark:bg-white/5"
           role="group"
@@ -150,6 +152,8 @@ export function LdrScopeFilterBar() {
             </label>
           </>
         ) : null}
+        </div>
+        <LdrLocationCreateActionButton />
       </div>
     </div>
   )

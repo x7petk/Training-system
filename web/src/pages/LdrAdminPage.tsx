@@ -67,8 +67,8 @@ export function LdrAdminPage() {
       { id: 'sos_templates' as const, label: 'SOS Templates' },
       { id: 'qos_types' as const, label: 'QOS Types' },
       { id: 'qos_templates' as const, label: 'QOS Templates' },
-      { id: 'ppo_types' as const, label: 'PPO Types' },
-      { id: 'ppo_templates' as const, label: 'PPO Templates' },
+      { id: 'ppo_types' as const, label: 'PPOS Types' },
+      { id: 'ppo_templates' as const, label: 'PPOS Templates' },
     ],
     [],
   )

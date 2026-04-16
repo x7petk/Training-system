@@ -1,26 +1,29 @@
-import {
-  BookOpenText,
-  CalendarDays,
-  ClipboardList,
-  Factory,
-  FileBarChart,
-  LayoutDashboard,
-  ListChecks,
-  Users,
-  UsersRound,
-} from 'lucide-react'
+import { BookOpenText, CalendarDays, ClipboardList, FileBarChart, LayoutDashboard, ListChecks, Users, UsersRound } from 'lucide-react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import { AppSectionLayout } from './AppSectionLayout'
 import { useAuth } from '../hooks/useAuth'
 import { LdrWorkspaceProvider } from '../features/ldr/LdrWorkspaceContext'
 import { LdrScopeFilterBar } from '../features/ldr/LdrScopeFilterBar'
+import { LdrHcObsScopeFilterBar } from '../features/ldr/LdrHcObsScopeFilterBar'
+import { isHcObsScopedPath } from '../features/ldr/ldrHcObsScope'
+
+function ObservationSystemIcon({ className }: { className?: string }) {
+  return (
+    <ListChecks
+      className={`${className ?? ''} opacity-100 text-blue-900 dark:text-blue-200`}
+      strokeWidth={2.6}
+      aria-hidden
+    />
+  )
+}
 
 export function LdrToolsLayout() {
   const { isAdmin, profileReady } = useAuth()
   const location = useLocation()
-  const showScopeFilter =
-    !location.pathname.startsWith('/ldr-tools/user-guide') &&
-    !(location.pathname.startsWith('/ldr-tools/') && location.pathname.includes('/report'))
+  const path = location.pathname
+  const showHcObsScope = isHcObsScopedPath(path)
+  const showDefaultScope =
+    !path.startsWith('/ldr-tools/user-guide') && !showHcObsScope
   return (
     <LdrWorkspaceProvider>
       <AppSectionLayout
@@ -28,7 +31,9 @@ export function LdrToolsLayout() {
         title="LDR tools"
         headerIconClass="bg-violet-500/15 text-violet-700 dark:text-violet-300"
         HeaderIcon={UsersRound}
-        mainTop={showScopeFilter ? <LdrScopeFilterBar /> : null}
+        mainTop={
+          showHcObsScope ? <LdrHcObsScopeFilterBar /> : showDefaultScope ? <LdrScopeFilterBar /> : null
+        }
         outletFallback={
           <div
             className="flex min-h-[14rem] items-center justify-center rounded-2xl border border-border bg-surface-raised/50 text-sm text-muted"
@@ -46,9 +51,7 @@ export function LdrToolsLayout() {
             label: 'LDR checks',
             items: [
               { to: '/ldr-tools/health-checks', label: 'Health Checks', icon: ClipboardList, end: true },
-              { to: '/ldr-tools/sos', label: 'SOS', icon: ListChecks, end: true },
-              { to: '/ldr-tools/qos', label: 'QOS', icon: ClipboardList, end: true },
-              { to: '/ldr-tools/ppo', label: 'PPO', icon: Factory, end: true },
+              { to: '/ldr-tools/sos', label: 'Observation System', icon: ObservationSystemIcon, end: true },
             ],
           },
           {
@@ -56,9 +59,7 @@ export function LdrToolsLayout() {
             label: 'Reports',
             items: [
               { to: '/ldr-tools/health-checks/report', label: 'HC Report', icon: FileBarChart, end: true },
-              { to: '/ldr-tools/sos/report', label: 'SOS Report', icon: FileBarChart, end: true },
-              { to: '/ldr-tools/qos/report', label: 'QOS Report', icon: FileBarChart, end: true },
-              { to: '/ldr-tools/ppo/report', label: 'PPO Report', icon: FileBarChart, end: true },
+              { to: '/ldr-tools/sos/report', label: 'OS Report', icon: FileBarChart, end: true },
             ],
           },
         ]}

@@ -1026,7 +1026,8 @@ export function LeadershipRosterPage() {
               completionDate: payload.completionDate,
               assignmentId: payload.assignmentId,
             })
-            navigate(`/ldr-tools/${obsKind}/new?${q.toString()}`)
+            q.set('osKind', obsKind)
+            navigate(`/ldr-tools/sos/new?${q.toString()}`)
             setCellModal(null)
           }}
           onClose={() => setCellModal(null)}
@@ -1426,7 +1427,7 @@ function AssignmentRowEditor(props: {
               className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-400 bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-black hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-45"
             >
               <ClipboardCheck className="size-3.5 shrink-0" aria-hidden />
-              Complete PPO
+              Complete PPOS
             </button>
           ) : null}
           <button

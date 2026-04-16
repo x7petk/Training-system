@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, FileBarChart, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
@@ -7,6 +7,9 @@ import { ldrMasterCellJoinFromId, ldrMasterCellLabel } from '../features/ldr/typ
 import { hcRagBadgeClass, hcRagLabel, type HcRag } from '../features/health-checks/hcScore'
 import type { ObsKind } from '../features/observations/obsKind'
 import { obsBasePath, obsLabel, obsTitle } from '../features/observations/obsKind'
+import { masterCellIdsForHcObsFilter } from '../features/ldr/ldrHcObsScope'
+
+const OBS_REP_IN_CHUNK = 90
 import { CompactCategoryBars } from '../features/report/CompactCategoryBars'
 import { CompactPeriodBars } from '../features/report/CompactPeriodBars'
 import {
@@ -158,8 +161,14 @@ function rowsForCrossFilter(
   })
 }
 
-export function ObsReportPage({ kind }: { kind: ObsKind }) {
-  const { masterCellJoinById, workspaceId } = useLdrWorkspace()
+function ObsReportPage({ kind, hidePageHeader }: { kind: ObsKind; hidePageHeader?: boolean }) {
+  const { masterCellJoinById, hcObsWorkspaceId, hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells } =
+    useLdrWorkspace()
+
+  const allowedCellIds = useMemo(
+    () => masterCellIdsForHcObsFilter(hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells),
+    [hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells],
+  )
   const [rows, setRows] = useState<Row[]>([])
   const [types, setTypes] = useState<{ id: string; name: string }[]>([])
   const [completerOptions, setCompleterOptions] = useState<CompleterOpt[]>([])
@@ -218,7 +227,7 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
   )
 
   const loadTypes = useCallback(async () => {
-    if (!workspaceId) {
+    if (!hcObsWorkspaceId) {
       setTypes([])
       return
     }
@@ -227,31 +236,44 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
       .from(tbl)
       .select('id, name, ldr_activities!inner(workspace_id)')
       .eq('active', true)
-      .eq('ldr_activities.workspace_id', workspaceId)
+      .eq('ldr_activities.workspace_id', hcObsWorkspaceId)
       .order('name')
     if (!res.error && res.data) setTypes(res.data as { id: string; name: string }[])
-  }, [workspaceId, kind])
+  }, [hcObsWorkspaceId, kind])
 
   const load = useCallback(async () => {
     setError(null)
     setLoading(true)
     setBrushQp(null)
-    const fullSelect = `id, completed_at, score, status, completed_by_name, completed_by_user_id, master_cell_id, overall_comment, ${fk}, ${rel}`
-    let dataQ = scopedSelect(fullSelect).order('completed_at', { ascending: false }).limit(800)
-    if (filterUserId) dataQ = dataQ.eq('completed_by_user_id', filterUserId)
-    const compQ = scopedSelect(`completed_by_user_id, completed_by_name`).limit(800)
-    const [dataRes, compRes] = await Promise.all([dataQ, compQ])
-    if (dataRes.error) {
-      setLoading(false)
-      setError(dataRes.error.message)
+    if (allowedCellIds.length === 0) {
       setRows([])
       setCompleterOptions([])
       setRecordAnswerCounts(new Map())
       setAnswerTotals({ pass: 0, fail: 0, na: 0 })
+      setLoading(false)
       return
     }
-    const raw = (dataRes.data ?? []) as unknown as Record<string, unknown>[]
-    const mapped: Row[] = raw.map((r) => {
+    const fullSelect = `id, completed_at, score, status, completed_by_name, completed_by_user_id, master_cell_id, overall_comment, ${fk}, ${rel}`
+    const mapped: Row[] = []
+    const compMap = new Map<string, string>()
+
+    for (let i = 0; i < allowedCellIds.length; i += OBS_REP_IN_CHUNK) {
+      const slice = allowedCellIds.slice(i, i + OBS_REP_IN_CHUNK)
+      let dataQ = scopedSelect(fullSelect).in('master_cell_id', slice).order('completed_at', { ascending: false }).limit(800)
+      if (filterUserId) dataQ = dataQ.eq('completed_by_user_id', filterUserId)
+      const dataRes = await dataQ
+      if (dataRes.error) {
+        setLoading(false)
+        setError(dataRes.error.message)
+        setRows([])
+        setCompleterOptions([])
+        setRecordAnswerCounts(new Map())
+        setAnswerTotals({ pass: 0, fail: 0, na: 0 })
+        return
+      }
+      const raw = (dataRes.data ?? []) as unknown as Record<string, unknown>[]
+      mapped.push(
+        ...raw.map((r) => {
       const tj = (r.sos_types ?? r.qos_types ?? r.ppo_types) as { name: string } | { name: string }[] | null
       const tn = !tj ? 'Unknown' : Array.isArray(tj) ? (tj[0]?.name ?? 'Unknown') : tj.name
       return {
@@ -266,8 +288,23 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
         type_name: tn,
         overall_comment: (r.overall_comment as string | null) ?? null,
       }
-    })
-    setRows(mapped)
+        }),
+      )
+
+      let compQ = scopedSelect(`completed_by_user_id, completed_by_name`).in('master_cell_id', slice).limit(800)
+      const compRes = await compQ
+      if (!compRes.error && compRes.data) {
+        for (const r of compRes.data as unknown as { completed_by_user_id: string; completed_by_name: string }[]) {
+          const id = r.completed_by_user_id
+          const name = r.completed_by_name?.trim() || id.slice(0, 8)
+          if (!compMap.has(id)) compMap.set(id, name)
+        }
+      }
+    }
+
+    mapped.sort((a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime())
+    const mergedRows = mapped.slice(0, 800)
+    setRows(mergedRows)
 
     if (kind === 'qos' || kind === 'ppo') {
       const tbl = kind === 'qos' ? 'qos_answers' : 'ppo_answers'
@@ -276,7 +313,7 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
       let tp = 0
       let tf = 0
       let tn = 0
-      const ids = mapped.map((r) => r.id)
+      const ids = mergedRows.map((r) => r.id)
       const chunk = 120
       for (let i = 0; i < ids.length; i += chunk) {
         const slice = ids.slice(i, i + chunk)
@@ -311,18 +348,8 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
     }
 
     setLoading(false)
-    if (!compRes.error && compRes.data) {
-      const m = new Map<string, string>()
-      for (const r of compRes.data as unknown as { completed_by_user_id: string; completed_by_name: string }[]) {
-        const id = r.completed_by_user_id
-        const name = r.completed_by_name?.trim() || id.slice(0, 8)
-        if (!m.has(id)) m.set(id, name)
-      }
-      setCompleterOptions([...m.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)))
-    } else {
-      setCompleterOptions([])
-    }
-  }, [scopedSelect, filterUserId, fk, rel, kind])
+    setCompleterOptions([...compMap.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)))
+  }, [scopedSelect, filterUserId, fk, rel, kind, allowedCellIds])
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -437,8 +464,7 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
   const base = obsBasePath(kind)
   const title = obsTitle(kind)
   const short = obsLabel(kind)
-  const numberLabel =
-    kind === 'sos' ? 'Number of SOS' : kind === 'qos' ? 'Number of QOS' : 'Number of PPO'
+  const numberLabel = kind === 'sos' ? 'Number of SOS' : kind === 'qos' ? 'Number of QOS' : 'Number of PPOS'
   const activeFilters =
     (selectedPeriodBucket ? 1 : 0) +
     (brushTypeId ? 1 : 0) +
@@ -470,8 +496,8 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
+      {hidePageHeader ? null : (
+        <div className="flex flex-wrap items-start gap-3">
           <Link
             to={base}
             className="mt-1 inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-border text-muted hover:bg-surface-raised"
@@ -479,19 +505,21 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
           >
             <ArrowLeft className="size-5" />
           </Link>
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-800 dark:text-sky-200">
-            <FileBarChart className="size-6" aria-hidden />
-          </span>
-          <div>
-            <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">{short} Report</h1>
-            <p className="text-sm text-muted">
-              {title} — submitted records only (RLS). Scope the fetch with type/completer dropdowns if needed. Click a
-              chart bar to cross-filter: that chart stays the same; other charts and the table follow the selection (like
-              the Skill Matrix report).
-            </p>
+          <div className="flex min-w-0 flex-1 flex-nowrap items-start gap-3">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-800 dark:text-sky-200">
+              <FileBarChart className="size-6" aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">{short} Report</h1>
+              <p className="text-xs leading-snug text-muted sm:text-sm">
+                {title} — submitted records only (RLS). Scope the fetch with type/completer dropdowns if needed. Click a
+                chart bar to cross-filter: that chart stays the same; other charts and the table follow the selection
+                (like the Skill Matrix report).
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {error ? (
         <div className="rounded-2xl border border-danger/35 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
@@ -823,9 +851,227 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
   )
 }
 
-export function SosReportPage() {
-  return <ObsReportPage kind="sos" />
+type ObsSummaryRow = {
+  id: string
+  kind: ObsKind
+  completed_at: string
+  completed_by_name: string
+  score: number
 }
+
+function tabButtonClass(active: boolean): string {
+  return active
+    ? 'rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white'
+    : 'rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-muted hover:bg-surface-raised'
+}
+
+function ObsAllReportPage() {
+  const { hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells } = useLdrWorkspace()
+  const allowedCellIds = useMemo(
+    () => masterCellIdsForHcObsFilter(hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells),
+    [hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells],
+  )
+  const [rows, setRows] = useState<ObsSummaryRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const counts = useMemo(
+    () => ({
+      sos: rows.filter((r) => r.kind === 'sos').length,
+      qos: rows.filter((r) => r.kind === 'qos').length,
+      ppo: rows.filter((r) => r.kind === 'ppo').length,
+    }),
+    [rows],
+  )
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void (async () => {
+        setLoading(true)
+        setError(null)
+        try {
+          if (allowedCellIds.length === 0) {
+            setRows([])
+            setLoading(false)
+            return
+          }
+          const loadTable = async (table: 'sos_records' | 'qos_records' | 'ppo_records', k: ObsKind) => {
+            const mergedChunk: ObsSummaryRow[] = []
+            for (let i = 0; i < allowedCellIds.length; i += OBS_REP_IN_CHUNK) {
+              const slice = allowedCellIds.slice(i, i + OBS_REP_IN_CHUNK)
+              const res = await supabase
+                .from(table)
+                .select('id, completed_at, completed_by_name, score')
+                .not('completed_at', 'is', null)
+                .in('master_cell_id', slice)
+                .limit(300)
+              if (res.error) throw new Error(res.error.message)
+              mergedChunk.push(
+                ...((res.data ?? []) as Omit<ObsSummaryRow, 'kind'>[]).map((r) => ({ ...r, kind: k })),
+              )
+            }
+            return mergedChunk
+          }
+          const [sosRows, qosRows, ppoRows] = await Promise.all([
+            loadTable('sos_records', 'sos'),
+            loadTable('qos_records', 'qos'),
+            loadTable('ppo_records', 'ppo'),
+          ])
+          const merged = [...sosRows, ...qosRows, ...ppoRows].sort(
+            (a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime(),
+          )
+          setRows(merged)
+        } catch (e) {
+          setError(e instanceof Error ? e.message : 'Failed to load summary report.')
+        } finally {
+          setLoading(false)
+        }
+      })()
+    })
+  }, [allowedCellIds])
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-border bg-surface p-4 text-sm">
+          <div className="text-xs text-muted">SOS done</div>
+          <div className="mt-1 text-2xl font-semibold">{counts.sos}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-surface p-4 text-sm">
+          <div className="text-xs text-muted">QOS done</div>
+          <div className="mt-1 text-2xl font-semibold">{counts.qos}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-surface p-4 text-sm">
+          <div className="text-xs text-muted">PPOS done</div>
+          <div className="mt-1 text-2xl font-semibold">{counts.ppo}</div>
+        </div>
+      </div>
+      {error ? (
+        <div className="rounded-2xl border border-danger/35 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>
+      ) : null}
+      <div className="overflow-x-auto rounded-2xl border border-border bg-surface shadow-sm">
+        <table className="min-w-full text-left text-sm">
+          <thead className="border-b border-border bg-surface-raised/60 text-xs font-semibold uppercase text-muted">
+            <tr>
+              <th className="px-4 py-3">When</th>
+              <th className="px-4 py-3">System</th>
+              <th className="px-4 py-3">Completer</th>
+              <th className="px-4 py-3">Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-muted">
+                  Loading…
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-muted">
+                  No submitted records.
+                </td>
+              </tr>
+            ) : (
+              rows.slice(0, 200).map((r) => (
+                <tr key={`${r.kind}-${r.id}`} className="border-b border-border/80">
+                  <td className="px-4 py-2 tabular-nums text-muted">{new Date(r.completed_at).toLocaleString()}</td>
+                  <td className="px-4 py-2">{r.kind === 'sos' ? 'S' : r.kind === 'qos' ? 'Q' : 'PP'}</td>
+                  <td className="px-4 py-2">{r.completed_by_name}</td>
+                  <td className="px-4 py-2">{r.score}%</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+export function SosReportPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('tab')
+  const activeTab: 'all' | ObsKind = tab === 'qos' || tab === 'ppo' || tab === 'sos' ? tab : 'all'
+  function setTab(next: 'all' | ObsKind) {
+    const qp = new URLSearchParams(searchParams)
+    if (next === 'all') qp.set('tab', 'all')
+    else qp.set('tab', next)
+    setSearchParams(qp, { replace: true })
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <Link
+            to="/ldr-tools/sos"
+            className="mt-1 inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-border text-muted hover:bg-surface-raised"
+            aria-label="Back to observation list"
+          >
+            <ArrowLeft className="size-5" />
+          </Link>
+          <div className="flex min-w-0 flex-1 flex-nowrap items-start gap-3">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-800 dark:text-sky-200">
+              <FileBarChart className="size-6" aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">OS Report</h1>
+              <p className="text-xs leading-snug text-muted sm:text-sm">
+                Submitted records only (RLS). Use the All / S / Q / PP controls on the right to switch views. In each
+                view, use date/time and dropdowns to scope data. Click a chart bar to cross-filter: that chart stays the
+                same; other charts and the table follow your selection (same idea as the Skill Matrix report).
+              </p>
+            </div>
+          </div>
+        </div>
+        <div
+          className="inline-flex shrink-0 flex-wrap items-center gap-1 rounded-xl border border-border bg-surface p-1 shadow-sm"
+          role="tablist"
+          aria-label="Report scope"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'all'}
+            onClick={() => setTab('all')}
+            className={tabButtonClass(activeTab === 'all')}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'sos'}
+            onClick={() => setTab('sos')}
+            className={tabButtonClass(activeTab === 'sos')}
+          >
+            S
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'qos'}
+            onClick={() => setTab('qos')}
+            className={tabButtonClass(activeTab === 'qos')}
+          >
+            Q
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'ppo'}
+            onClick={() => setTab('ppo')}
+            className={tabButtonClass(activeTab === 'ppo')}
+          >
+            PP
+          </button>
+        </div>
+      </div>
+      {activeTab === 'all' ? <ObsAllReportPage /> : <ObsReportPage kind={activeTab} hidePageHeader />}
+    </div>
+  )
+}
+
 export function QosReportPage() {
   return <ObsReportPage kind="qos" />
 }

@@ -15,6 +15,7 @@ type ObsTypeRow = {
   description: string | null
   active: boolean
   sort_order: number
+  standard_url?: string | null
 }
 
 type ObsTemplateRow = {
@@ -40,6 +41,14 @@ type ObsQuestionRow = {
 
 function typesTable(k: ObsKind) {
   return k === 'sos' ? 'sos_types' : k === 'qos' ? 'qos_types' : 'ppo_types'
+}
+
+function formatObsTypeSaveError(message: string): string {
+  const m = message.toLowerCase()
+  if (m.includes('standard_url') && (m.includes('schema cache') || m.includes('pgrst'))) {
+    return `${message} — In Supabase → SQL, run scripts/apply-obs-types-standard-url.sql for this project, then save again.`
+  }
+  return message
 }
 function templatesTable(k: ObsKind) {
   return k === 'sos' ? 'sos_templates' : k === 'qos' ? 'qos_templates' : 'ppo_templates'
@@ -335,6 +344,7 @@ function ObsTypeCreateDialog(props: {
   const tt = typesTable(props.kind)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [standardUrl, setStandardUrl] = useState('')
   const [active, setActive] = useState(true)
   const [sortOrder, setSortOrder] = useState('0')
   const [err, setErr] = useState<string | null>(null)
@@ -357,12 +367,13 @@ function ObsTypeCreateDialog(props: {
       workspace_id: props.workspaceId,
       name: cleanName,
       description: description.trim() || null,
+      standard_url: standardUrl.trim() || null,
       active,
       sort_order: so,
     })
     setSaving(false)
     if (res.error) {
-      setErr(res.error.message)
+      setErr(formatObsTypeSaveError(res.error.message))
       return
     }
     props.onSaved()
@@ -388,6 +399,17 @@ function ObsTypeCreateDialog(props: {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+        </label>
+        <label className="mt-3 block text-xs font-medium text-muted">
+          Link to standard (optional)
+          <input
+            type="text"
+            placeholder="https://… or /path-in-this-app"
+            className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm"
+            value={standardUrl}
+            onChange={(e) => setStandardUrl(e.target.value)}
+          />
+          <span className="mt-1 block text-[11px] text-muted">Any page: full web address, or a path starting with / for a screen in this app.</span>
         </label>
         <label className="mt-3 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
@@ -422,6 +444,7 @@ function ObsTypeCreateDialog(props: {
 function ObsTypeEditDialog(props: { kind: ObsKind; row: ObsTypeRow; onClose: () => void; onSaved: () => void }) {
   const tt = typesTable(props.kind)
   const [description, setDescription] = useState(props.row.description ?? '')
+  const [standardUrl, setStandardUrl] = useState(props.row.standard_url ?? '')
   const [active, setActive] = useState(props.row.active)
   const [sortOrder, setSortOrder] = useState(String(props.row.sort_order))
   const [err, setErr] = useState<string | null>(null)
@@ -439,13 +462,14 @@ function ObsTypeEditDialog(props: { kind: ObsKind; row: ObsTypeRow; onClose: () 
       .from(tt)
       .update({
         description: description.trim() || null,
+        standard_url: standardUrl.trim() || null,
         active,
         sort_order: so,
       })
       .eq('id', props.row.id)
     setSaving(false)
     if (res.error) {
-      setErr(res.error.message)
+      setErr(formatObsTypeSaveError(res.error.message))
       return
     }
     props.onSaved()
@@ -466,6 +490,17 @@ function ObsTypeEditDialog(props: { kind: ObsKind; row: ObsTypeRow; onClose: () 
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+        </label>
+        <label className="mt-3 block text-xs font-medium text-muted">
+          Link to standard (optional)
+          <input
+            type="text"
+            placeholder="https://… or /path-in-this-app"
+            className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm"
+            value={standardUrl}
+            onChange={(e) => setStandardUrl(e.target.value)}
+          />
+          <span className="mt-1 block text-[11px] text-muted">Full URL opens in a new tab; paths starting with / open in this app.</span>
         </label>
         <label className="mt-3 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />

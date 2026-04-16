@@ -26,17 +26,15 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
   const { user } = useAuth()
   const {
     status: ldrStatus,
-    sites,
-    plants,
-    cells,
-    siteId,
-    plantId,
-    cellId,
-    setSiteId,
-    setPlantId,
-    setCellId,
-    setScopeLevel,
-    workspaceId,
+    allPlants,
+    allCells,
+    hcObsSiteId,
+    hcObsPlantId,
+    hcObsCellId,
+    setHcObsSiteId,
+    setHcObsPlantId,
+    setHcObsCellId,
+    hcObsWorkspaceId,
     masterCellJoinById,
     resolveMasterCellScope,
   } = useLdrWorkspace()
@@ -66,9 +64,16 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
   const [loadingTemplate, setLoadingTemplate] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
+  const [showTypeValidation, setShowTypeValidation] = useState(false)
 
-  const plantsForSite = useMemo(() => plants.filter((p) => p.site_id === siteId), [plants, siteId])
-  const cellsForPlant = useMemo(() => cells.filter((c) => c.plant_id === plantId), [cells, plantId])
+  const plantsForSite = useMemo(
+    () => [...allPlants].filter((p) => p.site_id === hcObsSiteId).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+    [allPlants, hcObsSiteId],
+  )
+  const cellsForPlant = useMemo(
+    () => [...allCells].filter((c) => c.plant_id === hcObsPlantId).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+    [allCells, hcObsPlantId],
+  )
   const typesTable = kind === 'sos' ? 'sos_types' : kind === 'qos' ? 'qos_types' : 'ppo_types'
   const tplTable = kind === 'sos' ? 'sos_templates' : kind === 'qos' ? 'qos_templates' : 'ppo_templates'
   const tplFk = kind === 'sos' ? 'sos_type_id' : kind === 'qos' ? 'qos_type_id' : 'ppo_type_id'
@@ -81,7 +86,7 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
   useEffect(() => {
     let cancelled = false
     async function load() {
-      if (!workspaceId) {
+      if (!hcObsWorkspaceId) {
         setLoadingTypes(false)
         setTypes([])
         return
@@ -92,13 +97,13 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
           .from(typesTable)
           .select('id, workspace_id, name, description, active, sort_order')
           .eq('active', true)
-          .eq('workspace_id', workspaceId)
+          .eq('workspace_id', hcObsWorkspaceId)
           .order('sort_order')
           .order('name'),
         supabase
           .from('obs_system_activity_links')
           .select('ldr_activity_id')
-          .eq('workspace_id', workspaceId)
+          .eq('workspace_id', hcObsWorkspaceId)
           .eq('kind', kind)
           .maybeSingle(),
       ])
@@ -133,7 +138,7 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
     return () => {
       cancelled = true
     }
-  }, [workspaceId, kind, typesTable])
+  }, [hcObsWorkspaceId, kind, typesTable])
 
   const lastRosterPrefillSig = useRef('')
   const rosterPrefillSig =
@@ -151,10 +156,9 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
         if (qMasterCellId) {
           const scope = resolveMasterCellScope(qMasterCellId)
           if (scope) {
-            setScopeLevel('cell')
-            setSiteId(scope.siteId)
-            setPlantId(scope.plantId)
-            setCellId(scope.cellId)
+            setHcObsSiteId(scope.siteId)
+            setHcObsPlantId(scope.plantId)
+            setHcObsCellId(scope.cellId)
           }
         } else if (rosterAssignmentId) {
           const asg = await supabase
@@ -186,10 +190,9 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
           if (masterCellId) {
             const scope = resolveMasterCellScope(masterCellId)
             if (scope) {
-              setScopeLevel('cell')
-              setSiteId(scope.siteId)
-              setPlantId(scope.plantId)
-              setCellId(scope.cellId)
+              setHcObsSiteId(scope.siteId)
+              setHcObsPlantId(scope.plantId)
+              setHcObsCellId(scope.cellId)
             }
           }
         }
@@ -210,10 +213,38 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
     rosterAssignmentId,
     masterCellJoinById,
     resolveMasterCellScope,
-    setScopeLevel,
-    setSiteId,
-    setPlantId,
-    setCellId,
+    setHcObsSiteId,
+    setHcObsPlantId,
+    setHcObsCellId,
+  ])
+
+  /** Autofill plant/cell for new observation (cell required). */
+  useEffect(() => {
+    if (ldrStatus !== 'ready') return
+    if (rosterPrefillSig) return
+    if (!hcObsSiteId || hcObsCellId) return
+    if (hcObsPlantId) {
+      const c = cellsForPlant[0]
+      if (c) setHcObsCellId(c.id)
+      return
+    }
+    const firstPlant = plantsForSite[0]
+    if (!firstPlant) return
+    const firstCell = allCells.find((c) => c.plant_id === firstPlant.id)
+    if (!firstCell) return
+    setHcObsPlantId(firstPlant.id)
+    setHcObsCellId(firstCell.id)
+  }, [
+    ldrStatus,
+    rosterPrefillSig,
+    hcObsSiteId,
+    hcObsPlantId,
+    hcObsCellId,
+    plantsForSite,
+    cellsForPlant,
+    allCells,
+    setHcObsPlantId,
+    setHcObsCellId,
   ])
 
   const loadActiveTemplate = useCallback(
@@ -258,11 +289,12 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
 
   async function handleStart() {
     setError(null)
-    if (!siteId || !plantId || !cellId) {
-      setError('Select site, plant, and cell (use the scope bar or pickers below).')
+    if (!hcObsSiteId || !hcObsPlantId || !hcObsCellId) {
+      setError('Select site, plant, and cell in the bar at the top of the page.')
       return
     }
     if (!typeId || !template) {
+      setShowTypeValidation(true)
       setError('Select a type with an active template.')
       return
     }
@@ -279,7 +311,7 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
     const dup = await findSubmittedObsDuplicateSameDay(supabase, kind, {
       completedByUserId: user.id,
       typeId,
-      masterCellId: cellId,
+      masterCellId: hcObsCellId,
       ldrAssignmentId: rosterAssignmentId,
     })
     if (dup.error) {
@@ -307,9 +339,9 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
     const baseRecord: Record<string, unknown> = {
       [recTypeFk]: typeId,
       template_id: template.id,
-      master_site_id: siteId,
-      master_plant_id: plantId,
-      master_cell_id: cellId,
+      master_site_id: hcObsSiteId,
+      master_plant_id: hcObsPlantId,
+      master_cell_id: hcObsCellId,
       completed_by_user_id: user.id,
       completed_by_name: displayName,
       operator_name: null,
@@ -381,7 +413,7 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
         </span>
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">New {obsLabel(kind)}</h1>
-          <p className="text-sm text-muted">{obsTitle(kind)} — choose location and type, then continue on the next screen.</p>
+          <p className="text-sm text-muted">{obsTitle(kind)} — choose type, then continue on the next screen. Location comes from the site / plant / cell bar above.</p>
         </div>
       </div>
 
@@ -391,46 +423,11 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
         </div>
       ) : null}
 
-      <div className="space-y-4 rounded-2xl border border-border bg-surface p-5 shadow-sm">
-        <h2 className="text-sm font-semibold text-fg">Location</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <label className="block text-xs font-medium text-muted">
-            Site
-            <select className={`mt-1 ${selectClass}`} value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-              <option value="">—</option>
-              {sites.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-xs font-medium text-muted">
-            Plant
-            <select className={`mt-1 ${selectClass}`} value={plantId} onChange={(e) => setPlantId(e.target.value)}>
-              <option value="">—</option>
-              {plantsForSite.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-xs font-medium text-muted">
-            Cell
-            <select className={`mt-1 ${selectClass}`} value={cellId} onChange={(e) => setCellId(e.target.value)}>
-              <option value="">—</option>
-              {cellsForPlant.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </div>
-
-      <div className="space-y-4 rounded-2xl border border-border bg-surface p-5 shadow-sm">
+      <div
+        className={`space-y-4 rounded-2xl border bg-surface p-5 shadow-sm ${
+          showTypeValidation && !typeId ? 'border-danger/45' : 'border-border'
+        }`}
+      >
         <h2 className="text-sm font-semibold text-fg">Type</h2>
         {qActivityId && linkedActivityId && qActivityId !== linkedActivityId && !rosterAssignmentId ? (
           <p className="rounded-xl border border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger">
@@ -440,7 +437,14 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
         {loadingTypes ? (
           <p className="text-sm text-muted">Loading types…</p>
         ) : (
-          <select className={selectClass} value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+          <select
+            className={`${selectClass} ${showTypeValidation && !typeId ? 'border-danger/45' : ''}`}
+            value={typeId}
+            onChange={(e) => {
+              setTypeId(e.target.value)
+              if (e.target.value) setShowTypeValidation(false)
+            }}
+          >
             <option value="">— Select type —</option>
             {types.map((t) => (
               <option key={t.id} value={t.id}>
@@ -479,11 +483,59 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
 }
 
 export function SosNewPage() {
-  return <ObsNewPage kind="sos" />
+  return <ObsSystemNewPage />
 }
 export function QosNewPage() {
   return <ObsNewPage kind="qos" />
 }
 export function PpoNewPage() {
   return <ObsNewPage kind="ppo" />
+}
+
+export function ObsSystemNewPage() {
+  const [searchParams] = useSearchParams()
+  const rosterContext =
+    Boolean(searchParams.get('assignmentId')) || Boolean(searchParams.get('activityId')) || Boolean(searchParams.get('masterCellId'))
+  const osKindParam = searchParams.get('osKind')
+  const prefilledKind: ObsKind | null =
+    rosterContext && (osKindParam === 'sos' || osKindParam === 'qos' || osKindParam === 'ppo') ? osKindParam : null
+  const [selectedKind, setSelectedKind] = useState<ObsKind | null>(prefilledKind)
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-fg">Observation System</h2>
+        <p className="mt-1 text-xs text-muted">Select one system before choosing Type.</p>
+        <div
+          className={`mt-3 inline-flex w-fit max-w-full flex-wrap gap-2 rounded-xl border p-2 ${
+            selectedKind ? 'border-border' : 'border-danger/45 bg-danger/10'
+          }`}
+        >
+          {(
+            [
+              ['sos', 'S'],
+              ['qos', 'Q'],
+              ['ppo', 'PP'],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => {
+                setSelectedKind(k)
+              }}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                selectedKind === k
+                  ? 'bg-sky-600 text-white'
+                  : 'border border-border bg-surface text-muted hover:bg-surface-raised'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {selectedKind ? <ObsNewPage kind={selectedKind} /> : null}
+    </div>
+  )
 }

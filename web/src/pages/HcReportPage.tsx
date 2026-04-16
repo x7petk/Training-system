@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft, FileBarChart, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
+import { masterCellIdsForHcObsFilter } from '../features/ldr/ldrHcObsScope'
 import { ldrMasterCellJoinFromId, ldrMasterCellLabel } from '../features/ldr/types'
 import { hcRagBadgeClass, hcRagLabel, type HcRag } from '../features/health-checks/hcScore'
 import { CompactCategoryBars } from '../features/report/CompactCategoryBars'
@@ -36,8 +37,16 @@ function dateInputValueFromNowMinus(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+const HC_REP_IN_CHUNK = 90
+
 export function HcReportPage() {
-  const { masterCellJoinById, workspaceId } = useLdrWorkspace()
+  const { masterCellJoinById, hcObsWorkspaceId, hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells } =
+    useLdrWorkspace()
+
+  const allowedCellIds = useMemo(
+    () => masterCellIdsForHcObsFilter(hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells),
+    [hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells],
+  )
 
   const [rows, setRows] = useState<Row[]>([])
   const [types, setTypes] = useState<{ id: string; name: string }[]>([])
@@ -75,7 +84,7 @@ export function HcReportPage() {
   )
 
   const loadTypes = useCallback(async () => {
-    if (!workspaceId) {
+    if (!hcObsWorkspaceId) {
       setTypes([])
       return
     }
@@ -83,46 +92,56 @@ export function HcReportPage() {
       .from('hc_types')
       .select('id, name, ldr_activities!inner(workspace_id)')
       .eq('active', true)
-      .eq('ldr_activities.workspace_id', workspaceId)
+      .eq('ldr_activities.workspace_id', hcObsWorkspaceId)
       .order('name')
     if (!res.error && res.data) setTypes(res.data as { id: string; name: string }[])
-  }, [workspaceId])
+  }, [hcObsWorkspaceId])
 
   const load = useCallback(async () => {
     setError(null)
     setLoading(true)
+    if (allowedCellIds.length === 0) {
+      setRows([])
+      setCompleterOptions([])
+      setLoading(false)
+      return
+    }
     const fullSelect =
       'id, completed_at, score, status, completed_by_name, completed_by_user_id, master_site_id, master_plant_id, master_cell_id, hc_type_id, hc_types(name)'
 
-    let dataQ = scopedSelect(fullSelect).order('completed_at', { ascending: false }).limit(500)
-    if (filterUserId) dataQ = dataQ.eq('completed_by_user_id', filterUserId)
+    const merged: Row[] = []
+    const compMap = new Map<string, string>()
 
-    const compQ = scopedSelect('completed_by_user_id, completed_by_name').limit(800)
-
-    const [dataRes, compRes] = await Promise.all([dataQ, compQ])
-    setLoading(false)
-
-    if (dataRes.error) {
-      setError(dataRes.error.message)
-      setRows([])
-      setCompleterOptions([])
-      return
-    }
-
-    setRows((dataRes.data ?? []) as unknown as Row[])
-
-    if (!compRes.error && compRes.data) {
-      const m = new Map<string, string>()
-      for (const r of compRes.data as unknown as { completed_by_user_id: string; completed_by_name: string }[]) {
-        const id = r.completed_by_user_id
-        const name = r.completed_by_name?.trim() || id.slice(0, 8)
-        if (!m.has(id)) m.set(id, name)
+    for (let i = 0; i < allowedCellIds.length; i += HC_REP_IN_CHUNK) {
+      const slice = allowedCellIds.slice(i, i + HC_REP_IN_CHUNK)
+      let dataQ = scopedSelect(fullSelect).in('master_cell_id', slice).order('completed_at', { ascending: false }).limit(500)
+      if (filterUserId) dataQ = dataQ.eq('completed_by_user_id', filterUserId)
+      const dataRes = await dataQ
+      if (dataRes.error) {
+        setLoading(false)
+        setError(dataRes.error.message)
+        setRows([])
+        setCompleterOptions([])
+        return
       }
-      setCompleterOptions([...m.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)))
-    } else {
-      setCompleterOptions([])
+      merged.push(...((dataRes.data ?? []) as unknown as Row[]))
+
+      let compQ = scopedSelect('completed_by_user_id, completed_by_name').in('master_cell_id', slice).limit(800)
+      const compRes = await compQ
+      if (!compRes.error && compRes.data) {
+        for (const r of compRes.data as unknown as { completed_by_user_id: string; completed_by_name: string }[]) {
+          const id = r.completed_by_user_id
+          const name = r.completed_by_name?.trim() || id.slice(0, 8)
+          if (!compMap.has(id)) compMap.set(id, name)
+        }
+      }
     }
-  }, [scopedSelect, filterUserId])
+
+    merged.sort((a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime())
+    setRows(merged.slice(0, 500))
+    setCompleterOptions([...compMap.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)))
+    setLoading(false)
+  }, [scopedSelect, filterUserId, allowedCellIds])
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -299,24 +318,26 @@ export function HcReportPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <Link
           to="/ldr-tools/health-checks"
-          className="inline-flex size-10 items-center justify-center rounded-xl border border-border text-muted hover:bg-surface-raised"
+          className="mt-1 inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-border text-muted hover:bg-surface-raised"
           aria-label="Back to health checks"
         >
           <ArrowLeft className="size-5" />
         </Link>
-        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-teal-500/15 text-teal-700 dark:text-teal-300">
-          <FileBarChart className="size-6" aria-hidden />
-        </span>
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">HC Report</h1>
-          <p className="text-xs text-muted sm:text-sm">
-            Submitted checks only (RLS). Use date and dropdowns to scope data. Click a period column or a row in By type
-            / By completer to cross-filter: that view stays full; summary, other breakdowns, and the record list follow
-            your selection (same idea as the Skill Matrix report).
-          </p>
+        <div className="flex min-w-0 flex-1 flex-nowrap items-start gap-3">
+          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-teal-500/15 text-teal-700 dark:text-teal-300">
+            <FileBarChart className="size-6" aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">HC Report</h1>
+            <p className="text-xs leading-snug text-muted sm:text-sm">
+              Submitted checks only (RLS). Use date and dropdowns to scope data. Click a period column or a row in By
+              type / By completer to cross-filter: that view stays full; summary, other breakdowns, and the record list
+              follow your selection (same idea as the Skill Matrix report).
+            </p>
+          </div>
         </div>
       </div>
 

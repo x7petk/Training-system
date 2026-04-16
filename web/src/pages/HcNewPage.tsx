@@ -21,17 +21,15 @@ export function HcNewPage() {
   const {
     status: ldrStatus,
     sites,
-    plants,
-    cells,
-    siteId,
-    plantId,
-    cellId,
-    setSiteId,
-    setPlantId,
-    setCellId,
-    setScopeLevel,
-    scopeLevel,
-    workspaceId,
+    allPlants,
+    allCells,
+    hcObsSiteId,
+    hcObsPlantId,
+    hcObsCellId,
+    setHcObsSiteId,
+    setHcObsPlantId,
+    setHcObsCellId,
+    hcObsWorkspaceId,
     masterCellJoinById,
     resolveMasterCellScope,
   } = useLdrWorkspace()
@@ -63,13 +61,19 @@ export function HcNewPage() {
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
 
-  const plantsForSite = useMemo(() => plants.filter((p) => p.site_id === siteId), [plants, siteId])
-  const cellsForPlant = useMemo(() => cells.filter((c) => c.plant_id === plantId), [cells, plantId])
+  const plantsForSite = useMemo(
+    () => [...allPlants].filter((p) => p.site_id === hcObsSiteId).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+    [allPlants, hcObsSiteId],
+  )
+  const cellsForPlant = useMemo(
+    () => [...allCells].filter((c) => c.plant_id === hcObsPlantId).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+    [allCells, hcObsPlantId],
+  )
 
   useEffect(() => {
     let cancelled = false
     async function load() {
-      if (!workspaceId) {
+      if (!hcObsWorkspaceId) {
         setLoadingTypes(false)
         setTypes([])
         return
@@ -87,9 +91,9 @@ export function HcNewPage() {
 
       let list: HcTypeRow[] = []
 
-      if (scopeLevel === 'cell' && siteId) {
+      if (hcObsCellId && hcObsSiteId) {
         const { data: siteWsRaw, error: siteWsErr } = await supabase.rpc('ldr_ensure_workspace_site', {
-          p_master_site_id: siteId,
+          p_master_site_id: hcObsSiteId,
         })
         if (cancelled) return
         if (siteWsErr) {
@@ -100,7 +104,9 @@ export function HcNewPage() {
         }
         const siteWorkspaceId = typeof siteWsRaw === 'string' ? siteWsRaw : null
         const workspaceIds =
-          siteWorkspaceId && siteWorkspaceId !== workspaceId ? [workspaceId, siteWorkspaceId] : [workspaceId]
+          siteWorkspaceId && siteWorkspaceId !== hcObsWorkspaceId
+            ? [hcObsWorkspaceId, siteWorkspaceId]
+            : [hcObsWorkspaceId]
 
         const results = await Promise.all(
           workspaceIds.map((wid) => selectHcTypes().eq('ldr_activities.workspace_id', wid)),
@@ -121,7 +127,7 @@ export function HcNewPage() {
         }
         list = [...byId.values()].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
       } else {
-        const res = await selectHcTypes().eq('ldr_activities.workspace_id', workspaceId)
+        const res = await selectHcTypes().eq('ldr_activities.workspace_id', hcObsWorkspaceId)
         if (cancelled) return
         if (res.error) {
           setLoadingTypes(false)
@@ -159,7 +165,7 @@ export function HcNewPage() {
     return () => {
       cancelled = true
     }
-  }, [workspaceId, qActivityId, scopeLevel, siteId])
+  }, [hcObsWorkspaceId, qActivityId, hcObsCellId, hcObsSiteId])
 
   const lastRosterPrefillSig = useRef('')
   const rosterPrefillSig =
@@ -178,10 +184,9 @@ export function HcNewPage() {
         if (qMasterCellId) {
           const scope = resolveMasterCellScope(qMasterCellId)
           if (scope) {
-            setScopeLevel('cell')
-            setSiteId(scope.siteId)
-            setPlantId(scope.plantId)
-            setCellId(scope.cellId)
+            setHcObsSiteId(scope.siteId)
+            setHcObsPlantId(scope.plantId)
+            setHcObsCellId(scope.cellId)
           }
         } else if (rosterAssignmentId) {
           const asg = await supabase
@@ -213,10 +218,9 @@ export function HcNewPage() {
           if (masterCellId) {
             const scope = resolveMasterCellScope(masterCellId)
             if (scope) {
-              setScopeLevel('cell')
-              setSiteId(scope.siteId)
-              setPlantId(scope.plantId)
-              setCellId(scope.cellId)
+              setHcObsSiteId(scope.siteId)
+              setHcObsPlantId(scope.plantId)
+              setHcObsCellId(scope.cellId)
             }
           }
         }
@@ -237,10 +241,38 @@ export function HcNewPage() {
     rosterAssignmentId,
     masterCellJoinById,
     resolveMasterCellScope,
-    setScopeLevel,
-    setSiteId,
-    setPlantId,
-    setCellId,
+    setHcObsSiteId,
+    setHcObsPlantId,
+    setHcObsCellId,
+  ])
+
+  /** Autofill plant/cell for new HC (cell required); not when roster deep link handles scope. */
+  useEffect(() => {
+    if (ldrStatus !== 'ready') return
+    if (rosterPrefillSig) return
+    if (!hcObsSiteId || hcObsCellId) return
+    if (hcObsPlantId) {
+      const c = cellsForPlant[0]
+      if (c) setHcObsCellId(c.id)
+      return
+    }
+    const firstPlant = plantsForSite[0]
+    if (!firstPlant) return
+    const firstCell = allCells.find((c) => c.plant_id === firstPlant.id)
+    if (!firstCell) return
+    setHcObsPlantId(firstPlant.id)
+    setHcObsCellId(firstCell.id)
+  }, [
+    ldrStatus,
+    rosterPrefillSig,
+    hcObsSiteId,
+    hcObsPlantId,
+    hcObsCellId,
+    plantsForSite,
+    cellsForPlant,
+    allCells,
+    setHcObsPlantId,
+    setHcObsCellId,
   ])
 
   const loadActiveTemplate = useCallback(async (typeId: string) => {
@@ -281,8 +313,8 @@ export function HcNewPage() {
 
   async function handleStart() {
     setError(null)
-    if (!siteId || !plantId || !cellId) {
-      setError('Select site, plant, and cell (use the scope bar or pickers below).')
+    if (!hcObsSiteId || !hcObsPlantId || !hcObsCellId) {
+      setError('Select site, plant, and cell (use the location bar or pickers below).')
       return
     }
     if (!hcTypeId || !template) {
@@ -297,8 +329,8 @@ export function HcNewPage() {
     setStarting(true)
     const dup = await findSubmittedHcDuplicateSameDay(supabase, {
       completedByUserId: user.id,
-      hcTypeId: hcTypeId,
-      masterCellId: cellId,
+      hcTypeId,
+      masterCellId: hcObsCellId,
       ldrAssignmentId: rosterAssignmentId,
     })
     if (dup.error) {
@@ -329,9 +361,9 @@ export function HcNewPage() {
     const baseRecord = {
       hc_type_id: hcTypeId,
       template_id: template.id,
-      master_site_id: siteId,
-      master_plant_id: plantId,
-      master_cell_id: cellId,
+      master_site_id: hcObsSiteId,
+      master_plant_id: hcObsPlantId,
+      master_cell_id: hcObsCellId,
       completed_by_user_id: user.id,
       completed_by_name: displayName,
       operator_name: null,
@@ -416,7 +448,7 @@ export function HcNewPage() {
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="block text-xs font-medium text-muted">
             Site
-            <select className={`mt-1 ${selectClass}`} value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+            <select className={`mt-1 ${selectClass}`} value={hcObsSiteId} onChange={(e) => setHcObsSiteId(e.target.value)}>
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -426,7 +458,7 @@ export function HcNewPage() {
           </label>
           <label className="block text-xs font-medium text-muted">
             Plant
-            <select className={`mt-1 ${selectClass}`} value={plantId} onChange={(e) => setPlantId(e.target.value)}>
+            <select className={`mt-1 ${selectClass}`} value={hcObsPlantId} onChange={(e) => setHcObsPlantId(e.target.value)}>
               <option value="">—</option>
               {plantsForSite.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -437,7 +469,7 @@ export function HcNewPage() {
           </label>
           <label className="block text-xs font-medium text-muted">
             Cell
-            <select className={`mt-1 ${selectClass}`} value={cellId} onChange={(e) => setCellId(e.target.value)}>
+            <select className={`mt-1 ${selectClass}`} value={hcObsCellId} onChange={(e) => setHcObsCellId(e.target.value)}>
               <option value="">—</option>
               {cellsForPlant.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -455,7 +487,7 @@ export function HcNewPage() {
             className={`mt-1 ${selectClass}`}
             value={hcTypeId}
             onChange={(e) => setHcTypeId(e.target.value)}
-            disabled={loadingTypes || !workspaceId}
+            disabled={loadingTypes || !hcObsWorkspaceId}
           >
             <option value="">— Select —</option>
             {types.map((t) => (
@@ -465,15 +497,14 @@ export function HcNewPage() {
             ))}
           </select>
         </label>
-        {scopeLevel === 'cell' && workspaceId ? (
+        {hcObsCellId && hcObsWorkspaceId ? (
           <p className="text-xs text-muted">
-            With cell scope, this list includes health check types linked to the site workspace and to this cell’s
-            workspace, so you can start either kind from here.
+            Types include activities linked to the site workspace and this cell’s workspace when both apply.
           </p>
         ) : null}
-        {!workspaceId ? (
+        {!hcObsWorkspaceId ? (
           <p className="text-sm text-amber-800 dark:text-amber-200">
-            Set site/cell scope in the bar above until the workspace loads — HC types are tied to activities in that
+            Pick a location in the bar above until the workspace loads — HC types are tied to activities in that
             workspace.
           </p>
         ) : null}

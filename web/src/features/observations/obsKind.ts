@@ -11,7 +11,7 @@ export function obsLabel(k: ObsKind): string {
     case 'qos':
       return 'QOS'
     case 'ppo':
-      return 'PPO'
+      return 'PPOS'
   }
 }
 
@@ -22,7 +22,7 @@ export function obsTitle(k: ObsKind): string {
     case 'qos':
       return 'Quality Observation System'
     case 'ppo':
-      return 'Process Productivity Observation'
+      return 'Process Productivity Observation System'
   }
 }
 

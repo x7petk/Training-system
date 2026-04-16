@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type TextareaHTMLAttributes } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ClipboardList } from 'lucide-react'
+import { ArrowLeft, ClipboardList, ExternalLink } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useAppSectionSidebarDockLeftClass } from '../hooks/useAppSectionSidebarDockInset'
@@ -75,7 +75,30 @@ function ansTable(k: ObsKind) {
   return k === 'qos' ? 'qos_answers' : 'ppo_answers'
 }
 
+/** Admin-configured link: full https URL, bare host, or same-app path starting with `/`. */
+function standardLinkHref(raw: string | null | undefined): string | null {
+  const t = (raw ?? '').trim()
+  if (!t) return null
+  const lower = t.toLowerCase()
+  if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('vbscript:')) return null
+  if (t.startsWith('/') && !t.startsWith('//')) {
+    if (/[\0\r\n\\]/.test(t)) return null
+    return t
+  }
+  let href = t
+  if (!/^https?:\/\//i.test(href)) href = `https://${href}`
+  try {
+    const u = new URL(href)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+    return u.href
+  } catch {
+    return null
+  }
+}
+
 const LDR_TOOLS_SIDEBAR_STORAGE_KEY = 'ldr-tools.sidebar-collapsed'
+
+const DEFAULT_OBS_STANDARD_URL = 'https://www.google.com'
 
 function obsSubmitBlockerMessage(
   kind: ObsKind,
@@ -85,6 +108,7 @@ function obsSubmitBlockerMessage(
 ): string | null {
   if (kind === 'sos') {
     if (!sosLevel) return 'Choose Full, Partly, or Not before submit.'
+    if (!operatorName.trim()) return 'Enter the operator name (record) before submit.'
     return null
   }
   if (!lines.length) return 'This observation has no questions.'
@@ -94,12 +118,15 @@ function obsSubmitBlockerMessage(
     }
     if (l.answer === 'fail' && !l.comment.trim()) return 'Each FAIL needs a comment.'
   }
-  if (!operatorName.trim()) return 'Enter the operator name (record) before submit.'
   return null
 }
 
 function obsSosOutcomeNeedsAttention(gapUi: boolean, sosLevel: SosLevel | null) {
   return gapUi && !sosLevel
+}
+
+function obsSosRecordOperatorNeedsAttention(gapUi: boolean, operatorName: string) {
+  return gapUi && !operatorName.trim()
 }
 
 /** Full / Partly / Not selected styling — matches `hcRagBadgeClass` (green / amber / red). */
@@ -120,10 +147,6 @@ function obsQpLineNeedsAnswer(gapUi: boolean, l: QpLine) {
 
 function obsQpLineNeedsFailComment(gapUi: boolean, l: QpLine) {
   return gapUi && l.answer === 'fail' && !l.comment.trim()
-}
-
-function obsQpRecordOperatorNeedsAttention(gapUi: boolean, operatorName: string) {
-  return gapUi && !operatorName.trim()
 }
 
 function AutoGrowTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -160,6 +183,7 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
 
   const [record, setRecord] = useState<AnyRecord | null>(null)
   const [typeName, setTypeName] = useState('')
+  const [typeStandardUrl, setTypeStandardUrl] = useState<string | null>(null)
   const [operatorName, setOperatorName] = useState('')
   const [overallComment, setOverallComment] = useState('')
   const [sosLevel, setSosLevel] = useState<SosLevel | null>(null)
@@ -191,11 +215,14 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
       setRecord(null)
       setLines([])
       setSosQuestions([])
+      setTypeStandardUrl(null)
       return
     }
     const rec = recRes.data as AnyRecord
-    const tRes = await supabase.from(typesTable(kind)).select('name').eq('id', rec[tc] as string).maybeSingle()
-    setTypeName((tRes.data as { name?: string } | null)?.name ?? '')
+    const tRes = await supabase.from(typesTable(kind)).select('name, standard_url').eq('id', rec[tc] as string).maybeSingle()
+    const tdata = tRes.data as { name?: string; standard_url?: string | null } | null
+    setTypeName(tdata?.name ?? '')
+    setTypeStandardUrl(tdata?.standard_url ?? null)
 
     if (kind === 'sos') {
       const qRes = await supabase
@@ -271,7 +298,6 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
       setLines(imgUpdates)
       setSosQuestions([])
       lastSavedDraftRef.current = JSON.stringify({
-        operatorName: (rec.operator_name as string) ?? '',
         overallComment: (rec.overall_comment as string) ?? '',
         sosLevel: null,
         lines: imgUpdates.map((l) => ({
@@ -284,7 +310,7 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
     }
 
     setRecord(rec)
-    setOperatorName((rec.operator_name as string) ?? '')
+    setOperatorName(kind === 'sos' ? ((rec.operator_name as string) ?? '') : '')
     setOverallComment((rec.overall_comment as string) ?? '')
     setSosLevel((rec.sos_level as SosLevel | null) ?? null)
     setLoading(false)
@@ -369,20 +395,20 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
 
   const draftSnapshot = useMemo(
     () =>
-      JSON.stringify({
-        operatorName,
-        overallComment,
-        sosLevel: kind === 'sos' ? sosLevel : null,
-        lines:
-          kind === 'sos'
-            ? []
-            : lines.map((l) => ({
+      JSON.stringify(
+        kind === 'sos'
+          ? { operatorName, overallComment, sosLevel, lines: [] as const }
+          : {
+              overallComment,
+              sosLevel: null,
+              lines: lines.map((l) => ({
                 id: l.answerId,
                 answer: l.answer,
                 comment: l.comment,
                 operatorName: l.operatorName,
               })),
-      }),
+            },
+      ),
     [kind, lines, operatorName, overallComment, sosLevel],
   )
 
@@ -396,7 +422,7 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
         const recUp = await supabase
           .from(rt)
           .update({
-            operator_name: operatorName.trim() || null,
+            operator_name: kind === 'sos' ? operatorName.trim() || null : null,
             overall_comment: overallComment.trim() || null,
             ...(kind === 'sos' ? { sos_level: sosLevel } : {}),
           })
@@ -559,7 +585,7 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
     const done = await supabase
       .from(rt)
       .update({
-        operator_name: operatorName.trim(),
+        operator_name: null,
         overall_comment: overallComment.trim() || null,
         completed_at: completedAt,
         score,
@@ -620,6 +646,8 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
 
   const locJoin = record ? ldrMasterCellJoinFromId(record.master_cell_id, masterCellJoinById) : undefined
   const locLabel = locJoin ? ldrMasterCellLabel(locJoin) : ''
+  const standardHref = standardLinkHref(typeStandardUrl) ?? DEFAULT_OBS_STANDARD_URL
+  const standardLinkIsExternal = /^https?:\/\//i.test(standardHref)
 
   return (
     <div className={`space-y-4 ${showActionDock ? 'pb-20 md:pb-24' : ''}`}>
@@ -671,11 +699,31 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
         {kind === 'sos' ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div className="order-2 min-w-0 max-w-full flex-1 space-y-3 sm:order-1 sm:max-w-xl md:max-w-2xl">
-              <div className="text-xs text-muted">
-                Completed by: <span className="font-medium text-fg">{record.completed_by_name}</span>
-                {record.ldr_assignment_id || rosterLinkPending ? (
-                  <span className="mt-0.5 block text-[11px] leading-snug text-muted">Linked to leadership roster assignment.</span>
-                ) : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-[11px] font-medium text-muted">
+                  Operator
+                  <input
+                    type="text"
+                    disabled={readOnly}
+                    autoComplete="name"
+                    aria-required="true"
+                    aria-invalid={obsSosRecordOperatorNeedsAttention(gapUiSos, operatorName)}
+                    className={`mt-0.5 h-9 w-full rounded-lg border bg-surface px-2.5 text-sm disabled:opacity-60 ${
+                      obsSosRecordOperatorNeedsAttention(gapUiSos, operatorName)
+                        ? 'border-red-600 dark:border-red-500'
+                        : 'border-border-strong'
+                    }`}
+                    value={operatorName}
+                    onChange={(e) => setOperatorName(e.target.value)}
+                    placeholder="Name of the operator observed"
+                  />
+                </label>
+                <div className="text-xs text-muted sm:pt-5">
+                  Completed by: <span className="font-medium text-fg">{record.completed_by_name}</span>
+                  {record.ldr_assignment_id || rosterLinkPending ? (
+                    <span className="mt-0.5 block text-[11px] leading-snug text-muted">Linked to leadership roster assignment.</span>
+                  ) : null}
+                </div>
               </div>
               <label className="block max-w-full text-[11px] font-medium text-muted">
                 Overall comment
@@ -687,17 +735,27 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
                 />
               </label>
             </div>
-            <div className="order-1 flex w-full max-w-full shrink-0 flex-col items-end gap-3 self-end sm:order-2 sm:w-auto sm:self-start">
-              <div className="w-max max-w-full rounded-lg border border-border-strong bg-surface-raised/60 px-3 py-2 text-xs shadow-sm">
-                <div className="flex flex-nowrap items-center justify-start gap-2.5">
-                  <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted">Outcome</span>
-                  {displayRag ? (
-                    <span className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(displayRag)}`}>
-                      {hcRagLabel(displayRag)}
-                    </span>
-                  ) : (
-                    <span className="shrink-0 text-muted">—</span>
-                  )}
+            <div className="order-1 flex w-full max-w-full shrink-0 flex-col items-stretch gap-3 self-end sm:order-2 sm:w-auto sm:items-end sm:self-start">
+              <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
+                <a
+                  href={standardHref}
+                  {...(standardLinkIsExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-2.5 py-1.5 text-xs font-semibold text-sky-800 shadow-sm hover:bg-surface-raised dark:text-sky-200"
+                >
+                  <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+                  View Standard
+                </a>
+                <div className="w-max max-w-full rounded-lg border border-border-strong bg-surface-raised/60 px-3 py-2 text-xs shadow-sm">
+                  <div className="flex flex-nowrap items-center justify-start gap-2.5">
+                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted">Outcome</span>
+                    {displayRag ? (
+                      <span className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(displayRag)}`}>
+                        {hcRagLabel(displayRag)}
+                      </span>
+                    ) : (
+                      <span className="shrink-0 text-muted">—</span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="w-full text-right sm:w-auto">
@@ -736,31 +794,11 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
         ) : (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div className="order-2 min-w-0 flex-1 space-y-3 sm:order-1">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-[11px] font-medium text-muted">
-                  Operator
-                  <input
-                    type="text"
-                    disabled={readOnly}
-                    autoComplete="name"
-                    aria-required="true"
-                    aria-invalid={obsQpRecordOperatorNeedsAttention(gapUiQp, operatorName)}
-                    className={`mt-0.5 h-9 w-full rounded-lg border bg-surface px-2.5 text-sm disabled:opacity-60 ${
-                      obsQpRecordOperatorNeedsAttention(gapUiQp, operatorName)
-                        ? 'border-red-600 dark:border-red-500'
-                        : 'border-border-strong'
-                    }`}
-                    value={operatorName}
-                    onChange={(e) => setOperatorName(e.target.value)}
-                    placeholder="Name of the operator observed"
-                  />
-                </label>
-                <div className="text-xs text-muted sm:pt-5">
-                  Completed by: <span className="font-medium text-fg">{record.completed_by_name}</span>
-                  {record.ldr_assignment_id || rosterLinkPending ? (
-                    <span className="mt-0.5 block text-[11px] leading-snug text-muted">Linked to leadership roster assignment.</span>
-                  ) : null}
-                </div>
+              <div className="text-xs text-muted">
+                Completed by: <span className="font-medium text-fg">{record.completed_by_name}</span>
+                {record.ldr_assignment_id || rosterLinkPending ? (
+                  <span className="mt-0.5 block text-[11px] leading-snug text-muted">Linked to leadership roster assignment.</span>
+                ) : null}
               </div>
               <label className="block text-[11px] font-medium text-muted">
                 Overall comment
@@ -773,20 +811,30 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
               </label>
             </div>
             <div className="order-1 max-w-full shrink-0 self-end sm:order-2 sm:self-start">
-              <div className="w-max max-w-full rounded-lg border border-border-strong bg-surface-raised/60 px-3 py-2 text-xs shadow-sm">
-                <div className="flex flex-nowrap items-center justify-start gap-2.5">
-                  <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted">Score</span>
-                  <span className="shrink-0 font-mono text-base font-semibold tabular-nums text-fg">
-                    {displayPct != null ? `${displayPct}%` : '—'}{' '}
-                    <span className="text-xs font-normal text-muted">
-                      ({qpSummary.passes}/{qpSummary.scored || lines.length})
+              <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
+                <a
+                  href={standardHref}
+                  {...(standardLinkIsExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-2.5 py-1.5 text-xs font-semibold text-sky-800 shadow-sm hover:bg-surface-raised dark:text-sky-200"
+                >
+                  <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+                  View Standard
+                </a>
+                <div className="w-max max-w-full rounded-lg border border-border-strong bg-surface-raised/60 px-3 py-2 text-xs shadow-sm">
+                  <div className="flex flex-nowrap items-center justify-start gap-2.5">
+                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted">Score</span>
+                    <span className="shrink-0 font-mono text-base font-semibold tabular-nums text-fg">
+                      {displayPct != null ? `${displayPct}%` : '—'}{' '}
+                      <span className="text-xs font-normal text-muted">
+                        ({qpSummary.passes}/{qpSummary.scored || lines.length})
+                      </span>
                     </span>
-                  </span>
-                  {displayRag ? (
-                    <span className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(displayRag)}`}>
-                      {submitted && record.status ? hcRagLabel(record.status) : `Live: ${hcRagLabel(displayRag)}`}
-                    </span>
-                  ) : null}
+                    {displayRag ? (
+                      <span className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(displayRag)}`}>
+                        {submitted && record.status ? hcRagLabel(record.status) : `Live: ${hcRagLabel(displayRag)}`}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>
