@@ -24,10 +24,10 @@ export function ObsFramedImage(props: { variant: Variant; src: string | null; la
 
   return (
     <>
-    <div className={`flex min-w-0 flex-col gap-1 ${compact ? 'w-[8.5rem] shrink-0' : 'flex-1'}`}>
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{label}</p>
+    <div className={`flex min-w-0 flex-col gap-0.5 ${compact ? 'w-[7.25rem] shrink-0' : 'flex-1'}`}>
+      <p className={`font-semibold uppercase tracking-wide text-muted ${compact ? 'text-[10px]' : 'text-[11px]'}`}>{label}</p>
       <div
-        className={`relative aspect-[4/3] w-full overflow-hidden rounded-xl border-2 ${frame} ${src ? 'cursor-zoom-in' : ''}`}
+        className={`relative aspect-[4/3] w-full overflow-hidden border-2 ${frame} ${compact ? 'rounded-lg' : 'rounded-xl'} ${src ? 'cursor-zoom-in' : ''}`}
         role="img"
         aria-label={src ? `${label} reference` : `${label} placeholder`}
         onClick={() => {

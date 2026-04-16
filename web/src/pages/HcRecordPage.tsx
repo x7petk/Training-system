@@ -32,8 +32,6 @@ type Line = {
   templateQuestionId: string
   questionText: string
   expectedStandard: string
-  isCritical: boolean
-  helpText: string | null
   answer: 'pass' | 'fail' | null
   comment: string
   sortOrder: number
@@ -64,6 +62,29 @@ function AutoGrowTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   )
 }
 
+function hcSubmitBlockerMessage(lines: Line[], operatorName: string): string | null {
+  if (!lines.length) return 'This health check has no questions.'
+  for (const l of lines) {
+    if (l.answer !== 'pass' && l.answer !== 'fail') return 'Answer every question before submit.'
+    if (l.answer === 'fail' && !l.comment.trim()) return 'Each FAIL needs a comment.'
+  }
+  if (!operatorName.trim()) return 'Enter the operator name before submit.'
+  return null
+}
+
+/** Red frames while editing: same rules as submit, so gaps are visible before click. */
+function hcOperatorNeedsAttention(gapUi: boolean, operatorName: string) {
+  return gapUi && !operatorName.trim()
+}
+
+function hcLineNeedsPassFail(gapUi: boolean, l: Line) {
+  return gapUi && l.answer !== 'pass' && l.answer !== 'fail'
+}
+
+function hcLineNeedsFailComment(gapUi: boolean, l: Line) {
+  return gapUi && l.answer === 'fail' && !l.comment.trim()
+}
+
 function buildLines(
   answers: HcAnswerRow[],
   submitted: boolean,
@@ -83,8 +104,6 @@ function buildLines(
       templateQuestionId: a.template_question_id,
       questionText,
       expectedStandard,
-      isCritical: q?.is_critical ?? false,
-      helpText: q?.help_text ?? null,
       answer: a.answer,
       comment: a.comment ?? '',
       sortOrder: a.sort_order,
@@ -108,7 +127,6 @@ export function HcRecordPage() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [expandedHelp, setExpandedHelp] = useState<Record<string, boolean>>({})
   const [submitNotice, setSubmitNotice] = useState<string | null>(null)
   const [rosterLinkPending, setRosterLinkPending] = useState(false)
   const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -204,6 +222,13 @@ export function HcRecordPage() {
   const displayRag: HcRag | null = submitted && record?.status ? record.status : !submitted ? rag : null
   const displayPct = submitted && record?.score != null ? record.score : pct
 
+  const submitBlockedReason = useMemo(
+    () => (readOnly ? null : hcSubmitBlockerMessage(lines, operatorName)),
+    [readOnly, lines, operatorName],
+  )
+
+  const gapUi = !readOnly && lines.length > 0
+
   function setLine(id: string, patch: Partial<Pick<Line, 'answer' | 'comment'>>) {
     setLines((prev) => prev.map((l) => (l.answerId === id ? { ...l, ...patch } : l)))
   }
@@ -264,15 +289,10 @@ export function HcRecordPage() {
   async function submitCheck() {
     if (!recordId || !record || submitted || !isOwner) return
     setError(null)
-    for (const l of lines) {
-      if (l.answer !== 'pass' && l.answer !== 'fail') {
-        setError('Answer every question before submit.')
-        return
-      }
-      if (l.answer === 'fail' && !l.comment.trim()) {
-        setError('Each FAIL needs a comment.')
-        return
-      }
+    const blocker = hcSubmitBlockerMessage(lines, operatorName)
+    if (blocker) {
+      setError(blocker)
+      return
     }
 
     const qRes = await supabase
@@ -350,7 +370,7 @@ export function HcRecordPage() {
     const done = await supabase
       .from('hc_records')
       .update({
-        operator_name: operatorName.trim() || null,
+        operator_name: operatorName.trim(),
         overall_comment: overallComment.trim() || null,
         completed_at: completedAt,
         score,
@@ -433,52 +453,34 @@ export function HcRecordPage() {
   }
 
   return (
-    <div className={`space-y-6 ${showActionDock ? 'pb-24 md:pb-28' : ''}`}>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
+    <div className={`space-y-4 ${showActionDock ? 'pb-20 md:pb-24' : ''}`}>
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="flex items-start gap-2">
           <Link
             to="/ldr-tools/health-checks"
-            className="mt-1 inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-border text-muted hover:bg-surface-raised"
+            className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted hover:bg-surface-raised"
             aria-label="Back"
           >
-            <ArrowLeft className="size-5" />
+            <ArrowLeft className="size-4" />
           </Link>
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-teal-500/15 text-teal-700 dark:text-teal-300">
-            <ClipboardList className="size-6" aria-hidden />
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-teal-500/15 text-teal-700 dark:text-teal-300">
+            <ClipboardList className="size-5" aria-hidden />
           </span>
           <div>
-            <h1 className="font-display text-2xl font-semibold tracking-tight">
+            <h1 className="font-display text-xl font-semibold tracking-tight">
               {typeName || 'Health check'}
               {submitted ? null : (
-                <span className="ml-2 align-middle text-base font-normal text-muted">(draft)</span>
+                <span className="ml-2 align-middle text-sm font-normal text-muted">(draft)</span>
               )}
             </h1>
-            <p className="text-sm text-muted">{locLabel}</p>
-          </div>
-        </div>
-        <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
-          <div className="rounded-xl border border-border-strong bg-surface-raised/60 px-4 py-2 text-right text-sm shadow-sm">
-            <div className="text-xs font-medium text-muted">Score</div>
-            <div className="font-mono text-lg font-semibold tabular-nums text-fg">
-              {displayPct}%{' '}
-              <span className="text-sm font-normal text-muted">
-                ({passes}/{total})
-              </span>
-            </div>
-            {displayRag ? (
-              <span
-                className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(displayRag)}`}
-              >
-                {submitted ? hcRagLabel(record.status!) : `Live: ${hcRagLabel(displayRag)}`}
-              </span>
-            ) : null}
+            <p className="text-xs text-muted">{locLabel}</p>
           </div>
         </div>
       </div>
 
       {submitNotice ? (
         <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-400/70 bg-emerald-100 px-4 py-3 text-sm text-black dark:border-emerald-500 dark:bg-emerald-200 dark:text-black"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/70 bg-emerald-100 px-3 py-2 text-xs text-black dark:border-emerald-500 dark:bg-emerald-200 dark:text-black"
           role="status"
         >
           <span>{submitNotice}</span>
@@ -493,67 +495,105 @@ export function HcRecordPage() {
       ) : null}
 
       {error ? (
-        <div className="rounded-2xl border border-danger/35 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
+        <div className="rounded-xl border border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger" role="alert">
           {error}
         </div>
       ) : null}
 
-      <div className="grid gap-4 rounded-2xl border border-border bg-surface p-5 shadow-sm sm:grid-cols-2">
-        <label className="block text-xs font-medium text-muted">
-          Operator
-          <input
-            type="text"
-            disabled={readOnly}
-            className="mt-1 h-10 w-full rounded-lg border border-border-strong bg-surface px-3 text-sm disabled:opacity-60"
-            value={operatorName}
-            onChange={(e) => setOperatorName(e.target.value)}
-          />
-        </label>
-        <div className="text-sm text-muted sm:pt-6">
-          Completed by: <span className="font-medium text-fg">{record.completed_by_name}</span>
-          {record.ldr_assignment_id || rosterLinkPending ? (
-            <span className="mt-1 block text-xs text-muted">
-              {record.ldr_assignment_id
-                ? submitted
-                  ? 'Roster assignment RAG and comment log were updated from this HC.'
-                  : 'Started from the roster — when you submit, roster RAG and comment log will reflect this HC.'
-                : submitted
-                  ? 'Roster link was stored in this browser — RAG and comment log were updated on submit if validation passed.'
-                  : 'Started from the roster (run the HC migration to persist the link on the server). When you submit, roster RAG and comment log will reflect this HC.'}
-            </span>
-          ) : null}
-        </div>
-        <label className="block text-xs font-medium text-muted sm:col-span-2">
-          Overall comment (optional)
-          <AutoGrowTextarea
-            disabled={readOnly}
-            className="mt-1 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm disabled:opacity-60"
-            value={overallComment}
-            onChange={(e) => setOverallComment(e.target.value)}
-          />
-        </label>
-      </div>
-
-      <div className="space-y-4">
-        {lines.map((l) => (
-          <article
-            key={l.answerId}
-            className="rounded-2xl border border-border-strong bg-surface p-5 shadow-sm"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <h2 className="min-w-0 flex-1 text-base font-semibold text-fg">{l.questionText}</h2>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                {l.isCritical ? (
-                  <span className="shrink-0 rounded-full border border-red-800 bg-white px-2 py-0.5 text-xs font-semibold text-red-900 dark:border-red-300 dark:bg-surface dark:text-red-200">
-                    Critical
+      <div className="rounded-xl border border-border bg-surface p-3 shadow-sm sm:p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="order-2 min-w-0 flex-1 space-y-3 sm:order-1">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-[11px] font-medium text-muted">
+                Operator
+                <input
+                  type="text"
+                  disabled={readOnly}
+                  autoComplete="name"
+                  aria-required="true"
+                  aria-invalid={hcOperatorNeedsAttention(gapUi, operatorName)}
+                  className={`mt-0.5 h-9 w-full rounded-lg border bg-surface px-2.5 text-sm disabled:opacity-60 ${
+                    hcOperatorNeedsAttention(gapUi, operatorName)
+                      ? 'border-red-600 dark:border-red-500'
+                      : 'border-border-strong'
+                  }`}
+                  value={operatorName}
+                  onChange={(e) => setOperatorName(e.target.value)}
+                  placeholder="Name of the operator observed"
+                />
+              </label>
+              <div className="text-xs text-muted sm:pt-5">
+                Completed by: <span className="font-medium text-fg">{record.completed_by_name}</span>
+                {record.ldr_assignment_id || rosterLinkPending ? (
+                  <span className="mt-0.5 block text-[11px] leading-snug text-muted">
+                    {record.ldr_assignment_id
+                      ? submitted
+                        ? 'Roster assignment RAG and comment log were updated from this HC.'
+                        : 'Started from the roster — when you submit, roster RAG and comment log will reflect this HC.'
+                      : submitted
+                        ? 'Roster link was stored in this browser — RAG and comment log were updated on submit if validation passed.'
+                        : 'Started from the roster (run the HC migration to persist the link on the server). When you submit, roster RAG and comment log will reflect this HC.'}
                   </span>
                 ) : null}
-                <div className="inline-flex rounded-xl border border-border bg-white p-1 dark:bg-surface">
+              </div>
+            </div>
+            <label className="block text-[11px] font-medium text-muted">
+              Overall comment
+              <AutoGrowTextarea
+                disabled={readOnly}
+                className="mt-0.5 w-full rounded-lg border border-border-strong bg-surface px-2.5 py-1.5 text-sm disabled:opacity-60"
+                value={overallComment}
+                onChange={(e) => setOverallComment(e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="order-1 max-w-full shrink-0 self-end sm:order-2 sm:self-start">
+            <div className="w-max max-w-full rounded-lg border border-border-strong bg-surface-raised/60 px-3 py-2 text-xs shadow-sm">
+              <div className="flex flex-nowrap items-center justify-start gap-2.5">
+                <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted">Score</span>
+                <span className="shrink-0 font-mono text-base font-semibold tabular-nums text-fg">
+                  {displayPct}%{' '}
+                  <span className="text-xs font-normal text-muted">
+                    ({passes}/{total})
+                  </span>
+                </span>
+                {displayRag ? (
+                  <span
+                    className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(displayRag)}`}
+                  >
+                    {submitted ? hcRagLabel(record.status!) : `Live: ${hcRagLabel(displayRag)}`}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {lines.map((l) => {
+          const needsPf = hcLineNeedsPassFail(gapUi, l)
+          const needsFailC = hcLineNeedsFailComment(gapUi, l)
+          return (
+          <article
+            key={l.answerId}
+            className="rounded-xl border border-border-strong bg-surface p-3 shadow-sm sm:p-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <h2 className="min-w-0 flex-1 text-sm font-semibold leading-snug text-fg">{l.questionText}</h2>
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                <div
+                  className={`inline-flex rounded-lg border bg-white p-0.5 dark:bg-surface ${
+                    needsPf
+                      ? 'border-red-600 dark:border-red-500'
+                      : 'border-border'
+                  }`}
+                >
                   <button
                     type="button"
                     disabled={readOnly}
                     onClick={() => setLine(l.answerId, { answer: 'pass' })}
-                    className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition-colors ${
+                    className={`rounded-md px-3 py-1 text-[11px] font-semibold transition-colors ${
                       l.answer === 'pass'
                         ? 'bg-emerald-600 text-white shadow-sm dark:bg-emerald-500'
                         : 'text-fg/80 hover:bg-surface-raised'
@@ -565,7 +605,7 @@ export function HcRecordPage() {
                     type="button"
                     disabled={readOnly}
                     onClick={() => setLine(l.answerId, { answer: 'fail' })}
-                    className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition-colors ${
+                    className={`rounded-md px-3 py-1 text-[11px] font-semibold transition-colors ${
                       l.answer === 'fail'
                         ? 'bg-red-600 text-white shadow-sm dark:bg-red-500'
                         : 'text-fg/80 hover:bg-surface-raised'
@@ -576,31 +616,20 @@ export function HcRecordPage() {
                 </div>
               </div>
             </div>
-            <div className="mt-3 rounded-xl border border-border bg-surface-raised/40 px-4 py-3 text-sm text-fg/85">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted">Expected standard</div>
-              <p className="mt-1 whitespace-pre-wrap">{l.expectedStandard || '—'}</p>
+            <div className="mt-2 rounded-lg border border-border bg-surface-raised/40 px-3 py-2 text-xs text-fg/85">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">Expected standard</div>
+              <p className="mt-0.5 whitespace-pre-wrap leading-snug">{l.expectedStandard || '—'}</p>
             </div>
-            {l.helpText ? (
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={() => setExpandedHelp((h) => ({ ...h, [l.answerId]: !h[l.answerId] }))}
-                  className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-300"
-                >
-                  {expandedHelp[l.answerId] ? 'Hide help' : 'Show help'}
-                </button>
-                {expandedHelp[l.answerId] ? (
-                  <p className="mt-2 text-sm text-muted whitespace-pre-wrap">{l.helpText}</p>
-                ) : null}
-              </div>
-            ) : null}
 
-            <label className="mt-4 block text-xs font-medium text-muted">
-              Comment{l.answer === 'fail' ? ' (required if FAIL)' : ' (optional if PASS)'}
+            <label className="mt-3 block text-[11px] font-medium text-muted">
+              Comment
               <AutoGrowTextarea
                 disabled={readOnly}
                 placeholder="Required if FAIL – describe issue or action"
-                className="mt-1 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm disabled:opacity-60"
+                aria-invalid={needsFailC}
+                className={`mt-0.5 w-full rounded-lg border bg-surface px-2.5 py-1.5 text-sm disabled:opacity-60 ${
+                  needsFailC ? 'border-red-600 dark:border-red-500' : 'border-border-strong'
+                }`}
                 value={l.comment}
                 onChange={(e) => setLine(l.answerId, { comment: e.target.value })}
               />
@@ -609,7 +638,7 @@ export function HcRecordPage() {
             {l.answer === 'fail' ? (
               <button
                 type="button"
-                className="mt-3 rounded-lg border border-dashed border-border px-4 py-2 text-sm font-medium text-muted"
+                className="mt-2 rounded-lg border border-dashed border-border px-3 py-1.5 text-xs font-medium text-muted"
                 disabled
                 title="Coming soon"
               >
@@ -617,19 +646,20 @@ export function HcRecordPage() {
               </button>
             ) : null}
           </article>
-        ))}
+          )
+        })}
       </div>
 
       {showActionDock ? (
         <div
-          className={`fixed bottom-0 right-0 z-40 border-t border-border bg-surface/95 pt-3 shadow-[0_-6px_24px_rgba(0,0,0,0.06)] backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))] ${dockLeftClass}`}
+          className={`fixed bottom-0 right-0 z-40 border-t border-border bg-surface/95 pt-2 shadow-[0_-6px_24px_rgba(0,0,0,0.06)] backdrop-blur-md pb-[max(0.5rem,env(safe-area-inset-bottom))] ${dockLeftClass}`}
           role="toolbar"
           aria-label="Health check actions"
         >
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-end gap-2 px-4 md:px-8">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-end gap-2 px-3 md:px-6">
             {!readOnly ? (
               <>
-                <span className="rounded-xl border border-border bg-white px-3 py-2 text-xs font-semibold text-slate-900 dark:bg-surface dark:text-fg">
+                <span className="rounded-lg border border-border bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-900 dark:bg-surface dark:text-fg">
                   {autoSaveState === 'saving'
                     ? 'Autosaving...'
                     : autoSaveState === 'saved'
@@ -640,9 +670,10 @@ export function HcRecordPage() {
                 </span>
                 <button
                   type="button"
-                  disabled={saving}
+                  disabled={saving || submitBlockedReason != null}
+                  title={submitBlockedReason ?? undefined}
                   onClick={() => void submitCheck()}
-                  className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50 dark:bg-teal-500"
+                  className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-teal-700 disabled:opacity-50 dark:bg-teal-500"
                 >
                   Submit
                 </button>
@@ -653,7 +684,7 @@ export function HcRecordPage() {
                 type="button"
                 disabled={saving}
                 onClick={() => void deleteRecord()}
-                className="rounded-xl border border-red-800 bg-white px-4 py-2 text-sm font-semibold text-red-900 hover:bg-red-50 dark:border-red-300 dark:bg-surface dark:text-red-200"
+                className="rounded-lg border border-red-800 bg-white px-3 py-1.5 text-xs font-semibold text-red-900 hover:bg-red-50 dark:border-red-300 dark:bg-surface dark:text-red-200"
               >
                 Delete HC
               </button>

@@ -9,7 +9,19 @@ alwaysApply: true
 - When the user asks to "commit/push and redeploy production", deploy from current `main` to this target.
 - Preferred deploy command:
   - `npx vercel --prod --yes --scope mikhails-projects-de0149d2 --name training-system-seven`
-- After deploy, verify alias is correct for prod:
-  - `training-system-seven.vercel.app` should point to the new deployment.
-- If user reports old prod UI, check if they are using a legacy URL (for example `training-system.vercel.app`) that may belong to another/older project.
-- Report back with the production URL and inspector URL so the user can verify immediately.
+- Mandatory redeploy checklist (do not skip steps):
+  1. Commit and push requested changes to `main`.
+  2. Run production deploy command above.
+  3. Capture deploy outputs: deployment URL and inspector URL.
+  4. Verify prod alias target:
+     - `npx vercel inspect training-system-seven.vercel.app --scope mikhails-projects-de0149d2`
+     - Confirm it resolves to the latest deployment id/url.
+  5. If alias is stale, fix it immediately:
+     - `npx vercel alias set <latest-deployment-url> training-system-seven.vercel.app --scope mikhails-projects-de0149d2`
+  6. Re-check `training-system-seven.vercel.app` after alias update and confirm it points to latest.
+- If user reports old prod UI, check for legacy URL usage first (for example `training-system.vercel.app`) and then verify alias mapping as above.
+- Always report back:
+  - Production URL: `https://training-system-seven.vercel.app`
+  - Latest deployment URL (from deploy output)
+  - Inspector URL (from deploy output)
+  - Whether alias correction was needed

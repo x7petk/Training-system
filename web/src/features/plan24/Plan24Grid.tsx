@@ -1,0 +1,455 @@
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
+import { addMinutes, minutesBetween } from './plan24ShiftUtils'
+import type { Plan24EventRow } from './plan24Types'
+
+const DRAG_DT = 'application/x-plan24-event'
+/** Major time grid: hour lines and labels (free-minute placement unchanged). */
+const GRID_MAJOR_MIN = 60
+
+export type Plan24GridRoleCol = { name: string; subtitle?: string }
+
+type LaneLayout = { lane: number; laneCount: number }
+
+function maxOverlapDepth(items: { start: number; end: number }[]): number {
+  type Pt = { t: number; d: number }
+  const pts: Pt[] = []
+  for (const it of items) {
+    pts.push({ t: it.start, d: 1 })
+    pts.push({ t: it.end, d: -1 })
+  }
+  pts.sort((a, b) => a.t - b.t || b.d - a.d)
+  let cur = 0
+  let max = 0
+  for (const p of pts) {
+    cur += p.d
+    max = Math.max(max, cur)
+  }
+  return Math.max(1, max)
+}
+
+function assignLanes(items: { id: string; start: number; end: number }[]): Map<string, LaneLayout> {
+  const laneCount = maxOverlapDepth(items)
+  const sorted = [...items].sort((a, b) => a.start - b.start || a.end - b.end)
+  const laneEnds: number[] = []
+  const out = new Map<string, LaneLayout>()
+  for (const it of sorted) {
+    let lane = laneEnds.findIndex((end) => end <= it.start)
+    if (lane < 0) {
+      lane = laneEnds.length
+      laneEnds.push(it.end)
+    } else {
+      laneEnds[lane] = Math.max(laneEnds[lane], it.end)
+    }
+    out.set(it.id, { lane, laneCount })
+  }
+  return out
+}
+
+function formatClock(d: Date): string {
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  return `${h}:${m}`
+}
+
+type DragSession = {
+  pointerId: number
+  eventId: string
+  sourceRole: string
+  hoverRole: string
+  originY: number
+  startMin: number
+  previewMin: number
+  durationMin: number
+  blockHeightPx: number
+  title: string
+  moved: boolean
+}
+
+export function Plan24Grid(props: {
+  windowStart: Date
+  windowEnd: Date
+  roles: Plan24GridRoleCol[]
+  events: Plan24EventRow[]
+  pixelsPerMinute: number
+  onBackgroundClick: (roleName: string, startAt: Date) => void
+  onEventClick: (ev: Plan24EventRow) => void
+  /** When role changes, updates `role_name` on the event. */
+  onEventMove: (eventId: string, startAt: Date, endAt: Date, roleName: string) => void
+  onDropUnassigned: (eventId: string, roleName: string, startAt: Date) => void
+  onRoleHeaderClick?: (roleName: string) => void
+}) {
+  const {
+    windowStart,
+    windowEnd,
+    roles,
+    events,
+    pixelsPerMinute,
+    onBackgroundClick,
+    onEventClick,
+    onEventMove,
+    onDropUnassigned,
+    onRoleHeaderClick,
+  } = props
+  const totalMin = Math.max(15, minutesBetween(windowStart, windowEnd))
+  const totalPx = totalMin * pixelsPerMinute
+
+  const columnBodyRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const dragSessionRef = useRef<DragSession | null>(null)
+  const rafRef = useRef<number | null>(null)
+  const lastDragMovedIdRef = useRef<string | null>(null)
+
+  const [dragUi, setDragUi] = useState<null | {
+    eventId: string
+    sourceRole: string
+    hoverRole: string
+    previewMin: number
+    ghostX: number
+    ghostY: number
+    title: string
+    blockHeightPx: number
+    moved: boolean
+  }>(null)
+
+  const setColumnBodyRef = useCallback((roleName: string, el: HTMLDivElement | null) => {
+    const m = columnBodyRefs.current
+    if (el) m.set(roleName, el)
+    else m.delete(roleName)
+  }, [])
+
+  const findRoleUnderPointer = useCallback((clientX: number, clientY: number): string | null => {
+    for (const [name, el] of columnBodyRefs.current) {
+      const rect = el.getBoundingClientRect()
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) return name
+    }
+    return null
+  }, [])
+
+  const ticks = useMemo(() => buildHourTicks(windowStart, totalMin, pixelsPerMinute), [windowStart, totalMin, pixelsPerMinute])
+
+  const byRole = useMemo(() => buildEventsByRole(roles, events), [roles, events])
+
+  const flushDragUi = useCallback((s: DragSession, ghostX: number, ghostY: number) => {
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null
+      setDragUi({
+        eventId: s.eventId,
+        sourceRole: s.sourceRole,
+        hoverRole: s.hoverRole,
+        previewMin: s.previewMin,
+        ghostX,
+        ghostY,
+        title: s.title,
+        blockHeightPx: s.blockHeightPx,
+        moved: s.moved,
+      })
+    })
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
+  const activeDragListenersRef = useRef<{
+    move: (e: PointerEvent) => void
+    up: (e: PointerEvent) => void
+  } | null>(null)
+
+  const endDocumentDrag = useCallback(
+    (move: (e: PointerEvent) => void, up: (e: PointerEvent) => void) => {
+      document.removeEventListener('pointermove', move, true)
+      document.removeEventListener('pointerup', up, true)
+      document.removeEventListener('pointercancel', up, true)
+      activeDragListenersRef.current = null
+    },
+    [],
+  )
+
+  useEffect(() => {
+    return () => {
+      const pair = activeDragListenersRef.current
+      if (pair) {
+        document.removeEventListener('pointermove', pair.move, true)
+        document.removeEventListener('pointerup', pair.up, true)
+        document.removeEventListener('pointercancel', pair.up, true)
+        activeDragListenersRef.current = null
+      }
+    }
+  }, [])
+
+  const startMove = useCallback(
+    (ev: Plan24EventRow, roleName: string, e: ReactPointerEvent<HTMLButtonElement>) => {
+      if (!ev.role_name) return
+      e.preventDefault()
+      e.stopPropagation()
+      lastDragMovedIdRef.current = null
+
+      const start = new Date(ev.start_at)
+      const end = new Date(ev.end_at)
+      const startMin = minutesBetween(windowStart, start)
+      const durationMin = minutesBetween(start, end)
+      const hMin = Math.max(2, durationMin)
+      const blockHeightPx = hMin * pixelsPerMinute
+
+      const session: DragSession = {
+        pointerId: e.pointerId,
+        eventId: ev.id,
+        sourceRole: roleName,
+        hoverRole: roleName,
+        originY: e.clientY,
+        startMin,
+        previewMin: startMin,
+        durationMin,
+        blockHeightPx,
+        title: ev.title,
+        moved: false,
+      }
+      dragSessionRef.current = session
+      flushDragUi(session, e.clientX, e.clientY)
+
+      const move = (pe: PointerEvent) => {
+        const s = dragSessionRef.current
+        if (!s || pe.pointerId !== s.pointerId) return
+        if (Math.hypot(pe.clientX - e.clientX, pe.clientY - e.clientY) > 5) s.moved = true
+        const deltaMin = (pe.clientY - s.originY) / pixelsPerMinute
+        s.previewMin = Math.max(0, Math.min(totalMin - s.durationMin, s.startMin + deltaMin))
+        const hit = findRoleUnderPointer(pe.clientX, pe.clientY)
+        if (hit) s.hoverRole = hit
+        flushDragUi(s, pe.clientX, pe.clientY)
+      }
+
+      const up = (pe: PointerEvent) => {
+        const s = dragSessionRef.current
+        if (!s || pe.pointerId !== s.pointerId) return
+        endDocumentDrag(move, up)
+        dragSessionRef.current = null
+        setDragUi(null)
+        if (s.moved) {
+          lastDragMovedIdRef.current = s.eventId
+          const startAt = addMinutes(windowStart, s.previewMin)
+          const endAt = addMinutes(startAt, s.durationMin)
+          onEventMove(s.eventId, startAt, endAt, s.hoverRole)
+          window.setTimeout(() => {
+            if (lastDragMovedIdRef.current === s.eventId) lastDragMovedIdRef.current = null
+          }, 400)
+        }
+      }
+
+      activeDragListenersRef.current = { move, up }
+      document.addEventListener('pointermove', move, true)
+      document.addEventListener('pointerup', up, true)
+      document.addEventListener('pointercancel', up, true)
+    },
+    [windowStart, pixelsPerMinute, totalMin, findRoleUnderPointer, flushDragUi, onEventMove, endDocumentDrag],
+  )
+
+  function roleBackgroundClick(roleName: string, e: React.MouseEvent<HTMLDivElement>) {
+    if ((e.target as HTMLElement).closest('[data-plan24-event]')) return
+    const el = e.currentTarget
+    const rect = el.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const minFromStart = Math.max(0, Math.min(totalMin - 1, y / pixelsPerMinute))
+    const startAt = addMinutes(windowStart, minFromStart)
+    onBackgroundClick(roleName, startAt)
+  }
+
+  const hourStepPx = pixelsPerMinute * GRID_MAJOR_MIN
+  const gridLineStyle: CSSProperties = {
+    backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourStepPx - 1}px, rgba(0,0,0,0.1) ${hourStepPx - 1}px, rgba(0,0,0,0.1) ${hourStepPx}px)`,
+  }
+
+  return (
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border-strong bg-surface shadow-sm">
+      <div className="flex shrink-0 border-b border-border bg-surface-raised/40">
+        <div className="w-[4.5rem] shrink-0 border-r border-border" aria-hidden />
+        {roles.map((r) => (
+          <div key={r.name} className="min-w-[8rem] flex-1 border-l border-border px-1.5 py-2 text-center">
+            {onRoleHeaderClick ? (
+              <button
+                type="button"
+                className="w-full rounded-lg px-1 py-1 text-center transition-colors hover:bg-black/[0.06] dark:hover:bg-white/10"
+                onClick={() => onRoleHeaderClick(r.name)}
+              >
+                <div className="text-xs font-semibold leading-tight text-fg">{r.name}</div>
+                <div className="mt-1 min-h-[2.25rem] text-[11px] leading-snug text-accent hover:underline">
+                  {r.subtitle ?? 'Assign person'}
+                </div>
+              </button>
+            ) : (
+              <>
+                <div className="text-xs font-semibold leading-tight text-fg">{r.name}</div>
+                {r.subtitle ? <div className="mt-1 text-[11px] leading-snug text-muted">{r.subtitle}</div> : null}
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="relative min-h-[min(70vh,42rem)] flex-1 overflow-auto">
+        <div className="flex" style={{ height: totalPx }}>
+          <div className="sticky left-0 z-20 w-[4.5rem] shrink-0 border-r border-border bg-surface">
+            {ticks.map((t) => (
+              <div
+                key={t.label + String(t.top)}
+                className="absolute right-1 text-[10px] font-medium tabular-nums text-muted"
+                style={{ top: t.top - 6 }}
+              >
+                {t.label}
+              </div>
+            ))}
+          </div>
+          <div className="relative flex min-w-0 flex-1">
+            {roles.map((r) => {
+              const list = byRole.get(r.name) ?? []
+              const layoutItems = list.map((ev) => ({
+                id: ev.id,
+                start: minutesBetween(windowStart, new Date(ev.start_at)),
+                end: minutesBetween(windowStart, new Date(ev.end_at)),
+              }))
+              const layout = assignLanes(layoutItems)
+              const isHoverDrop = dragUi && dragUi.hoverRole === r.name && dragUi.sourceRole !== dragUi.hoverRole
+              const previewMin = dragUi?.previewMin ?? null
+              const previewTopPx = previewMin !== null ? previewMin * pixelsPerMinute : 0
+
+              return (
+                <div
+                  key={r.name}
+                  ref={(el) => setColumnBodyRef(r.name, el)}
+                  data-plan24-role-col={r.name}
+                  className={`relative min-w-[8rem] flex-1 border-l border-border bg-surface transition-[box-shadow] ${
+                    dragUi && dragUi.hoverRole === r.name ? 'z-[5] ring-2 ring-accent/50 ring-inset' : ''
+                  }`}
+                  style={gridLineStyle}
+                  role="presentation"
+                  onClick={(e) => roleBackgroundClick(r.name, e)}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    const id = e.dataTransfer.getData(DRAG_DT)
+                    if (!id) return
+                    const el = e.currentTarget
+                    const rect = el.getBoundingClientRect()
+                    const y = e.clientY - rect.top
+                    const minFromStart = Math.max(0, Math.min(totalMin - 1, y / pixelsPerMinute))
+                    const startAt = addMinutes(windowStart, minFromStart)
+                    onDropUnassigned(id, r.name, startAt)
+                  }}
+                >
+                  {isHoverDrop && dragUi ? (
+                    <div
+                      className="pointer-events-none absolute right-1 left-1 z-[8] rounded-md border-2 border-dashed border-accent bg-accent/10"
+                      style={{ top: previewTopPx, height: dragUi.blockHeightPx }}
+                      aria-hidden
+                    />
+                  ) : null}
+                  {list.map((ev) => {
+                    const start = new Date(ev.start_at)
+                    const end = new Date(ev.end_at)
+                    const topMin = minutesBetween(windowStart, start)
+                    const hMin = Math.max(2, minutesBetween(start, end))
+                    const top = topMin * pixelsPerMinute
+                    const h = hMin * pixelsPerMinute
+                    const lane = layout.get(ev.id)
+                    const lc = lane?.laneCount ?? 1
+                    const ln = lane?.lane ?? 0
+                    const innerLeft = `${(ln / lc) * 100}%`
+                    const innerW = `${(1 / lc) * 100}%`
+                    const isAdHoc = ev.source === 'ad_hoc'
+                    const isDone = ev.status === 'complete'
+                    const isDragging = dragUi?.eventId === ev.id
+                    const sameColumn = isDragging && dragUi.sourceRole === dragUi.hoverRole
+                    const topPx = isDragging && sameColumn && previewMin !== null ? previewMin * pixelsPerMinute : top
+                    const fadedCross = isDragging && !sameColumn
+                    return (
+                      <button
+                        key={ev.id}
+                        type="button"
+                        data-plan24-event
+                        className={`absolute flex flex-col overflow-hidden rounded-md border px-1 py-0.5 text-left text-[11px] font-medium leading-tight shadow-sm transition-opacity ${
+                          isDone
+                            ? 'border-slate-600/40 bg-slate-800/25 text-fg/80 line-through decoration-slate-500/80 dark:bg-slate-950/40'
+                            : 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
+                        } ${isAdHoc ? 'border-dashed' : ''} ${isDragging ? 'z-[6] cursor-grabbing' : 'cursor-grab hover:ring-2 hover:ring-accent/40'}`}
+                        style={{
+                          top: topPx,
+                          height: h,
+                          left: innerLeft,
+                          width: innerW,
+                          touchAction: 'none',
+                          opacity: fadedCross ? 0.35 : 1,
+                        }}
+                        onPointerDown={(pe) => {
+                          pe.stopPropagation()
+                          startMove(ev, r.name, pe)
+                        }}
+                        onClick={(ce) => {
+                          ce.stopPropagation()
+                          if (lastDragMovedIdRef.current === ev.id) return
+                          onEventClick(ev)
+                        }}
+                      >
+                        <span className="pointer-events-none truncate">{ev.title}</span>
+                        <span className="pointer-events-none truncate text-[9px] font-normal opacity-90">
+                          {formatClock(start)}–{formatClock(end)}
+                          {isAdHoc ? ' · Ad hoc' : ''}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {dragUi?.moved ? (
+        <div
+          className="pointer-events-none fixed z-[100] max-w-[14rem] rounded-lg border border-border-strong bg-surface px-2 py-1.5 text-xs shadow-lg"
+          style={{ left: dragUi.ghostX + 12, top: dragUi.ghostY + 12 }}
+        >
+          <div className="font-semibold text-fg">{dragUi.title}</div>
+          <div className="text-[10px] text-muted">
+            {dragUi.sourceRole !== dragUi.hoverRole ? `→ ${dragUi.hoverRole} · ` : ''}
+            {formatClock(addMinutes(windowStart, dragUi.previewMin))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function buildHourTicks(windowStart: Date, totalMin: number, pixelsPerMinute: number) {
+  const ticks: { top: number; label: string }[] = []
+  for (let m = 0; m <= totalMin; m += GRID_MAJOR_MIN) {
+    const d = addMinutes(windowStart, m)
+    ticks.push({ top: m * pixelsPerMinute, label: formatClock(d) })
+  }
+  return ticks
+}
+
+function buildEventsByRole(roles: Plan24GridRoleCol[], events: Plan24EventRow[]) {
+  const m = new Map<string, Plan24EventRow[]>()
+  for (const r of roles) m.set(r.name, [])
+  for (const ev of events) {
+    const rn = ev.role_name
+    if (!rn) continue
+    if (!m.has(rn)) m.set(rn, [])
+    m.get(rn)!.push(ev)
+  }
+  return m
+}
+
+export const PLAN24_DRAG_MIME = DRAG_DT

@@ -39,8 +39,6 @@ type QpLine = {
   templateQuestionId: string
   questionText: string
   expectedStandard: string
-  isCritical: boolean
-  helpText: string | null
   answer: 'pass' | 'fail' | 'na' | null
   comment: string
   operatorName: string
@@ -55,7 +53,6 @@ type SosQRow = {
   id: string
   question_text: string
   expected_standard: string
-  is_critical: boolean
   help_text: string | null
   sort_order: number
   good_image_path: string
@@ -79,6 +76,55 @@ function ansTable(k: ObsKind) {
 }
 
 const LDR_TOOLS_SIDEBAR_STORAGE_KEY = 'ldr-tools.sidebar-collapsed'
+
+function obsSubmitBlockerMessage(
+  kind: ObsKind,
+  lines: QpLine[],
+  operatorName: string,
+  sosLevel: SosLevel | null,
+): string | null {
+  if (kind === 'sos') {
+    if (!sosLevel) return 'Choose Full, Partly, or Not before submit.'
+    return null
+  }
+  if (!lines.length) return 'This observation has no questions.'
+  for (const l of lines) {
+    if (l.answer !== 'pass' && l.answer !== 'fail' && l.answer !== 'na') {
+      return 'Answer every question (Pass, Fail, or N/A) before submit.'
+    }
+    if (l.answer === 'fail' && !l.comment.trim()) return 'Each FAIL needs a comment.'
+  }
+  if (!operatorName.trim()) return 'Enter the operator name (record) before submit.'
+  return null
+}
+
+function obsSosOutcomeNeedsAttention(gapUi: boolean, sosLevel: SosLevel | null) {
+  return gapUi && !sosLevel
+}
+
+/** Full / Partly / Not selected styling — matches `hcRagBadgeClass` (green / amber / red). */
+function sosOutcomeLevelButtonSelectedClass(lvl: SosLevel): string {
+  switch (lvl) {
+    case 'full':
+      return 'border-emerald-700/45 bg-emerald-300 text-emerald-950 ring-1 ring-emerald-700/45 dark:border-emerald-300/65 dark:bg-emerald-400 dark:text-emerald-950 dark:ring-emerald-300/65'
+    case 'partly':
+      return 'border-amber-700/55 bg-amber-300 text-amber-950 ring-1 ring-amber-700/55 dark:border-amber-300/65 dark:bg-amber-400 dark:text-amber-950 dark:ring-amber-300/65'
+    case 'not':
+      return 'border-rose-700/50 bg-rose-300 text-rose-950 ring-1 ring-rose-700/50 dark:border-rose-300/65 dark:bg-rose-400 dark:text-rose-950 dark:ring-rose-300/65'
+  }
+}
+
+function obsQpLineNeedsAnswer(gapUi: boolean, l: QpLine) {
+  return gapUi && l.answer !== 'pass' && l.answer !== 'fail' && l.answer !== 'na'
+}
+
+function obsQpLineNeedsFailComment(gapUi: boolean, l: QpLine) {
+  return gapUi && l.answer === 'fail' && !l.comment.trim()
+}
+
+function obsQpRecordOperatorNeedsAttention(gapUi: boolean, operatorName: string) {
+  return gapUi && !operatorName.trim()
+}
 
 function AutoGrowTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const ref = useRef<HTMLTextAreaElement | null>(null)
@@ -124,7 +170,6 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [expandedHelp, setExpandedHelp] = useState<Record<string, boolean>>({})
   const [submitNotice, setSubmitNotice] = useState<string | null>(null)
   const [rosterLinkPending, setRosterLinkPending] = useState(false)
   const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -155,7 +200,7 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
     if (kind === 'sos') {
       const qRes = await supabase
         .from(qTable(kind))
-        .select('id, question_text, expected_standard, is_critical, help_text, sort_order, good_image_path, bad_image_path')
+        .select('id, question_text, expected_standard, help_text, sort_order, good_image_path, bad_image_path')
         .eq('template_id', rec.template_id)
         .eq('active', true)
         .order('sort_order')
@@ -207,8 +252,6 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
           expectedStandard: submitted
             ? ((a.expected_standard_snapshot as string) ?? '')
             : (q?.expected_standard ?? (a.expected_standard_snapshot as string) ?? ''),
-          isCritical: q?.is_critical ?? false,
-          helpText: q?.help_text ?? null,
           answer: ans,
           comment: (a.comment as string) ?? '',
           operatorName: (a.operator_name as string) ?? '',
@@ -277,6 +320,13 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
   const canDelete = Boolean(isAdmin && recordId && record)
   const showActionDock = Boolean(!readOnly || canDelete)
   const dockLeftClass = useAppSectionSidebarDockLeftClass(LDR_TOOLS_SIDEBAR_STORAGE_KEY)
+
+  const gapUiSos = !readOnly
+  const gapUiQp = !readOnly && lines.length > 0
+  const submitBlockedReason = useMemo(
+    () => (readOnly ? null : obsSubmitBlockerMessage(kind, lines, operatorName, sosLevel)),
+    [readOnly, kind, lines, operatorName, sosLevel],
+  )
 
   const qpSummary = useMemo(() => {
     if (kind === 'sos') return { pct: 0, rag: 'green' as HcRag, scored: 0, passes: 0 }
@@ -388,22 +438,10 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
     if (!recordId || !record || submitted || !isOwner) return
     setError(null)
 
-    if (kind === 'sos') {
-      if (!sosLevel) {
-        setError('Choose Full, Partly, or Not before submit.')
-        return
-      }
-    } else {
-      for (const l of lines) {
-        if (l.answer !== 'pass' && l.answer !== 'fail' && l.answer !== 'na') {
-          setError('Answer every question (Pass, Fail, or N/A) before submit.')
-          return
-        }
-        if (l.answer === 'fail' && !l.comment.trim()) {
-          setError('Each FAIL needs a comment.')
-          return
-        }
-      }
+    const blocker = obsSubmitBlockerMessage(kind, lines, operatorName, sosLevel)
+    if (blocker) {
+      setError(blocker)
+      return
     }
 
     const tplRes = await supabase
@@ -521,7 +559,7 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
     const done = await supabase
       .from(rt)
       .update({
-        operator_name: operatorName.trim() || null,
+        operator_name: operatorName.trim(),
         overall_comment: overallComment.trim() || null,
         completed_at: completedAt,
         score,
@@ -584,61 +622,32 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
   const locLabel = locJoin ? ldrMasterCellLabel(locJoin) : ''
 
   return (
-    <div className={`space-y-6 ${showActionDock ? 'pb-24 md:pb-28' : ''}`}>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
+    <div className={`space-y-4 ${showActionDock ? 'pb-20 md:pb-24' : ''}`}>
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="flex items-start gap-2">
           <Link
             to={base}
-            className="mt-1 inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-border text-muted hover:bg-surface-raised"
+            className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-border text-muted hover:bg-surface-raised"
             aria-label="Back"
           >
-            <ArrowLeft className="size-5" />
+            <ArrowLeft className="size-4" />
           </Link>
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-800 dark:text-sky-200">
-            <ClipboardList className="size-6" aria-hidden />
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-sky-500/15 text-sky-800 dark:text-sky-200">
+            <ClipboardList className="size-5" aria-hidden />
           </span>
           <div>
-            <h1 className="font-display text-2xl font-semibold tracking-tight">
+            <h1 className="font-display text-xl font-semibold tracking-tight">
               {typeName || obsLabel(kind)}
-              {submitted ? null : <span className="ml-2 align-middle text-base font-normal text-muted">(draft)</span>}
+              {submitted ? null : <span className="ml-2 align-middle text-sm font-normal text-muted">(draft)</span>}
             </h1>
-            <p className="text-sm text-muted">{locLabel}</p>
+            <p className="text-xs text-muted">{locLabel}</p>
           </div>
-        </div>
-        <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
-          {kind !== 'sos' ? (
-            <div className="rounded-xl border border-border-strong bg-surface-raised/60 px-4 py-2 text-right text-sm shadow-sm">
-              <div className="text-xs font-medium text-muted">Score</div>
-              <div className="font-mono text-lg font-semibold tabular-nums text-fg">
-                {displayPct != null ? `${displayPct}%` : '—'}{' '}
-                <span className="text-sm font-normal text-muted">
-                  ({qpSummary.passes}/{qpSummary.scored || lines.length})
-                </span>
-              </div>
-              {displayRag ? (
-                <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(displayRag)}`}>
-                  {submitted && record.status ? hcRagLabel(record.status) : `Live: ${hcRagLabel(displayRag)}`}
-                </span>
-              ) : null}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-border-strong bg-surface-raised/60 px-4 py-2 text-right text-sm shadow-sm">
-              <div className="text-xs font-medium text-muted">Outcome</div>
-              {displayRag ? (
-                <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(displayRag)}`}>
-                  {hcRagLabel(displayRag)}
-                </span>
-              ) : (
-                <span className="text-muted">—</span>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
       {submitNotice ? (
         <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-400/70 bg-emerald-100 px-4 py-3 text-sm text-black dark:border-emerald-500 dark:bg-emerald-200 dark:text-black"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-400/70 bg-emerald-100 px-3 py-2 text-xs text-black dark:border-emerald-500 dark:bg-emerald-200 dark:text-black"
           role="status"
         >
           <span>{submitNotice}</span>
@@ -653,106 +662,152 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
       ) : null}
 
       {error ? (
-        <div className="rounded-2xl border border-danger/35 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
+        <div className="rounded-xl border border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger" role="alert">
           {error}
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+      <div className="rounded-xl border border-border bg-surface p-3 shadow-sm sm:p-4">
         {kind === 'sos' ? (
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0 flex-1 space-y-3">
-              <div className="text-sm text-muted">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="order-2 min-w-0 max-w-full flex-1 space-y-3 sm:order-1 sm:max-w-xl md:max-w-2xl">
+              <div className="text-xs text-muted">
                 Completed by: <span className="font-medium text-fg">{record.completed_by_name}</span>
                 {record.ldr_assignment_id || rosterLinkPending ? (
-                  <span className="mt-1 block text-xs text-muted">Linked to leadership roster assignment.</span>
+                  <span className="mt-0.5 block text-[11px] leading-snug text-muted">Linked to leadership roster assignment.</span>
                 ) : null}
               </div>
-              <label className="block text-xs font-medium text-muted">
-                Overall comment (optional)
+              <label className="block max-w-full text-[11px] font-medium text-muted">
+                Overall comment
                 <AutoGrowTextarea
                   disabled={readOnly}
-                  className="mt-1 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm disabled:opacity-60"
+                  className="mt-0.5 w-full rounded-lg border border-border-strong bg-surface px-2.5 py-1.5 text-sm disabled:opacity-60"
                   value={overallComment}
                   onChange={(e) => setOverallComment(e.target.value)}
                 />
               </label>
             </div>
-            <div className="w-full max-w-sm">
-              <p className="text-sm font-semibold text-fg">Observation outcome</p>
-              {!readOnly ? (
-                <div className="mt-2 flex flex-wrap justify-end gap-2">
-                  {(['full', 'partly', 'not'] as const).map((lvl) => (
-                    <button
-                      key={lvl}
-                      type="button"
-                      onClick={() => setSosLevel(lvl)}
-                      className={`rounded-xl border px-4 py-2 text-sm font-semibold capitalize ${
-                        sosLevel === lvl
-                          ? lvl === 'full'
-                            ? 'border-emerald-700 bg-emerald-700 text-white'
-                            : lvl === 'partly'
-                              ? 'border-amber-700 bg-amber-700 text-white'
-                              : 'border-red-800 bg-red-800 text-white'
-                          : 'border-border bg-white hover:bg-surface-raised dark:bg-surface'
-                      }`}
-                    >
-                      {lvl === 'full' ? 'Full' : lvl === 'partly' ? 'Partly' : 'Not'}
-                    </button>
-                  ))}
+            <div className="order-1 flex w-full max-w-full shrink-0 flex-col items-end gap-3 self-end sm:order-2 sm:w-auto sm:self-start">
+              <div className="w-max max-w-full rounded-lg border border-border-strong bg-surface-raised/60 px-3 py-2 text-xs shadow-sm">
+                <div className="flex flex-nowrap items-center justify-start gap-2.5">
+                  <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted">Outcome</span>
+                  {displayRag ? (
+                    <span className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(displayRag)}`}>
+                      {hcRagLabel(displayRag)}
+                    </span>
+                  ) : (
+                    <span className="shrink-0 text-muted">—</span>
+                  )}
                 </div>
-              ) : (
-                <p className="mt-2 text-sm text-muted">
-                  Outcome: <span className="font-medium capitalize text-fg">{record.sos_level ?? '—'}</span>
-                </p>
-              )}
+              </div>
+              <div className="w-full text-right sm:w-auto">
+                <p className="text-xs font-semibold text-fg">Observation outcome</p>
+                {!readOnly ? (
+                  <div
+                    className={`mt-1.5 flex flex-wrap justify-end gap-1.5 ${
+                      obsSosOutcomeNeedsAttention(gapUiSos, sosLevel)
+                        ? 'rounded-lg border border-red-600 p-0.5 dark:border-red-500'
+                        : ''
+                    }`}
+                  >
+                    {(['full', 'partly', 'not'] as const).map((lvl) => (
+                      <button
+                        key={lvl}
+                        type="button"
+                        onClick={() => setSosLevel(lvl)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold capitalize ${
+                          sosLevel === lvl
+                            ? sosOutcomeLevelButtonSelectedClass(lvl)
+                            : 'border-border bg-white hover:bg-surface-raised dark:bg-surface'
+                        }`}
+                      >
+                        {lvl === 'full' ? 'Full' : lvl === 'partly' ? 'Partly' : 'Not'}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs text-muted">
+                    Outcome: <span className="font-medium capitalize text-fg">{record.sos_level ?? '—'}</span>
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block text-xs font-medium text-muted">
-              Operator (record)
-              <input
-                type="text"
-                disabled={readOnly}
-                className="mt-1 h-10 w-full rounded-lg border border-border-strong bg-surface px-3 text-sm disabled:opacity-60"
-                value={operatorName}
-                onChange={(e) => setOperatorName(e.target.value)}
-              />
-            </label>
-            <div className="text-sm text-muted sm:pt-6">
-              Completed by: <span className="font-medium text-fg">{record.completed_by_name}</span>
-              {record.ldr_assignment_id || rosterLinkPending ? (
-                <span className="mt-1 block text-xs text-muted">Linked to leadership roster assignment.</span>
-              ) : null}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="order-2 min-w-0 flex-1 space-y-3 sm:order-1">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-[11px] font-medium text-muted">
+                  Operator
+                  <input
+                    type="text"
+                    disabled={readOnly}
+                    autoComplete="name"
+                    aria-required="true"
+                    aria-invalid={obsQpRecordOperatorNeedsAttention(gapUiQp, operatorName)}
+                    className={`mt-0.5 h-9 w-full rounded-lg border bg-surface px-2.5 text-sm disabled:opacity-60 ${
+                      obsQpRecordOperatorNeedsAttention(gapUiQp, operatorName)
+                        ? 'border-red-600 dark:border-red-500'
+                        : 'border-border-strong'
+                    }`}
+                    value={operatorName}
+                    onChange={(e) => setOperatorName(e.target.value)}
+                    placeholder="Name of the operator observed"
+                  />
+                </label>
+                <div className="text-xs text-muted sm:pt-5">
+                  Completed by: <span className="font-medium text-fg">{record.completed_by_name}</span>
+                  {record.ldr_assignment_id || rosterLinkPending ? (
+                    <span className="mt-0.5 block text-[11px] leading-snug text-muted">Linked to leadership roster assignment.</span>
+                  ) : null}
+                </div>
+              </div>
+              <label className="block text-[11px] font-medium text-muted">
+                Overall comment
+                <AutoGrowTextarea
+                  disabled={readOnly}
+                  className="mt-0.5 w-full rounded-lg border border-border-strong bg-surface px-2.5 py-1.5 text-sm disabled:opacity-60"
+                  value={overallComment}
+                  onChange={(e) => setOverallComment(e.target.value)}
+                />
+              </label>
             </div>
-            <label className="block text-xs font-medium text-muted sm:col-span-2">
-              Overall comment (optional)
-              <AutoGrowTextarea
-                disabled={readOnly}
-                className="mt-1 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm disabled:opacity-60"
-                value={overallComment}
-                onChange={(e) => setOverallComment(e.target.value)}
-              />
-            </label>
+            <div className="order-1 max-w-full shrink-0 self-end sm:order-2 sm:self-start">
+              <div className="w-max max-w-full rounded-lg border border-border-strong bg-surface-raised/60 px-3 py-2 text-xs shadow-sm">
+                <div className="flex flex-nowrap items-center justify-start gap-2.5">
+                  <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted">Score</span>
+                  <span className="shrink-0 font-mono text-base font-semibold tabular-nums text-fg">
+                    {displayPct != null ? `${displayPct}%` : '—'}{' '}
+                    <span className="text-xs font-normal text-muted">
+                      ({qpSummary.passes}/{qpSummary.scored || lines.length})
+                    </span>
+                  </span>
+                  {displayRag ? (
+                    <span className={`shrink-0 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(displayRag)}`}>
+                      {submitted && record.status ? hcRagLabel(record.status) : `Live: ${hcRagLabel(displayRag)}`}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
       {kind === 'sos' ? (
-        <div className="space-y-6">
-          <div className="space-y-4">
-            <h2 className="text-sm font-semibold text-muted">Checklist (reference)</h2>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Checklist (reference)</h2>
             {sosQuestions.map((q) => (
-              <article key={q.id} className="rounded-2xl border border-border-strong bg-surface p-5 shadow-sm">
-                <div className="flex flex-wrap items-start gap-4">
-                  <div className="flex gap-3">
+              <article key={q.id} className="rounded-xl border border-border-strong bg-surface p-3 shadow-sm sm:p-4">
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="flex gap-2">
                     <ObsFramedImage variant="good" src={sosImg[q.id]?.good ?? null} label="Good" compact />
                     <ObsFramedImage variant="bad" src={sosImg[q.id]?.bad ?? null} label="Bad" compact />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-base font-semibold text-fg">{q.question_text}</h3>
-                    <p className="mt-2 text-sm text-muted whitespace-pre-wrap">{q.expected_standard || '—'}</p>
+                    <h3 className="text-sm font-semibold leading-snug text-fg">{q.question_text}</h3>
+                    <p className="mt-1 text-xs text-muted whitespace-pre-wrap leading-snug">{q.expected_standard || '—'}</p>
                   </div>
                 </div>
               </article>
@@ -760,99 +815,93 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
-          {lines.map((l) => (
-            <article key={l.answerId} className="rounded-2xl border border-border-strong bg-surface p-5 shadow-sm">
-              <div className="flex flex-wrap items-start gap-4">
-                <div className="flex gap-3">
+        <div className="space-y-3">
+          {lines.map((l) => {
+            const needsAnswer = obsQpLineNeedsAnswer(gapUiQp, l)
+            const needsFailC = obsQpLineNeedsFailComment(gapUiQp, l)
+            return (
+            <article key={l.answerId} className="rounded-xl border border-border-strong bg-surface p-3 shadow-sm sm:p-4">
+              <h2 className="text-sm font-semibold leading-snug text-fg">{l.questionText}</h2>
+              <div className="mt-2 flex flex-wrap items-stretch gap-2 sm:gap-3">
+                <div className="flex shrink-0 gap-2">
                   <ObsFramedImage variant="good" src={l.goodUrl} label="Good" compact />
                   <ObsFramedImage variant="bad" src={l.badUrl} label="Bad" compact />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <h2 className="min-w-0 flex-1 text-base font-semibold text-fg">{l.questionText}</h2>
-                    <div className="w-full max-w-[16rem] space-y-2">
-                      {l.isCritical ? (
-                        <span className="inline-flex rounded-full border border-red-800 bg-white px-2 py-0.5 text-xs font-semibold text-red-900 dark:border-red-300 dark:bg-surface dark:text-red-200">
-                          Critical
-                        </span>
-                      ) : null}
-                      <div className="inline-flex rounded-xl border border-border bg-white p-1 dark:bg-surface">
-                        {(['pass', 'fail', 'na'] as const).map((opt) => (
-                          <button
-                            key={opt}
-                            type="button"
-                            disabled={readOnly}
-                            onClick={() => setLine(l.answerId, { answer: opt })}
-                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold uppercase ${
-                              l.answer === opt
-                                ? opt === 'pass'
-                                  ? 'bg-emerald-600 text-white'
-                                  : opt === 'fail'
-                                    ? 'bg-red-600 text-white'
-                                    : 'bg-zinc-700 text-white'
-                                : 'text-fg/80 hover:bg-surface-raised'
-                            }`}
-                          >
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
-                      <label className="block text-[11px] font-medium text-muted">
-                        Per-question operator
-                        <input
-                          type="text"
+                <div className="min-h-0 min-w-0 flex-1 basis-[8rem] rounded-lg border border-border bg-surface-raised/40 px-2.5 py-1.5 text-xs text-fg/85">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">Expected standard</div>
+                  <p className="mt-0.5 whitespace-pre-wrap leading-snug">{l.expectedStandard || '—'}</p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1.5 sm:ml-auto">
+                  <div className="w-fit max-w-full">
+                    <div
+                      className={`flex rounded-lg border bg-white p-0.5 dark:bg-surface ${
+                        needsAnswer ? 'border-red-600 dark:border-red-500' : 'border-border'
+                      }`}
+                    >
+                      {(['pass', 'fail', 'na'] as const).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
                           disabled={readOnly}
-                          className="mt-1 h-8 w-full rounded-lg border border-border-strong bg-surface px-2 text-xs disabled:opacity-60"
-                          value={l.operatorName}
-                          onChange={(e) => setLine(l.answerId, { operatorName: e.target.value })}
-                        />
-                      </label>
+                          onClick={() => setLine(l.answerId, { answer: opt })}
+                          className={`rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase ${
+                            l.answer === opt
+                              ? opt === 'pass'
+                                ? 'bg-emerald-600 text-white'
+                                : opt === 'fail'
+                                  ? 'bg-red-600 text-white'
+                                  : 'bg-zinc-700 text-white'
+                              : 'text-fg/80 hover:bg-surface-raised'
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-1.5 w-full rounded-lg border border-border bg-white p-0.5 dark:bg-surface">
+                      <input
+                        type="text"
+                        disabled={readOnly}
+                        autoComplete="name"
+                        placeholder="Operator"
+                        aria-label="Operator for this question"
+                        className="w-full rounded-md border-0 bg-transparent px-2.5 py-1 text-[11px] text-fg outline-none placeholder:text-muted/65 focus-visible:ring-2 focus-visible:ring-sky-500/30 disabled:opacity-60 dark:focus-visible:ring-sky-400/35"
+                        value={l.operatorName}
+                        onChange={(e) => setLine(l.answerId, { operatorName: e.target.value })}
+                      />
                     </div>
                   </div>
-                  <div className="mt-3 rounded-xl border border-border bg-surface-raised/40 px-4 py-3 text-sm text-fg/85">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted">Expected standard</div>
-                    <p className="mt-1 whitespace-pre-wrap">{l.expectedStandard || '—'}</p>
-                  </div>
-                  {l.helpText ? (
-                    <div className="mt-2">
-                      <button
-                        type="button"
-                        onClick={() => setExpandedHelp((h) => ({ ...h, [l.answerId]: !h[l.answerId] }))}
-                        className="text-xs font-medium text-sky-700 hover:underline dark:text-sky-300"
-                      >
-                        {expandedHelp[l.answerId] ? 'Hide help' : 'Show help'}
-                      </button>
-                      {expandedHelp[l.answerId] ? <p className="mt-2 text-sm text-muted whitespace-pre-wrap">{l.helpText}</p> : null}
-                    </div>
-                  ) : null}
                 </div>
               </div>
 
-              <label className="mt-4 block text-xs font-medium text-muted">
-                Comment{l.answer === 'fail' ? ' (required if FAIL)' : ''}
+              <label className="mt-3 block text-[11px] font-medium text-muted">
+                Comment
                 <AutoGrowTextarea
                   disabled={readOnly}
-                  className="mt-1 w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm disabled:opacity-60"
+                  aria-invalid={needsFailC}
+                  className={`mt-0.5 w-full rounded-lg border bg-surface px-2.5 py-1.5 text-sm disabled:opacity-60 ${
+                    needsFailC ? 'border-red-600 dark:border-red-500' : 'border-border-strong'
+                  }`}
                   value={l.comment}
                   onChange={(e) => setLine(l.answerId, { comment: e.target.value })}
                 />
               </label>
             </article>
-          ))}
+            )
+          })}
         </div>
       )}
 
       {showActionDock ? (
         <div
-          className={`fixed bottom-0 right-0 z-40 border-t border-border bg-surface/95 pt-3 shadow-[0_-6px_24px_rgba(0,0,0,0.06)] backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))] ${dockLeftClass}`}
+          className={`fixed bottom-0 right-0 z-40 border-t border-border bg-surface/95 pt-2 shadow-[0_-6px_24px_rgba(0,0,0,0.06)] backdrop-blur-md pb-[max(0.5rem,env(safe-area-inset-bottom))] ${dockLeftClass}`}
           role="toolbar"
           aria-label={`${obsLabel(kind)} actions`}
         >
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-end gap-2 px-4 md:px-8">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-end gap-2 px-3 md:px-6">
             {!readOnly ? (
               <>
-                <span className="rounded-xl border border-border bg-white px-3 py-2 text-xs font-semibold text-slate-900 dark:bg-surface dark:text-fg">
+                <span className="rounded-lg border border-border bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-900 dark:bg-surface dark:text-fg">
                   {autoSaveState === 'saving'
                     ? 'Autosaving...'
                     : autoSaveState === 'saved'
@@ -863,9 +912,10 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
                 </span>
                 <button
                   type="button"
-                  disabled={saving}
+                  disabled={saving || submitBlockedReason != null}
+                  title={submitBlockedReason ?? undefined}
                   onClick={() => void submit()}
-                  className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-500"
+                  className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-500"
                 >
                   Submit
                 </button>
@@ -876,7 +926,7 @@ export function ObsRecordPage({ kind }: { kind: ObsKind }) {
                 type="button"
                 disabled={saving}
                 onClick={() => void deleteRecord()}
-                className="rounded-xl border border-red-800 bg-white px-4 py-2 text-sm font-semibold text-red-900 hover:bg-red-50 dark:border-red-300 dark:bg-surface dark:text-red-200"
+                className="rounded-lg border border-red-800 bg-white px-3 py-1.5 text-xs font-semibold text-red-900 hover:bg-red-50 dark:border-red-300 dark:bg-surface dark:text-red-200"
               >
                 Delete {obsLabel(kind)}
               </button>

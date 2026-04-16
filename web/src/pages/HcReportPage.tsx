@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, FileBarChart } from 'lucide-react'
+import { ArrowLeft, FileBarChart, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
 import { ldrMasterCellJoinFromId, ldrMasterCellLabel } from '../features/ldr/types'
 import { hcRagBadgeClass, hcRagLabel, type HcRag } from '../features/health-checks/hcScore'
-import { formatWeekTitle, startOfWeekMonday, toYMD } from '../features/ldr/ldrWeekUtils'
+import { CompactCategoryBars } from '../features/report/CompactCategoryBars'
+import { CompactPeriodBars } from '../features/report/CompactPeriodBars'
+import { buildMonthBuckets, buildWeekBuckets, compareYMD, eventLocalDate, normalizeRange } from '../features/report/reportBucketUtils'
 
 type Row = {
   id: string
@@ -28,6 +30,12 @@ function typeLabel(t: Row['hc_types']): string {
   return Array.isArray(t) ? (t[0]?.name ?? 'Unknown') : t.name
 }
 
+function dateInputValueFromNowMinus(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return d.toISOString().slice(0, 10)
+}
+
 export function HcReportPage() {
   const { masterCellJoinById, workspaceId } = useLdrWorkspace()
 
@@ -45,6 +53,10 @@ export function HcReportPage() {
   const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [filterTypeId, setFilterTypeId] = useState('')
   const [filterUserId, setFilterUserId] = useState('')
+  const [periodMode, setPeriodMode] = useState<'weeks' | 'months'>('weeks')
+  const [insightPeriodKey, setInsightPeriodKey] = useState<string | null>(null)
+  const [insightTypeId, setInsightTypeId] = useState<string | null>(null)
+  const [insightUserId, setInsightUserId] = useState<string | null>(null)
 
   const scopedSelect = useCallback(
     (select: string) => {
@@ -124,8 +136,36 @@ export function HcReportPage() {
     })
   }, [load])
 
+  const periodBuckets = useMemo(() => {
+    const { start, end } = normalizeRange(fromDate, toDate)
+    return periodMode === 'weeks' ? buildWeekBuckets(start, end) : buildMonthBuckets(start, end)
+  }, [fromDate, toDate, periodMode])
+
+  const selectedPeriodBucket = useMemo(
+    () => periodBuckets.find((b) => b.key === insightPeriodKey) ?? null,
+    [periodBuckets, insightPeriodKey],
+  )
+
+  const isInSelectedPeriod = useCallback(
+    (r: Row) => {
+      if (!selectedPeriodBucket) return true
+      const d = eventLocalDate(r.completed_at)
+      return compareYMD(d, selectedPeriodBucket.start) >= 0 && compareYMD(d, selectedPeriodBucket.end) <= 0
+    },
+    [selectedPeriodBucket],
+  )
+
+  const filteredRows = useMemo(() => {
+    return rows.filter((r) => {
+      if (insightTypeId && r.hc_type_id !== insightTypeId) return false
+      if (insightUserId && r.completed_by_user_id !== insightUserId) return false
+      if (!isInSelectedPeriod(r)) return false
+      return true
+    })
+  }, [rows, insightTypeId, insightUserId, isInSelectedPeriod])
+
   const summary = useMemo(() => {
-    const n = rows.length
+    const n = filteredRows.length
     if (!n)
       return {
         n: 0,
@@ -137,12 +177,12 @@ export function HcReportPage() {
         amber: 0,
         red: 0,
       }
-    const sum = rows.reduce((a, r) => a + r.score, 0)
+    const sum = filteredRows.reduce((a, r) => a + r.score, 0)
     const avg = Math.round((sum / n) * 10) / 10
     let green = 0
     let amber = 0
     let red = 0
-    for (const r of rows) {
+    for (const r of filteredRows) {
       if (r.status === 'green') green += 1
       else if (r.status === 'amber') amber += 1
       else red += 1
@@ -150,18 +190,24 @@ export function HcReportPage() {
     return {
       n,
       avg,
-      low: rows.filter((r) => r.score < 60).length,
-      mid: rows.filter((r) => r.score >= 60 && r.score <= 80).length,
-      high: rows.filter((r) => r.score > 80).length,
+      low: filteredRows.filter((r) => r.score < 60).length,
+      mid: filteredRows.filter((r) => r.score >= 60 && r.score <= 80).length,
+      high: filteredRows.filter((r) => r.score > 80).length,
       green,
       amber,
       red,
     }
-  }, [rows])
+  }, [filteredRows])
 
+  /** By type: full split for this chart — ignore type insight; apply week + completer only. */
   const byType = useMemo(() => {
+    const src = rows.filter((r) => {
+      if (!isInSelectedPeriod(r)) return false
+      if (insightUserId && r.completed_by_user_id !== insightUserId) return false
+      return true
+    })
     const m = new Map<string, { id: string; name: string; count: number; sum: number }>()
-    for (const r of rows) {
+    for (const r of src) {
       const name = typeLabel(r.hc_types)
       const cur = m.get(r.hc_type_id) ?? { id: r.hc_type_id, name, count: 0, sum: 0 }
       cur.count += 1
@@ -174,31 +220,22 @@ export function HcReportPage() {
         avg: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0,
       }))
       .sort((a, b) => b.count - a.count)
-  }, [rows])
+  }, [rows, insightUserId, isInSelectedPeriod])
 
-  const byWeek = useMemo(() => {
-    const m = new Map<string, { key: string; weekStart: Date; count: number; sum: number }>()
-    for (const r of rows) {
-      const d = new Date(r.completed_at)
-      const mon = startOfWeekMonday(d)
-      const key = toYMD(mon)
-      const cur = m.get(key) ?? { key, weekStart: mon, count: 0, sum: 0 }
-      cur.count += 1
-      cur.sum += r.score
-      m.set(key, cur)
-    }
-    return [...m.values()]
-      .sort((a, b) => a.weekStart.getTime() - b.weekStart.getTime())
-      .map((w) => ({
-        ...w,
-        label: formatWeekTitle(w.weekStart),
-        avg: w.count ? Math.round((w.sum / w.count) * 10) / 10 : 0,
-      }))
-  }, [rows])
+  const byTypeItems = useMemo(
+    () => byType.map((x) => ({ key: x.id || `type-${x.name}`, label: x.name, value: x.count })),
+    [byType],
+  )
 
+  /** By completer: full split — ignore completer insight; apply week + type only. */
   const byCompleter = useMemo(() => {
+    const src = rows.filter((r) => {
+      if (!isInSelectedPeriod(r)) return false
+      if (insightTypeId && r.hc_type_id !== insightTypeId) return false
+      return true
+    })
     const m = new Map<string, { id: string; name: string; count: number; sum: number }>()
-    for (const r of rows) {
+    for (const r of src) {
       const id = r.completed_by_user_id
       const name = r.completed_by_name?.trim() || id.slice(0, 8)
       const cur = m.get(id) ?? { id, name, count: 0, sum: 0 }
@@ -209,9 +246,29 @@ export function HcReportPage() {
     return [...m.values()]
       .map((v) => ({ ...v, avg: v.count ? Math.round((v.sum / v.count) * 10) / 10 : 0 }))
       .sort((a, b) => b.count - a.count)
-  }, [rows])
+  }, [rows, insightTypeId, isInSelectedPeriod])
 
-  const maxWeekCount = useMemo(() => byWeek.reduce((m, w) => Math.max(m, w.count), 0), [byWeek])
+  const byCompleterItems = useMemo(
+    () => byCompleter.map((x) => ({ key: x.id, label: x.name, value: x.count })),
+    [byCompleter],
+  )
+
+  const periodRows = useMemo(() => {
+    return rows.filter((r) => {
+      if (insightTypeId && r.hc_type_id !== insightTypeId) return false
+      if (insightUserId && r.completed_by_user_id !== insightUserId) return false
+      return true
+    })
+  }, [rows, insightTypeId, insightUserId])
+
+  const periodValues = useMemo(() => {
+    return periodBuckets.map((b) => {
+      return periodRows.filter((r) => {
+        const d = eventLocalDate(r.completed_at)
+        return compareYMD(d, b.start) >= 0 && compareYMD(d, b.end) <= 0
+      }).length
+    })
+  }, [periodBuckets, periodRows])
 
   const inp =
     'h-8 w-full min-w-0 rounded-md border border-border-strong bg-surface px-2 text-xs text-fg shadow-sm sm:max-w-[11rem]'
@@ -219,6 +276,26 @@ export function HcReportPage() {
 
   const ragTotal = summary.green + summary.amber + summary.red
   const ragPct = (n: number) => (ragTotal ? Math.round((100 * n) / ragTotal) : 0)
+  const activeInsightCount = (selectedPeriodBucket ? 1 : 0) + (insightTypeId ? 1 : 0) + (insightUserId ? 1 : 0)
+  const selectedTypeName = byType.find((t) => t.id === insightTypeId)?.name ?? 'Type'
+  const selectedCompleterName = byCompleter.find((c) => c.id === insightUserId)?.name ?? 'Completer'
+  const selectedPeriodLabel = selectedPeriodBucket ? `${selectedPeriodBucket.label}` : 'Period'
+
+  function applyRangeDays(days: number) {
+    setFromDate(dateInputValueFromNowMinus(days))
+    setToDate(new Date().toISOString().slice(0, 10))
+    setInsightPeriodKey(null)
+  }
+
+  function resetAllFilters() {
+    setFromDate(dateInputValueFromNowMinus(30))
+    setToDate(new Date().toISOString().slice(0, 10))
+    setFilterTypeId('')
+    setFilterUserId('')
+    setInsightPeriodKey(null)
+    setInsightTypeId(null)
+    setInsightUserId(null)
+  }
 
   return (
     <div className="space-y-5">
@@ -236,8 +313,9 @@ export function HcReportPage() {
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">HC Report</h1>
           <p className="text-xs text-muted sm:text-sm">
-            Submitted checks only. All locations you can access under LDR (RLS); filter by date, type, and completer. No
-            export in this version.
+            Submitted checks only (RLS). Use date and dropdowns to scope data. Click a period column or a row in By type
+            / By completer to cross-filter: that view stays full; summary, other breakdowns, and the record list follow
+            your selection (same idea as the Skill Matrix report).
           </p>
         </div>
       </div>
@@ -280,8 +358,74 @@ export function HcReportPage() {
               ))}
             </select>
           </label>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="h-8 rounded-md border border-border px-2 text-xs text-muted hover:bg-surface-raised"
+              onClick={() => applyRangeDays(7)}
+            >
+              Last 7d
+            </button>
+            <button
+              type="button"
+              className="h-8 rounded-md border border-border px-2 text-xs text-muted hover:bg-surface-raised"
+              onClick={() => applyRangeDays(30)}
+            >
+              Last 30d
+            </button>
+            <button
+              type="button"
+              className="h-8 rounded-md border border-border px-2 text-xs text-muted hover:bg-surface-raised"
+              onClick={() => applyRangeDays(90)}
+            >
+              Last 90d
+            </button>
+            <button
+              type="button"
+              className="h-8 rounded-md border border-border bg-surface-raised px-2 text-xs font-semibold text-fg hover:bg-surface-raised/80"
+              onClick={resetAllFilters}
+            >
+              Reset all
+            </button>
+          </div>
         </div>
       </div>
+
+      {activeInsightCount > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-raised/40 px-3 py-2 text-xs">
+          <span className="font-semibold text-muted">Cross-filter (charts stay full):</span>
+          {selectedPeriodBucket ? (
+            <button
+              type="button"
+              onClick={() => setInsightPeriodKey(null)}
+              className="inline-flex items-center gap-1 rounded-full border border-sky-600/40 bg-sky-500/10 px-2 py-1 font-medium text-sky-900 dark:text-sky-100"
+            >
+              Period: {selectedPeriodLabel}
+              <X className="size-3.5" aria-hidden />
+            </button>
+          ) : null}
+          {insightTypeId ? (
+            <button
+              type="button"
+              onClick={() => setInsightTypeId(null)}
+              className="inline-flex items-center gap-1 rounded-full border border-violet-600/40 bg-violet-500/10 px-2 py-1 font-medium text-violet-900 dark:text-violet-100"
+            >
+              Type: {selectedTypeName}
+              <X className="size-3.5" aria-hidden />
+            </button>
+          ) : null}
+          {insightUserId ? (
+            <button
+              type="button"
+              onClick={() => setInsightUserId(null)}
+              className="inline-flex items-center gap-1 rounded-full border border-teal-600/40 bg-teal-500/10 px-2 py-1 font-medium text-teal-900 dark:text-teal-100"
+            >
+              Completer: {selectedCompleterName}
+              <X className="size-3.5" aria-hidden />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-border bg-surface p-3 shadow-sm">
@@ -353,92 +497,72 @@ export function HcReportPage() {
         </div>
       ) : null}
 
-      {byWeek.length > 0 ? (
-        <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-fg">Trends by week (Mon–Sun)</h2>
-          <p className="mt-1 text-xs text-muted">Bar height = number of completed checks; label shows average score that week.</p>
-          <div className="mt-4 flex items-end gap-1 overflow-x-auto pb-1 pt-2">
-            {byWeek.map((w) => (
-              <div key={w.key} className="flex min-w-[3rem] flex-1 flex-col items-center gap-1">
-                <div
-                  className="w-full max-w-[2.75rem] rounded-t bg-teal-500/80 dark:bg-teal-500/60"
-                  style={{
-                    height: `${maxWeekCount ? Math.max(8, Math.round((40 * w.count) / maxWeekCount)) : 8}px`,
-                  }}
-                  title={`${w.label}: ${w.count} check(s), avg ${w.avg}%`}
-                />
-                <div className="text-center text-[10px] font-medium tabular-nums text-muted">{w.avg}%</div>
-                <div className="line-clamp-2 text-center text-[9px] leading-tight text-muted">{w.count}</div>
-              </div>
-            ))}
+      <CompactPeriodBars
+        title={`Volume by ${periodMode === 'weeks' ? 'week' : 'month'}`}
+        subtitle="This chart stays full for period distribution; click a column to cross-filter other report blocks."
+        buckets={periodBuckets}
+        values={periodValues}
+        selectedKey={insightPeriodKey}
+        onToggleBucket={(key) => setInsightPeriodKey((cur) => (cur === key ? null : key))}
+        controls={
+          <div className="flex rounded-lg border border-border bg-surface p-0.5 text-[11px]">
+            <button
+              type="button"
+              onClick={() => {
+                setPeriodMode('weeks')
+                setInsightPeriodKey(null)
+              }}
+              className={`rounded-md px-2 py-0.5 font-medium ${
+                periodMode === 'weeks' ? 'bg-sky-600 text-white' : 'text-muted hover:text-fg'
+              }`}
+            >
+              Weeks
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPeriodMode('months')
+                setInsightPeriodKey(null)
+              }}
+              className={`rounded-md px-2 py-0.5 font-medium ${
+                periodMode === 'months' ? 'bg-sky-600 text-white' : 'text-muted hover:text-fg'
+              }`}
+            >
+              Months
+            </button>
           </div>
-          <div className="mt-3 space-y-1 border-t border-border/80 pt-3 text-xs">
-            {byWeek.map((w) => (
-              <div key={`${w.key}-row`} className="flex justify-between gap-2">
-                <span className="min-w-0 truncate text-muted" title={w.label}>
-                  {w.label}
-                </span>
-                <span className="shrink-0 tabular-nums text-fg">
-                  {w.count} · avg {w.avg}%
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+        }
+      />
 
-      {byCompleter.length > 0 ? (
-        <div className="rounded-xl border border-border bg-surface shadow-sm">
-          <div className="border-b border-border px-3 py-2 text-sm font-semibold">By completer</div>
-          <div className="max-h-48 overflow-y-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="sticky top-0 bg-surface-raised/90 text-[10px] uppercase text-muted backdrop-blur-sm">
-                <tr>
-                  <th className="px-3 py-2">Name</th>
-                  <th className="px-3 py-2">Count</th>
-                  <th className="px-3 py-2">Avg</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byCompleter.map((c) => (
-                  <tr key={c.id} className="border-t border-border/80">
-                    <td className="px-3 py-1.5 font-medium">{c.name}</td>
-                    <td className="px-3 py-1.5 tabular-nums">{c.count}</td>
-                    <td className="px-3 py-1.5 tabular-nums">{c.avg}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : null}
-
-      {byType.length ? (
-        <div className="rounded-xl border border-border bg-surface shadow-sm">
-          <div className="border-b border-border px-3 py-2 text-sm font-semibold">By type</div>
-          <table className="w-full text-left text-sm">
-            <thead className="text-[10px] uppercase text-muted">
-              <tr>
-                <th className="px-3 py-2">Type</th>
-                <th className="px-3 py-2">Count</th>
-                <th className="px-3 py-2">Avg</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byType.map((b) => (
-                <tr key={b.id} className="border-t border-border/80">
-                  <td className="px-3 py-1.5 font-medium">{b.name}</td>
-                  <td className="px-3 py-1.5 tabular-nums">{b.count}</td>
-                  <td className="px-3 py-1.5 tabular-nums">{b.avg}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <CompactCategoryBars
+          title="By type"
+          subtitle="Full type split; ignores type selection. Respects selected period and completer."
+          items={byTypeItems}
+          selectedKey={insightTypeId}
+          onToggleKey={(key) => setInsightTypeId((cur) => (cur === key ? null : key))}
+          barClassName="bg-indigo-500 hover:brightness-110"
+          selectedBarClassName="bg-indigo-600"
+        />
+        <CompactCategoryBars
+          title="By completer"
+          subtitle="Full completer split; ignores completer selection. Respects selected period and type."
+          items={byCompleterItems}
+          selectedKey={insightUserId}
+          onToggleKey={(key) => setInsightUserId((cur) => (cur === key ? null : key))}
+          barClassName="bg-teal-500 hover:brightness-110"
+          selectedBarClassName="bg-teal-600"
+        />
+      </div>
 
       <div className="overflow-x-auto rounded-xl border border-border bg-surface shadow-sm">
-        <div className="border-b border-border px-3 py-2 text-sm font-semibold">Records</div>
+        <div className="border-b border-border px-3 py-2">
+          <div className="text-sm font-semibold">Records</div>
+          <p className="text-xs text-muted">
+            Showing {filteredRows.length} of {rows.length} records in range
+            {activeInsightCount ? ' (cross-filters applied)' : ''}.
+          </p>
+        </div>
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-border bg-surface-raised/60 text-[10px] font-semibold uppercase tracking-wide text-muted">
             <tr>
@@ -458,14 +582,14 @@ export function HcReportPage() {
                   <span className="inline-block size-6 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
                 </td>
               </tr>
-            ) : rows.length === 0 ? (
+            ) : filteredRows.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-3 py-8 text-center text-muted">
                   No submitted checks match these filters.
                 </td>
               </tr>
             ) : (
-              rows.map((r) => {
+              filteredRows.map((r) => {
                 const j = ldrMasterCellJoinFromId(r.master_cell_id, masterCellJoinById)
                 const loc = j ? ldrMasterCellLabel(j) : r.master_cell_id.slice(0, 8)
                 return (

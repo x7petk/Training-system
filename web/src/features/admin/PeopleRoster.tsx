@@ -27,6 +27,10 @@ type PersonRow = {
   id: string
   user_id: string | null
   display_name: string
+  first_name: string | null
+  last_name: string | null
+  email: string | null
+  phone: string | null
   team_id: string | null
   teams: TeamEmbed
   person_roles: PersonRoleJoin[] | null
@@ -41,6 +45,10 @@ type ProfileRow = { id: string; display_name: string | null; role: string }
 
 type FormState = {
   display_name: string
+  first_name: string
+  last_name: string
+  email: string
+  phone: string
   user_id: string
   team_id: string
   role_ids: string[]
@@ -48,6 +56,10 @@ type FormState = {
 
 const emptyForm = (): FormState => ({
   display_name: '',
+  first_name: '',
+  last_name: '',
+  email: '',
+  phone: '',
   user_id: '',
   team_id: '',
   role_ids: [],
@@ -82,6 +94,10 @@ export function PeopleRoster() {
           id,
           user_id,
           display_name,
+          first_name,
+          last_name,
+          email,
+          phone,
           team_id,
           teams ( id, name ),
           person_roles ( role_id, roles ( id, name ) )
@@ -157,6 +173,10 @@ export function PeopleRoster() {
     setEditingId(row.id)
     setForm({
       display_name: row.display_name,
+      first_name: row.first_name?.trim() ?? '',
+      last_name: row.last_name?.trim() ?? '',
+      email: row.email?.trim() ?? '',
+      phone: row.phone?.trim() ?? '',
       user_id: row.user_id ?? '',
       team_id: row.team_id ?? '',
       role_ids: (row.person_roles ?? []).map((x) => x.role_id),
@@ -238,12 +258,18 @@ export function PeopleRoster() {
 
     const uid = form.user_id.trim() || null
     const tid = form.team_id.trim() || null
+    const contact = {
+      first_name: form.first_name.trim() || null,
+      last_name: form.last_name.trim() || null,
+      email: form.email.trim() || null,
+      phone: form.phone.trim() || null,
+    }
 
     try {
       if (editingId) {
         const { error: uErr } = await supabase
           .from('people')
-          .update({ display_name: name, user_id: uid, team_id: tid })
+          .update({ display_name: name, user_id: uid, team_id: tid, ...contact })
           .eq('id', editingId)
         if (uErr) throw uErr
 
@@ -260,7 +286,7 @@ export function PeopleRoster() {
       } else {
         const { data: inserted, error: insErr } = await supabase
           .from('people')
-          .insert({ display_name: name, user_id: uid, team_id: tid })
+          .insert({ display_name: name, user_id: uid, team_id: tid, ...contact })
           .select('id')
           .single()
         if (insErr) throw insErr
@@ -315,7 +341,10 @@ export function PeopleRoster() {
           <Users className="size-5 text-accent" aria-hidden />
           <div>
             <h2 className="font-display text-lg font-semibold tracking-tight">People</h2>
-            <p className="text-xs text-muted">Roster for the matrix — link a login account and assign job roles.</p>
+            <p className="text-xs text-muted">
+              Roster for the matrix — contact fields sync with{' '}
+              <span className="text-fg/80">Master data → People</span>. Link login and assign job roles here.
+            </p>
           </div>
         </div>
         <button
@@ -340,10 +369,11 @@ export function PeopleRoster() {
         ) : people.length === 0 ? (
           <p className="px-4 py-10 text-center text-sm text-muted">No people yet. Add your first roster row.</p>
         ) : (
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[820px] text-left text-sm">
             <thead className="border-b border-border text-xs font-medium uppercase tracking-wider text-muted">
               <tr>
                 <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Contact</th>
                 <th className="px-4 py-3">Team</th>
                 <th className="px-4 py-3">Login link</th>
                 <th className="px-4 py-3">Job roles</th>
@@ -354,6 +384,21 @@ export function PeopleRoster() {
               {people.map((row) => (
                 <tr key={row.id} className="hover:bg-black/[0.04]">
                   <td className="px-4 py-3 font-medium text-fg">{row.display_name}</td>
+                  <td className="px-4 py-3 text-xs text-muted">
+                    {[row.first_name, row.last_name].filter(Boolean).join(' ') || '—'}
+                    {row.email ? (
+                      <>
+                        <br />
+                        <span className="text-fg/70">{row.email}</span>
+                      </>
+                    ) : null}
+                    {row.phone ? (
+                      <>
+                        <br />
+                        {row.phone}
+                      </>
+                    ) : null}
+                  </td>
                   <td className="px-4 py-3 text-muted">{rosterTeamName(row.teams) || '—'}</td>
                   <td className="px-4 py-3 text-muted">{profileLabel(row.user_id)}</td>
                   <td className="px-4 py-3">
@@ -422,6 +467,60 @@ export function PeopleRoster() {
                 placeholder="e.g. Alex Morgan"
                 autoComplete="off"
               />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="roster-fn" className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">
+                  First name
+                </label>
+                <input
+                  id="roster-fn"
+                  value={form.first_name}
+                  onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
+                  className="w-full rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2"
+                  autoComplete="given-name"
+                />
+              </div>
+              <div>
+                <label htmlFor="roster-ln" className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">
+                  Last name
+                </label>
+                <input
+                  id="roster-ln"
+                  value={form.last_name}
+                  onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
+                  className="w-full rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2"
+                  autoComplete="family-name"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="roster-email" className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">
+                  Email
+                </label>
+                <input
+                  id="roster-email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  className="w-full rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2"
+                  autoComplete="email"
+                />
+              </div>
+              <div>
+                <label htmlFor="roster-phone" className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">
+                  Phone
+                </label>
+                <input
+                  id="roster-phone"
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                  className="w-full rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2"
+                  autoComplete="tel"
+                />
+              </div>
             </div>
             <div>
               <label htmlFor="roster-link" className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">

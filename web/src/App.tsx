@@ -20,6 +20,7 @@ import { RegisterPage } from './pages/RegisterPage'
 import { UserGuidePage } from './pages/UserGuidePage'
 import { MatrixPage } from './pages/MatrixPage'
 import { LdrAdminRoute } from './components/LdrAdminRoute'
+import { RttAdminRoute } from './components/RttAdminRoute'
 
 const LdrCalendarPage = lazy(() =>
   import('./pages/LdrCalendarPage').then((m) => ({ default: m.LdrCalendarPage })),
@@ -47,7 +48,16 @@ const PpoRecordPage = lazy(() => import('./pages/ObsRecordPage').then((m) => ({ 
 const SosReportPage = lazy(() => import('./pages/ObsReportPage').then((m) => ({ default: m.SosReportPage })))
 const QosReportPage = lazy(() => import('./pages/ObsReportPage').then((m) => ({ default: m.QosReportPage })))
 const PpoReportPage = lazy(() => import('./pages/ObsReportPage').then((m) => ({ default: m.PpoReportPage })))
-import { RttSystemsPage } from './pages/RttSystemsPage'
+import { RttSystemsSectionPage } from './pages/RttSystemsSectionPage'
+
+const Plan24Page = lazy(() => import('./pages/Plan24Page').then((m) => ({ default: m.Plan24Page })))
+
+const RttSystemsUserGuidePage = lazy(() =>
+  import('./pages/RttSystemsUserGuidePage').then((m) => ({ default: m.RttSystemsUserGuidePage })),
+)
+const RttSystemsAdminPage = lazy(() =>
+  import('./pages/RttSystemsAdminPage').then((m) => ({ default: m.RttSystemsAdminPage })),
+)
 import { LoginAccountsPage } from './pages/LoginAccountsPage'
 import { SuperAdminRoute } from './components/SuperAdminRoute'
 import { MasterDataLayout } from './components/MasterDataLayout'
@@ -167,7 +177,22 @@ export default function App() {
               </SectionAccessRoute>
             }
           >
-            <Route index element={<RttSystemsPage />} />
+            <Route index element={<Navigate to="plan-24" replace />} />
+            <Route path="plan-24" element={<Plan24Page />} />
+            <Route path="my-plan" element={<RttSystemsSectionPage title="My Plan" />} />
+            <Route path="list-view" element={<RttSystemsSectionPage title="List view" />} />
+            <Route path="deviations" element={<RttSystemsSectionPage title="Deviations" />} />
+            <Route path="defect-handling" element={<RttSystemsSectionPage title="Defect Handling" />} />
+            <Route path="quality-fails" element={<RttSystemsSectionPage title="Quality Fails" />} />
+            <Route path="user-guide" element={<RttSystemsUserGuidePage />} />
+            <Route
+              path="admin"
+              element={
+                <RttAdminRoute>
+                  <RttSystemsAdminPage />
+                </RttAdminRoute>
+              }
+            />
           </Route>
 
           <Route

@@ -1,23 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, FileBarChart } from 'lucide-react'
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import { ArrowLeft, FileBarChart, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
 import { ldrMasterCellJoinFromId, ldrMasterCellLabel } from '../features/ldr/types'
 import { hcRagBadgeClass, hcRagLabel, type HcRag } from '../features/health-checks/hcScore'
-import { formatWeekTitle, startOfWeekMonday, toYMD } from '../features/ldr/ldrWeekUtils'
 import type { ObsKind } from '../features/observations/obsKind'
 import { obsBasePath, obsLabel, obsTitle } from '../features/observations/obsKind'
+import { CompactCategoryBars } from '../features/report/CompactCategoryBars'
+import { CompactPeriodBars } from '../features/report/CompactPeriodBars'
+import {
+  buildMonthBuckets,
+  buildWeekBuckets,
+  compareYMD,
+  eventLocalDate,
+  localYMD,
+  normalizeRange,
+  parseYMD,
+  type ReportBucket,
+} from '../features/report/reportBucketUtils'
 
 type Row = {
   id: string
@@ -29,9 +30,12 @@ type Row = {
   master_cell_id: string
   type_id: string
   type_name: string
+  overall_comment: string | null
 }
 
 type CompleterOpt = { id: string; name: string }
+
+type AnswerBreakdown = { pass: number; fail: number; na: number }
 
 function recTable(k: ObsKind) {
   return k === 'sos' ? 'sos_records' : k === 'qos' ? 'qos_records' : 'ppo_records'
@@ -43,6 +47,117 @@ function typeRel(k: ObsKind) {
   return k === 'sos' ? 'sos_types(name)' : k === 'qos' ? 'qos_types(name)' : 'ppo_types(name)'
 }
 
+function formatForDatetimeLocal(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const h = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${y}-${m}-${day}T${h}:${min}`
+}
+
+function dateTimeInputValueFromNowMinusDays(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return formatForDatetimeLocal(d)
+}
+
+function defaultRangeForGranularity(g: 'day' | 'week' | 'month'): { from: string; to: string } {
+  const end = new Date()
+  const start = new Date(end)
+  if (g === 'day') {
+    start.setDate(start.getDate() - 30)
+    start.setHours(0, 0, 0, 0)
+  } else if (g === 'week') {
+    start.setMonth(start.getMonth() - 3)
+    start.setHours(0, 0, 0, 0)
+  } else {
+    start.setFullYear(start.getFullYear() - 12)
+    start.setHours(0, 0, 0, 0)
+  }
+  return { from: formatForDatetimeLocal(start), to: formatForDatetimeLocal(end) }
+}
+
+function toIsoBounds(fromLocal: string, toLocal: string): { fromIso: string; toIso: string } {
+  const from = new Date(fromLocal)
+  const to = new Date(toLocal)
+  return { fromIso: from.toISOString(), toIso: to.toISOString() }
+}
+
+function buildDayBuckets(rangeStart: string, rangeEnd: string): ReportBucket[] {
+  const { start, end } = normalizeRange(rangeStart, rangeEnd)
+  const buckets: ReportBucket[] = []
+  const endD = parseYMD(end)
+  let cur = parseYMD(start)
+  let i = 0
+  while (cur.getTime() <= endD.getTime()) {
+    const ymd = localYMD(cur)
+    buckets.push({
+      key: `d${i}`,
+      label: cur.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
+      start: ymd,
+      end: ymd,
+    })
+    cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1)
+    i += 1
+    if (i > 400) break
+  }
+  return buckets
+}
+
+function rowIsInBucket(r: Row, b: ReportBucket): boolean {
+  const d = eventLocalDate(r.completed_at)
+  return compareYMD(d, b.start) >= 0 && compareYMD(d, b.end) <= 0
+}
+
+type BrushState = {
+  period: string | null
+  typeId: string | null
+  userId: string | null
+  qp: 'pass' | 'fail' | 'na' | null
+}
+
+type ChartWhich = 'volume' | 'type' | 'person' | 'answers' | 'table'
+
+function rowMatchesQpFilter(
+  r: Row,
+  qp: 'pass' | 'fail' | 'na' | null,
+  recordAnswerCounts: Map<string, AnswerBreakdown>,
+  kind: ObsKind,
+): boolean {
+  if (!qp || (kind !== 'qos' && kind !== 'ppo')) return true
+  const c = recordAnswerCounts.get(r.id)
+  if (!c) return false
+  if (qp === 'pass') return c.pass > 0
+  if (qp === 'fail') return c.fail > 0
+  return c.na > 0
+}
+
+/** Cross-filter like Skill Matrix report: `which` chart ignores its own brush so its columns stay the same. */
+function rowsForCrossFilter(
+  rs: Row[],
+  brush: BrushState,
+  periodBuckets: ReportBucket[],
+  which: ChartWhich,
+  recordAnswerCounts: Map<string, AnswerBreakdown>,
+  kind: ObsKind,
+): Row[] {
+  const selectedPeriod = brush.period ? (periodBuckets.find((b) => b.key === brush.period) ?? null) : null
+  const skipPeriod = which === 'volume'
+  const skipType = which === 'type'
+  const skipUser = which === 'person'
+  const skipQp = which === 'answers'
+  return rs.filter((r) => {
+    if (!skipPeriod && selectedPeriod && !rowIsInBucket(r, selectedPeriod)) {
+      return false
+    }
+    if (!skipType && brush.typeId && r.type_id !== brush.typeId) return false
+    if (!skipUser && brush.userId && r.completed_by_user_id !== brush.userId) return false
+    if (!skipQp && !rowMatchesQpFilter(r, brush.qp, recordAnswerCounts, kind)) return false
+    return true
+  })
+}
+
 export function ObsReportPage({ kind }: { kind: ObsKind }) {
   const { masterCellJoinById, workspaceId } = useLdrWorkspace()
   const [rows, setRows] = useState<Row[]>([])
@@ -52,23 +167,44 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
   const [error, setError] = useState<string | null>(null)
   const [granularity, setGranularity] = useState<'day' | 'week' | 'month'>('day')
 
-  const [fromDate, setFromDate] = useState(() => {
-    const d = new Date()
-    d.setMonth(d.getMonth() - 1)
-    return d.toISOString().slice(0, 10)
-  })
-  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [fromDateTime, setFromDateTime] = useState(() => defaultRangeForGranularity('day').from)
+  const [toDateTime, setToDateTime] = useState(() => defaultRangeForGranularity('day').to)
+  const prevGranularityRef = useRef<'day' | 'week' | 'month'>('day')
+
   const [filterTypeId, setFilterTypeId] = useState('')
   const [filterUserId, setFilterUserId] = useState('')
+
+  /** Client-side chart selections (do not change the clicked chart’s distribution). */
+  const [brushPeriod, setBrushPeriod] = useState<string | null>(null)
+  const [brushTypeId, setBrushTypeId] = useState<string | null>(null)
+  const [brushUserId, setBrushUserId] = useState<string | null>(null)
+  const [brushQp, setBrushQp] = useState<'pass' | 'fail' | 'na' | null>(null)
+  const [recordAnswerCounts, setRecordAnswerCounts] = useState<Map<string, AnswerBreakdown>>(() => new Map())
+  const [answerTotals, setAnswerTotals] = useState<{ pass: number; fail: number; na: number }>({
+    pass: 0,
+    fail: 0,
+    na: 0,
+  })
 
   const rt = recTable(kind)
   const fk = typeFk(kind)
   const rel = typeRel(kind)
 
+  useEffect(() => {
+    if (prevGranularityRef.current === granularity) return
+    prevGranularityRef.current = granularity
+    const r = defaultRangeForGranularity(granularity)
+    setFromDateTime(r.from)
+    setToDateTime(r.to)
+    setBrushPeriod(null)
+    setBrushTypeId(null)
+    setBrushUserId(null)
+    setBrushQp(null)
+  }, [granularity])
+
   const scopedSelect = useCallback(
     (select: string) => {
-      const fromIso = `${fromDate}T00:00:00.000Z`
-      const toIso = `${toDate}T23:59:59.999Z`
+      const { fromIso, toIso } = toIsoBounds(fromDateTime, toDateTime)
       let q = supabase
         .from(rt)
         .select(select)
@@ -78,7 +214,7 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
       if (filterTypeId) q = q.eq(fk, filterTypeId)
       return q
     },
-    [fromDate, toDate, filterTypeId, rt, fk],
+    [fromDateTime, toDateTime, filterTypeId, rt, fk],
   )
 
   const loadTypes = useCallback(async () => {
@@ -99,16 +235,19 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
   const load = useCallback(async () => {
     setError(null)
     setLoading(true)
-    const fullSelect = `id, completed_at, score, status, completed_by_name, completed_by_user_id, master_cell_id, ${fk}, ${rel}`
+    setBrushQp(null)
+    const fullSelect = `id, completed_at, score, status, completed_by_name, completed_by_user_id, master_cell_id, overall_comment, ${fk}, ${rel}`
     let dataQ = scopedSelect(fullSelect).order('completed_at', { ascending: false }).limit(800)
     if (filterUserId) dataQ = dataQ.eq('completed_by_user_id', filterUserId)
     const compQ = scopedSelect(`completed_by_user_id, completed_by_name`).limit(800)
     const [dataRes, compRes] = await Promise.all([dataQ, compQ])
-    setLoading(false)
     if (dataRes.error) {
+      setLoading(false)
       setError(dataRes.error.message)
       setRows([])
       setCompleterOptions([])
+      setRecordAnswerCounts(new Map())
+      setAnswerTotals({ pass: 0, fail: 0, na: 0 })
       return
     }
     const raw = (dataRes.data ?? []) as unknown as Record<string, unknown>[]
@@ -125,9 +264,53 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
         master_cell_id: r.master_cell_id as string,
         type_id: (r[fk] as string) ?? '',
         type_name: tn,
+        overall_comment: (r.overall_comment as string | null) ?? null,
       }
     })
     setRows(mapped)
+
+    if (kind === 'qos' || kind === 'ppo') {
+      const tbl = kind === 'qos' ? 'qos_answers' : 'ppo_answers'
+      const col = kind === 'qos' ? 'qos_record_id' : 'ppo_record_id'
+      const counts = new Map<string, AnswerBreakdown>()
+      let tp = 0
+      let tf = 0
+      let tn = 0
+      const ids = mapped.map((r) => r.id)
+      const chunk = 120
+      for (let i = 0; i < ids.length; i += chunk) {
+        const slice = ids.slice(i, i + chunk)
+        if (!slice.length) break
+        const ansRes = await supabase.from(tbl).select(`answer, ${col}`).in(col, slice)
+        if (ansRes.error) {
+          setError(ansRes.error.message)
+          break
+        }
+        for (const a of (ansRes.data ?? []) as { answer: string; [k: string]: string }[]) {
+          const rid = a[col] as string
+          const ans = (a.answer as string) ?? ''
+          const cur = counts.get(rid) ?? { pass: 0, fail: 0, na: 0 }
+          if (ans === 'pass') {
+            cur.pass += 1
+            tp += 1
+          } else if (ans === 'fail') {
+            cur.fail += 1
+            tf += 1
+          } else if (ans === 'na') {
+            cur.na += 1
+            tn += 1
+          }
+          counts.set(rid, cur)
+        }
+      }
+      setRecordAnswerCounts(counts)
+      setAnswerTotals({ pass: tp, fail: tf, na: tn })
+    } else {
+      setRecordAnswerCounts(new Map())
+      setAnswerTotals({ pass: 0, fail: 0, na: 0 })
+    }
+
+    setLoading(false)
     if (!compRes.error && compRes.data) {
       const m = new Map<string, string>()
       for (const r of compRes.data as unknown as { completed_by_user_id: string; completed_by_name: string }[]) {
@@ -139,7 +322,7 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
     } else {
       setCompleterOptions([])
     }
-  }, [scopedSelect, filterUserId, fk, rel])
+  }, [scopedSelect, filterUserId, fk, rel, kind])
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -153,56 +336,137 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
     })
   }, [load])
 
-  const volumeSeries = useMemo(() => {
-    const fmt = (d: Date) => {
-      if (granularity === 'day') return toYMD(d)
-      if (granularity === 'week') return formatWeekTitle(startOfWeekMonday(d))
-      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
-    }
-    const bucket = new Map<string, number>()
-    for (const r of rows) {
-      const d = new Date(r.completed_at)
-      const key = fmt(d)
-      bucket.set(key, (bucket.get(key) ?? 0) + 1)
-    }
-    return [...bucket.entries()]
-      .map(([period, count]) => ({ period, count }))
-      .sort((a, b) => a.period.localeCompare(b.period))
-  }, [rows, granularity])
+  const brush = useMemo<BrushState>(
+    () => ({ period: brushPeriod, typeId: brushTypeId, userId: brushUserId, qp: brushQp }),
+    [brushPeriod, brushTypeId, brushUserId, brushQp],
+  )
+
+  const rangeStartYmd = fromDateTime.slice(0, 10)
+  const rangeEndYmd = toDateTime.slice(0, 10)
+  const periodBuckets = useMemo(() => {
+    if (!rangeStartYmd || !rangeEndYmd) return []
+    const { start, end } = normalizeRange(rangeStartYmd, rangeEndYmd)
+    if (granularity === 'day') return buildDayBuckets(start, end)
+    if (granularity === 'week') return buildWeekBuckets(start, end)
+    return buildMonthBuckets(start, end)
+  }, [rangeStartYmd, rangeEndYmd, granularity])
+
+  const selectedPeriodBucket = useMemo(
+    () => (brushPeriod ? periodBuckets.find((b) => b.key === brushPeriod) ?? null : null),
+    [brushPeriod, periodBuckets],
+  )
+
+  const volumeRows = useMemo(
+    () => rowsForCrossFilter(rows, brush, periodBuckets, 'volume', recordAnswerCounts, kind),
+    [rows, brush, periodBuckets, recordAnswerCounts, kind],
+  )
+
+  const periodValues = useMemo(() => {
+    return periodBuckets.map((b) => volumeRows.filter((r) => rowIsInBucket(r, b)).length)
+  }, [periodBuckets, volumeRows])
 
   const byType = useMemo(() => {
-    const m = new Map<string, { name: string; count: number; sumScore: number }>()
-    for (const r of rows) {
-      const cur = m.get(r.type_id) ?? { name: r.type_name, count: 0, sumScore: 0 }
+    const src = rowsForCrossFilter(rows, brush, periodBuckets, 'type', recordAnswerCounts, kind)
+    const m = new Map<string, { typeId: string; name: string; count: number; sumScore: number }>()
+    for (const r of src) {
+      const cur = m.get(r.type_id) ?? { typeId: r.type_id, name: r.type_name, count: 0, sumScore: 0 }
       cur.count += 1
       cur.sumScore += r.score
       m.set(r.type_id, cur)
     }
     return [...m.values()].map((v) => ({
+      typeId: v.typeId,
       name: v.name,
       count: v.count,
       avgScore: v.count ? Math.round((v.sumScore / v.count) * 10) / 10 : 0,
     }))
-  }, [rows])
+  }, [rows, brush, periodBuckets, recordAnswerCounts, kind])
+
+  const byTypeItems = useMemo(
+    () => byType.map((x) => ({ key: x.typeId || `type-${x.name}`, label: x.name, value: x.count })),
+    [byType],
+  )
 
   const byPerson = useMemo(() => {
-    const m = new Map<string, { name: string; count: number; sumScore: number }>()
-    for (const r of rows) {
-      const cur = m.get(r.completed_by_user_id) ?? { name: r.completed_by_name, count: 0, sumScore: 0 }
+    const src = rowsForCrossFilter(rows, brush, periodBuckets, 'person', recordAnswerCounts, kind)
+    const m = new Map<string, { userId: string; name: string; count: number; sumScore: number }>()
+    for (const r of src) {
+      const cur =
+        m.get(r.completed_by_user_id) ?? {
+          userId: r.completed_by_user_id,
+          name: r.completed_by_name,
+          count: 0,
+          sumScore: 0,
+        }
       cur.count += 1
       cur.sumScore += r.score
       m.set(r.completed_by_user_id, cur)
     }
-    return [...m.entries()].map(([, v]) => ({
+    return [...m.values()].map((v) => ({
+      userId: v.userId,
       name: v.name,
       count: v.count,
       avgScore: v.count ? Math.round((v.sumScore / v.count) * 10) / 10 : 0,
     }))
-  }, [rows])
+  }, [rows, brush, periodBuckets, recordAnswerCounts, kind])
+
+  const byPersonItems = useMemo(
+    () => byPerson.map((x) => ({ key: x.userId, label: x.name, value: x.count })),
+    [byPerson],
+  )
+
+  const qpQuestionChartData = useMemo(
+    () => [
+      { outcome: 'Pass', count: answerTotals.pass, key: 'pass' as const },
+      { outcome: 'Fail', count: answerTotals.fail, key: 'fail' as const },
+      { outcome: 'N/A', count: answerTotals.na, key: 'na' as const },
+    ],
+    [answerTotals],
+  )
+
+  const qpItems = useMemo(
+    () => qpQuestionChartData.map((x) => ({ key: x.key, label: x.outcome, value: x.count })),
+    [qpQuestionChartData],
+  )
+
+  const filteredRows = useMemo(
+    () => rowsForCrossFilter(rows, brush, periodBuckets, 'table', recordAnswerCounts, kind),
+    [rows, brush, periodBuckets, recordAnswerCounts, kind],
+  )
 
   const base = obsBasePath(kind)
   const title = obsTitle(kind)
   const short = obsLabel(kind)
+  const numberLabel =
+    kind === 'sos' ? 'Number of SOS' : kind === 'qos' ? 'Number of QOS' : 'Number of PPO'
+  const activeFilters =
+    (selectedPeriodBucket ? 1 : 0) +
+    (brushTypeId ? 1 : 0) +
+    (brushUserId ? 1 : 0) +
+    (brushQp ? 1 : 0) +
+    (filterTypeId ? 1 : 0) +
+    (filterUserId ? 1 : 0)
+
+  function applyRangePreset(days: number) {
+    setFromDateTime(dateTimeInputValueFromNowMinusDays(days))
+    setToDateTime(formatForDatetimeLocal(new Date()))
+    setBrushPeriod(null)
+    setBrushTypeId(null)
+    setBrushUserId(null)
+    setBrushQp(null)
+  }
+
+  function clearAllFilters() {
+    const r = defaultRangeForGranularity(granularity)
+    setFromDateTime(r.from)
+    setToDateTime(r.to)
+    setFilterTypeId('')
+    setFilterUserId('')
+    setBrushPeriod(null)
+    setBrushTypeId(null)
+    setBrushUserId(null)
+    setBrushQp(null)
+  }
 
   return (
     <div className="space-y-6">
@@ -221,8 +485,9 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
           <div>
             <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">{short} Report</h1>
             <p className="text-sm text-muted">
-              {title} — submitted records only. Data follows RLS (all locations you can access). Filters: date range,
-              type, completer.
+              {title} — submitted records only (RLS). Scope the fetch with type/completer dropdowns if needed. Click a
+              chart bar to cross-filter: that chart stays the same; other charts and the table follow the selection (like
+              the Skill Matrix report).
             </p>
           </div>
         </div>
@@ -234,128 +499,233 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-surface p-4 shadow-sm">
-        <label className="text-xs font-medium text-muted">
-          From
-          <input
-            type="date"
-            className="mt-1 block h-10 rounded-lg border border-border bg-surface px-3 text-sm"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-          />
-        </label>
-        <label className="text-xs font-medium text-muted">
-          To
-          <input
-            type="date"
-            className="mt-1 block h-10 rounded-lg border border-border bg-surface px-3 text-sm"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-          />
-        </label>
-        <label className="text-xs font-medium text-muted">
-          Type
-          <select
-            className="mt-1 block h-10 min-w-[10rem] rounded-lg border border-border bg-surface px-3 text-sm"
-            value={filterTypeId}
-            onChange={(e) => setFilterTypeId(e.target.value)}
-          >
-            <option value="">All types</option>
-            {types.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs font-medium text-muted">
-          Completer
-          <select
-            className="mt-1 block h-10 min-w-[10rem] rounded-lg border border-border bg-surface px-3 text-sm"
-            value={filterUserId}
-            onChange={(e) => setFilterUserId(e.target.value)}
-          >
-            <option value="">All</option>
-            {completerOptions.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs font-medium text-muted">
-          Volume bucket
-          <select
-            className="mt-1 block h-10 rounded-lg border border-border bg-surface px-3 text-sm"
-            value={granularity}
-            onChange={(e) => setGranularity(e.target.value as 'day' | 'week' | 'month')}
-          >
-            <option value="day">Day</option>
-            <option value="week">Week</option>
-            <option value="month">Month</option>
-          </select>
-        </label>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-border bg-surface p-4 shadow-sm lg:col-span-2">
-          <h2 className="text-sm font-semibold text-fg">Volume ({granularity})</h2>
-          <div className="mt-4 h-64">
-            {loading ? (
-              <p className="text-sm text-muted">Loading…</p>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={volumeSeries}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-40" />
-                  <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="count" name={`${short} completed`} fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
+      <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 shadow-sm">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs font-medium text-muted">
+            Start (date and time)
+            <input
+              type="datetime-local"
+              className="mt-1 block min-h-10 min-w-[11rem] rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+              value={fromDateTime}
+              onChange={(e) => setFromDateTime(e.target.value)}
+            />
+          </label>
+          <label className="text-xs font-medium text-muted">
+            End (date and time)
+            <input
+              type="datetime-local"
+              className="mt-1 block min-h-10 min-w-[11rem] rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+              value={toDateTime}
+              onChange={(e) => setToDateTime(e.target.value)}
+            />
+          </label>
+          <label className="text-xs font-medium text-muted">
+            Type
+            <select
+              className="mt-1 block h-10 min-w-[10rem] rounded-lg border border-border bg-surface px-3 text-sm"
+              value={filterTypeId}
+              onChange={(e) => setFilterTypeId(e.target.value)}
+            >
+              <option value="">All types</option>
+              {types.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-medium text-muted">
+            Completer
+            <select
+              className="mt-1 block h-10 min-w-[10rem] rounded-lg border border-border bg-surface px-3 text-sm"
+              value={filterUserId}
+              onChange={(e) => setFilterUserId(e.target.value)}
+            >
+              <option value="">All</option>
+              {completerOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="h-10 rounded-lg border border-border px-3 text-xs text-muted hover:bg-surface-raised"
+              onClick={() => applyRangePreset(7)}
+            >
+              Last 7d
+            </button>
+            <button
+              type="button"
+              className="h-10 rounded-lg border border-border px-3 text-xs text-muted hover:bg-surface-raised"
+              onClick={() => applyRangePreset(30)}
+            >
+              Last 30d
+            </button>
+            <button
+              type="button"
+              className="h-10 rounded-lg border border-border px-3 text-xs text-muted hover:bg-surface-raised"
+              onClick={() => applyRangePreset(90)}
+            >
+              Last 90d
+            </button>
+            <button
+              type="button"
+              className="h-10 rounded-lg border border-border bg-surface-raised px-3 text-xs font-semibold text-fg hover:bg-surface-raised/80"
+              onClick={clearAllFilters}
+            >
+              Reset all
+            </button>
           </div>
         </div>
-        <div className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-fg">Summary</h2>
-          <p className="mt-2 text-2xl font-semibold tabular-nums">{rows.length}</p>
-          <p className="text-xs text-muted">Records in range</p>
-        </div>
+        <p className="text-xs text-muted">
+          Day/Week/Month is controlled on the volume chart header. Changing it resets the date range to its default
+          (day: 30 days, week: 3 months, month: 12 months) and clears chart selections.
+        </p>
       </div>
+
+      {activeFilters > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-raised/40 px-3 py-2 text-xs">
+          <span className="font-semibold text-muted">Active filters:</span>
+          {selectedPeriodBucket ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-full border border-sky-600/40 bg-sky-500/10 px-2 py-1 font-medium text-sky-900 dark:text-sky-100"
+              onClick={() => setBrushPeriod(null)}
+            >
+              Period: {selectedPeriodBucket.label}
+              <X className="size-3.5 shrink-0" aria-hidden />
+            </button>
+          ) : null}
+          {brushTypeId ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-full border border-violet-600/40 bg-violet-500/10 px-2 py-1 font-medium text-violet-900 dark:text-violet-100"
+              onClick={() => setBrushTypeId(null)}
+            >
+              Type: {types.find((t) => t.id === brushTypeId)?.name ?? brushTypeId.slice(0, 8)}
+              <X className="size-3.5 shrink-0" aria-hidden />
+            </button>
+          ) : null}
+          {brushUserId ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-full border border-teal-600/40 bg-teal-500/10 px-2 py-1 font-medium text-teal-900 dark:text-teal-100"
+              onClick={() => setBrushUserId(null)}
+            >
+              Completer: {completerOptions.find((c) => c.id === brushUserId)?.name ?? brushUserId.slice(0, 8)}
+              <X className="size-3.5 shrink-0" aria-hidden />
+            </button>
+          ) : null}
+          {brushQp ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-full border border-amber-600/40 bg-amber-500/10 px-2 py-1 font-medium text-amber-950 dark:text-amber-100"
+              onClick={() => setBrushQp(null)}
+            >
+              Answers: {brushQp.toUpperCase()}
+              <X className="size-3.5 shrink-0" aria-hidden />
+            </button>
+          ) : null}
+          {filterTypeId ? (
+            <span className="rounded-full border border-border px-2 py-1 text-muted">
+              Fetch scope · type: {types.find((t) => t.id === filterTypeId)?.name ?? filterTypeId.slice(0, 8)}
+            </span>
+          ) : null}
+          {filterUserId ? (
+            <span className="rounded-full border border-border px-2 py-1 text-muted">
+              Fetch scope · completer:{' '}
+              {completerOptions.find((c) => c.id === filterUserId)?.name ?? filterUserId.slice(0, 8)}
+            </span>
+          ) : null}
+          {(selectedPeriodBucket || brushTypeId || brushUserId || brushQp) && (
+            <button
+              type="button"
+              onClick={() => {
+                setBrushPeriod(null)
+                setBrushTypeId(null)
+                setBrushUserId(null)
+                setBrushQp(null)
+              }}
+              className="ml-auto rounded-full border border-border px-2 py-1 font-medium text-muted hover:bg-surface-raised"
+            >
+              Clear chart selections
+            </button>
+          )}
+        </div>
+      ) : null}
+
+      <CompactPeriodBars
+        title={`${numberLabel} by ${granularity}`}
+        subtitle="This chart stays full for period distribution; click a column to cross-filter other charts and the table."
+        buckets={periodBuckets}
+        values={periodValues}
+        selectedKey={brushPeriod}
+        onToggleBucket={(key) => setBrushPeriod((cur) => (cur === key ? null : key))}
+        controls={
+          <div className="flex rounded-lg border border-border bg-surface p-0.5 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setGranularity('day')}
+              className={`rounded-md px-2 py-0.5 font-medium ${
+                granularity === 'day' ? 'bg-sky-600 text-white' : 'text-muted hover:text-fg'
+              }`}
+            >
+              Day
+            </button>
+            <button
+              type="button"
+              onClick={() => setGranularity('week')}
+              className={`rounded-md px-2 py-0.5 font-medium ${
+                granularity === 'week' ? 'bg-sky-600 text-white' : 'text-muted hover:text-fg'
+              }`}
+            >
+              Weeks
+            </button>
+            <button
+              type="button"
+              onClick={() => setGranularity('month')}
+              className={`rounded-md px-2 py-0.5 font-medium ${
+                granularity === 'month' ? 'bg-sky-600 text-white' : 'text-muted hover:text-fg'
+              }`}
+            >
+              Months
+            </button>
+          </div>
+        }
+      />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-fg">By type</h2>
-          <div className="mt-4 h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={byType} layout="vertical" margin={{ left: 8, right: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-40" />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10 }} />
-                <Tooltip />
-                <Bar dataKey="count" name="Count" fill="#6366f1" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-          <h2 className="text-sm font-semibold text-fg">By completer</h2>
-          <div className="mt-4 h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={byPerson} layout="vertical" margin={{ left: 8, right: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-40" />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10 }} />
-                <Tooltip />
-                <Bar dataKey="count" name="Count" fill="#14b8a6" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <CompactCategoryBars
+          title="By type"
+          subtitle="Full type split; click a column to cross-filter volume/completer and the table."
+          items={byTypeItems}
+          selectedKey={brushTypeId}
+          onToggleKey={(key) => setBrushTypeId((cur) => (cur === key ? null : key))}
+          barClassName="bg-indigo-500 hover:brightness-110"
+          selectedBarClassName="bg-indigo-600"
+        />
+        <CompactCategoryBars
+          title="By completer"
+          subtitle="Full completer split; click a column to cross-filter volume/type and the table."
+          items={byPersonItems}
+          selectedKey={brushUserId}
+          onToggleKey={(key) => setBrushUserId((cur) => (cur === key ? null : key))}
+          barClassName="bg-teal-500 hover:brightness-110"
+          selectedBarClassName="bg-teal-600"
+        />
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-border bg-surface shadow-sm">
+        <div className="border-b border-border bg-surface-raised/60 px-4 py-2">
+          <h2 className="text-sm font-semibold text-fg">Records</h2>
+          <p className="text-xs text-muted">
+            Showing {filteredRows.length} of {rows.length} loaded in range
+            {filteredRows.length < rows.length ? ' (cross-filters applied)' : ''}.
+          </p>
+        </div>
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-border bg-surface-raised/60 text-xs font-semibold uppercase text-muted">
             <tr>
@@ -365,26 +735,28 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
               <th className="px-4 py-3">Completer</th>
               <th className="px-4 py-3">Score</th>
               <th className="px-4 py-3">RAG</th>
+              <th className="min-w-[12rem] px-4 py-3">Comments</th>
               <th className="px-4 py-3 text-right"> </th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                <td colSpan={8} className="px-4 py-8 text-center text-muted">
                   Loading…
                 </td>
               </tr>
-            ) : rows.length === 0 ? (
+            ) : filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted">
-                  No records in this range.
+                <td colSpan={8} className="px-4 py-8 text-center text-muted">
+                  No records match the current filters.
                 </td>
               </tr>
             ) : (
-              rows.slice(0, 200).map((r) => {
+              filteredRows.slice(0, 200).map((r) => {
                 const j = ldrMasterCellJoinFromId(r.master_cell_id, masterCellJoinById)
                 const loc = j ? ldrMasterCellLabel(j) : `${r.master_cell_id.slice(0, 8)}…`
+                const comment = (r.overall_comment ?? '').trim()
                 return (
                   <tr key={r.id} className="border-b border-border/80">
                     <td className="px-4 py-2 tabular-nums text-muted">{new Date(r.completed_at).toLocaleString()}</td>
@@ -393,12 +765,26 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
                     <td className="px-4 py-2">{r.completed_by_name}</td>
                     <td className="px-4 py-2 tabular-nums">{r.score}%</td>
                     <td className="px-4 py-2">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(r.status)}`}>
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${hcRagBadgeClass(r.status)}`}
+                      >
                         {hcRagLabel(r.status)}
                       </span>
                     </td>
+                    <td className="max-w-[20rem] px-4 py-2 text-xs text-fg/90">
+                      {comment ? (
+                        <span className="line-clamp-3 whitespace-pre-wrap" title={comment}>
+                          {comment}
+                        </span>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-right">
-                      <Link to={`${base}/${r.id}`} className="text-sm font-semibold text-sky-700 hover:underline dark:text-sky-300">
+                      <Link
+                        to={`${base}/${r.id}`}
+                        className="text-sm font-semibold text-sky-700 hover:underline dark:text-sky-300"
+                      >
                         Open
                       </Link>
                     </td>
@@ -409,6 +795,30 @@ export function ObsReportPage({ kind }: { kind: ObsKind }) {
           </tbody>
         </table>
       </div>
+
+      {kind === 'qos' || kind === 'ppo' ? (
+        <CompactCategoryBars
+          title="Question answers (all loaded records)"
+          subtitle={`Pass / Fail / N/A totals stay full; click a column to cross-filter volume, type, completer and the table to ${short}s that include that answer kind.`}
+          items={qpItems}
+          selectedKey={brushQp}
+          onToggleKey={(key) => {
+            if (key === 'pass' || key === 'fail' || key === 'na') {
+              setBrushQp((cur) => (cur === key ? null : key))
+            }
+          }}
+          barClassByKey={{
+            pass: 'bg-emerald-500 hover:brightness-110',
+            fail: 'bg-rose-500 hover:brightness-110',
+            na: 'bg-slate-500 hover:brightness-110',
+          }}
+          selectedBarClassByKey={{
+            pass: 'bg-emerald-700',
+            fail: 'bg-rose-700',
+            na: 'bg-slate-700',
+          }}
+        />
+      ) : null}
     </div>
   )
 }

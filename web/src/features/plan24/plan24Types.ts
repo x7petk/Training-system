@@ -1,0 +1,65 @@
+export type Plan24ShiftKind = 'day' | 'night'
+
+export type Plan24EventRow = {
+  id: string
+  master_cell_id: string
+  roster_id: string | null
+  plan_date: string
+  shift_kind: Plan24ShiftKind
+  role_name: string | null
+  title: string
+  event_type: string
+  source: 'scheduled' | 'ad_hoc'
+  start_at: string
+  end_at: string
+  status: 'scheduled' | 'in_progress' | 'complete'
+  sub_tasks: unknown
+  opened_at: string | null
+  completed_at: string | null
+  completed_by: string | null
+  assigned_person_id: string | null
+  deleted_at: string | null
+  delete_comment: string | null
+  created_by: string | null
+}
+
+export type Plan24SubTask = { id: string; label: string; done: boolean }
+
+export type Plan24RosterRoleRow = {
+  id: string
+  roster_id: string
+  name: string
+  sort_order: number
+  is_active: boolean
+  /** Legacy fallback when day/night defaults are null. */
+  default_person_id: string | null
+  default_person_day_id?: string | null
+  default_person_night_id?: string | null
+}
+
+export type Plan24RosterRow = {
+  id: string
+  master_cell_id: string
+  name: string
+  sort_order: number
+  is_active: boolean
+  effective_from: string | null
+}
+
+export type Plan24RoleAssignmentRow = {
+  roster_id: string
+  plan_date: string
+  shift_kind: Plan24ShiftKind
+  role_name: string
+  person_id: string | null
+}
+
+export type Plan24TaskRow = {
+  id: string
+  master_cell_id: string
+  role_name: string
+  owner_id: string
+  title: string
+  done: boolean
+  sort_order: number
+}

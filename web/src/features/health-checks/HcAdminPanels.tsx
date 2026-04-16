@@ -609,7 +609,7 @@ export function LdrAdminHcTemplatesPanel() {
                   <div className="font-medium">{q.question_text}</div>
                   <div className="mt-1 text-xs text-muted line-clamp-2">{q.expected_standard}</div>
                   <div className="mt-1 text-xs text-muted">
-                    Critical: {q.is_critical ? 'yes' : 'no'} · Sort: {q.sort_order} · Active: {q.active ? 'yes' : 'no'}
+                    Sort: {q.sort_order} · Active: {q.active ? 'yes' : 'no'}
                   </div>
                 </div>
                 <div className="flex shrink-0 gap-1">
@@ -784,7 +784,6 @@ function HcQuestionDialog(props: {
   const [expectedStandard, setExpectedStandard] = useState(props.initial?.expected_standard ?? '')
   const [helpText, setHelpText] = useState(props.initial?.help_text ?? '')
   const [sortOrder, setSortOrder] = useState(String(props.initial?.sort_order ?? props.nextSortOrder))
-  const [isCritical, setIsCritical] = useState(props.initial?.is_critical ?? false)
   const [active, setActive] = useState(props.initial?.active ?? true)
   const [err, setErr] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -808,7 +807,7 @@ function HcQuestionDialog(props: {
       expected_standard: expectedStandard.trim(),
       help_text: helpText.trim() || null,
       sort_order: so,
-      is_critical: isCritical,
+      is_critical: false,
       active,
     }
     const res = props.initial
@@ -858,10 +857,6 @@ function HcQuestionDialog(props: {
             value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value)}
           />
-        </label>
-        <label className="mt-3 flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={isCritical} onChange={(e) => setIsCritical(e.target.checked)} />
-          Critical
         </label>
         <label className="mt-2 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />

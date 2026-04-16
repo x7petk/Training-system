@@ -69,7 +69,6 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
 
   const plantsForSite = useMemo(() => plants.filter((p) => p.site_id === siteId), [plants, siteId])
   const cellsForPlant = useMemo(() => cells.filter((c) => c.plant_id === plantId), [cells, plantId])
-
   const typesTable = kind === 'sos' ? 'sos_types' : kind === 'qos' ? 'qos_types' : 'ppo_types'
   const tplTable = kind === 'sos' ? 'sos_templates' : kind === 'qos' ? 'qos_templates' : 'ppo_templates'
   const tplFk = kind === 'sos' ? 'sos_type_id' : kind === 'qos' ? 'qos_type_id' : 'ppo_type_id'
@@ -267,11 +266,7 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
       setError('Select a type with an active template.')
       return
     }
-    if (!linkedActivityId) {
-      setError(`No ${obsLabel(kind)} activity is linked for this site. Ask admin to set it in LDR Admin → ${obsLabel(kind)} Types.`)
-      return
-    }
-    if (qActivityId && qActivityId !== linkedActivityId) {
+    if (qActivityId && linkedActivityId && qActivityId !== linkedActivityId && !rosterAssignmentId) {
       setError(`This assignment is not linked to ${obsLabel(kind)}. Use “Complete ${obsLabel(kind)}” on the matching activity.`)
       return
     }
@@ -437,12 +432,7 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
 
       <div className="space-y-4 rounded-2xl border border-border bg-surface p-5 shadow-sm">
         <h2 className="text-sm font-semibold text-fg">Type</h2>
-        {!linkedActivityId ? (
-          <p className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100">
-            No linked {obsLabel(kind)} activity for this site yet. Ask admin to configure this in LDR Admin → {obsLabel(kind)} Types.
-          </p>
-        ) : null}
-        {qActivityId && linkedActivityId && qActivityId !== linkedActivityId ? (
+        {qActivityId && linkedActivityId && qActivityId !== linkedActivityId && !rosterAssignmentId ? (
           <p className="rounded-xl border border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger">
             This roster assignment does not belong to the linked {obsLabel(kind)} activity.
           </p>
@@ -473,7 +463,11 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
         </Link>
         <button
           type="button"
-          disabled={starting || loadingTypes || !linkedActivityId || Boolean(qActivityId && qActivityId !== linkedActivityId)}
+          disabled={
+            starting ||
+            loadingTypes ||
+            Boolean(qActivityId && linkedActivityId && qActivityId !== linkedActivityId && !rosterAssignmentId)
+          }
           onClick={() => void handleStart()}
           className="rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-500"
         >

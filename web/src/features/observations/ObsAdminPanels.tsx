@@ -882,7 +882,6 @@ function ObsQuestionDialog(props: {
   const [expectedStandard, setExpectedStandard] = useState(props.initial?.expected_standard ?? '')
   const [helpText, setHelpText] = useState(props.initial?.help_text ?? '')
   const [sortOrder, setSortOrder] = useState(String(props.initial?.sort_order ?? props.nextSortOrder))
-  const [isCritical, setIsCritical] = useState(props.initial?.is_critical ?? false)
   const [active, setActive] = useState(props.initial?.active ?? true)
   const [goodPath, setGoodPath] = useState(props.initial?.good_image_path ?? '')
   const [badPath, setBadPath] = useState(props.initial?.bad_image_path ?? '')
@@ -921,7 +920,7 @@ function ObsQuestionDialog(props: {
       expected_standard: expectedStandard.trim(),
       help_text: helpText.trim() || null,
       sort_order: so,
-      is_critical: isCritical,
+      is_critical: false,
       active,
       good_image_path: goodPath.trim(),
       bad_image_path: badPath.trim(),
@@ -967,10 +966,6 @@ function ObsQuestionDialog(props: {
         <label className="mt-3 block text-xs font-medium text-muted">
           Sort order
           <input className="mt-1 h-10 w-full rounded-lg border border-border px-3 text-sm" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />
-        </label>
-        <label className="mt-3 flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={isCritical} onChange={(e) => setIsCritical(e.target.checked)} />
-          Critical
         </label>
         <label className="mt-2 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />

@@ -30,6 +30,7 @@ export function HcNewPage() {
     setPlantId,
     setCellId,
     setScopeLevel,
+    scopeLevel,
     workspaceId,
     masterCellJoinById,
     resolveMasterCellScope,
@@ -74,21 +75,63 @@ export function HcNewPage() {
         return
       }
       setLoadingTypes(true)
-      const res = await supabase
-        .from('hc_types')
-        .select('id, name, description, active, sort_order, ldr_activity_id, ldr_activities!inner(workspace_id)')
-        .eq('active', true)
-        .eq('ldr_activities.workspace_id', workspaceId)
-        .order('sort_order')
-        .order('name')
-      if (cancelled) return
-      if (res.error) {
-        setLoadingTypes(false)
-        setError(res.error.message)
-        setTypes([])
-        return
+      setError(null)
+
+      const selectHcTypes = () =>
+        supabase
+          .from('hc_types')
+          .select('id, name, description, active, sort_order, ldr_activity_id, ldr_activities!inner(workspace_id)')
+          .eq('active', true)
+          .order('sort_order')
+          .order('name')
+
+      let list: HcTypeRow[] = []
+
+      if (scopeLevel === 'cell' && siteId) {
+        const { data: siteWsRaw, error: siteWsErr } = await supabase.rpc('ldr_ensure_workspace_site', {
+          p_master_site_id: siteId,
+        })
+        if (cancelled) return
+        if (siteWsErr) {
+          setLoadingTypes(false)
+          setError(siteWsErr.message)
+          setTypes([])
+          return
+        }
+        const siteWorkspaceId = typeof siteWsRaw === 'string' ? siteWsRaw : null
+        const workspaceIds =
+          siteWorkspaceId && siteWorkspaceId !== workspaceId ? [workspaceId, siteWorkspaceId] : [workspaceId]
+
+        const results = await Promise.all(
+          workspaceIds.map((wid) => selectHcTypes().eq('ldr_activities.workspace_id', wid)),
+        )
+        if (cancelled) return
+        const err = results.find((r) => r.error)?.error
+        if (err) {
+          setLoadingTypes(false)
+          setError(err.message)
+          setTypes([])
+          return
+        }
+        const byId = new Map<string, HcTypeRow>()
+        for (const r of results) {
+          for (const row of (r.data ?? []) as HcTypeRow[]) {
+            byId.set(row.id, row)
+          }
+        }
+        list = [...byId.values()].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+      } else {
+        const res = await selectHcTypes().eq('ldr_activities.workspace_id', workspaceId)
+        if (cancelled) return
+        if (res.error) {
+          setLoadingTypes(false)
+          setError(res.error.message)
+          setTypes([])
+          return
+        }
+        list = (res.data ?? []) as HcTypeRow[]
       }
-      let list = (res.data ?? []) as HcTypeRow[]
+
       /** Roster link: activity may live in site workspace while HC page uses cell workspace — merge type by activity id. */
       if (qActivityId) {
         const extraRes = await supabase
@@ -116,7 +159,7 @@ export function HcNewPage() {
     return () => {
       cancelled = true
     }
-  }, [workspaceId, qActivityId])
+  }, [workspaceId, qActivityId, scopeLevel, siteId])
 
   const lastRosterPrefillSig = useRef('')
   const rosterPrefillSig =
@@ -422,6 +465,12 @@ export function HcNewPage() {
             ))}
           </select>
         </label>
+        {scopeLevel === 'cell' && workspaceId ? (
+          <p className="text-xs text-muted">
+            With cell scope, this list includes health check types linked to the site workspace and to this cell’s
+            workspace, so you can start either kind from here.
+          </p>
+        ) : null}
         {!workspaceId ? (
           <p className="text-sm text-amber-800 dark:text-amber-200">
             Set site/cell scope in the bar above until the workspace loads — HC types are tied to activities in that
