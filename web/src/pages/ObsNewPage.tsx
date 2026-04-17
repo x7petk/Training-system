@@ -515,30 +515,35 @@ export function ObsSystemNewPage() {
           </span>
           <div className="min-w-0 flex-1 space-y-1">
             <h2 className="text-sm font-semibold text-fg">Observation System</h2>
-            <p className="text-xs text-muted">Choose a system, then pick Type below. Location comes from the site / plant / cell bar above.</p>
+            <p className="text-xs text-muted">
+              Select SOS, QOS, or PPOS, then choose Type below. Location comes from the site / plant / cell bar above.
+            </p>
             <div
-              className={`mt-3 inline-flex w-fit max-w-full flex-wrap gap-2 rounded-xl border p-2 ${
-                selectedKind ? 'border-border' : 'border-danger/45 bg-danger/10'
+              className={`mt-3 inline-flex w-fit max-w-full flex-wrap items-center gap-1 rounded-xl border bg-surface p-1 shadow-sm ${
+                selectedKind ? 'border-border' : 'border-danger/45 bg-danger/5'
               }`}
-              role="group"
-              aria-label="Observation kind"
+              role="radiogroup"
+              aria-label="Observation system"
             >
               {(
                 [
-                  ['sos', obsLabel('sos')],
-                  ['qos', obsLabel('qos')],
-                  ['ppo', obsLabel('ppo')],
+                  ['sos', 'S', 'SOS'],
+                  ['qos', 'Q', 'QOS'],
+                  ['ppo', 'PP', 'PPOS'],
                 ] as const
-              ).map(([k, label]) => (
+              ).map(([k, shortLabel, longLabel]) => (
                 <button
                   key={k}
                   type="button"
                   onClick={() => setOsKind(k)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                    selectedKind === k ? 'bg-sky-600 text-white' : 'border border-border bg-surface text-muted hover:bg-surface-raised'
+                  title={longLabel}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
+                    selectedKind === k
+                      ? 'bg-sky-600 text-white'
+                      : 'border border-transparent text-muted hover:bg-surface-raised hover:text-fg'
                   }`}
                 >
-                  New {label}
+                  {shortLabel}
                 </button>
               ))}
             </div>
