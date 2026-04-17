@@ -312,6 +312,26 @@ export function ObsListPage({ kind }: { kind?: ObsKind }) {
           <div>
             <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
             <p className="text-sm text-muted">Start a new observation or open a draft or completed record.</p>
+            {mergedMode ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(
+                  [
+                    ['sos', obsLabel('sos')],
+                    ['qos', obsLabel('qos')],
+                    ['ppo', obsLabel('ppo')],
+                  ] as const
+                ).map(([k, label]) => (
+                  <Link
+                    key={k}
+                    to={`/ldr-tools/sos/new?osKind=${k}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-sky-600/35 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-500/20 dark:text-sky-200 dark:hover:bg-sky-500/15"
+                  >
+                    <Plus className="size-3.5 shrink-0" aria-hidden />
+                    New {label}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 sm:max-w-none sm:flex-initial">
@@ -355,13 +375,15 @@ export function ObsListPage({ kind }: { kind?: ObsKind }) {
               className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted/55"
             />
           </label>
-          <Link
-            to={`${base}/new`}
-            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600"
-          >
-            <Plus className="size-4" aria-hidden />
-            New {short}
-          </Link>
+          {mergedMode ? null : (
+            <Link
+              to={`${base}/new`}
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600"
+            >
+              <Plus className="size-4" aria-hidden />
+              New {short}
+            </Link>
+          )}
         </div>
       </header>
 

@@ -11,6 +11,7 @@ import { masterCellIdsForHcObsFilter } from '../features/ldr/ldrHcObsScope'
 
 const OBS_REP_IN_CHUNK = 90
 import { CompactCategoryBars } from '../features/report/CompactCategoryBars'
+import { CompactStackedCellKindBars } from '../features/report/CompactStackedCellKindBars'
 import { CompactPeriodBars } from '../features/report/CompactPeriodBars'
 import {
   buildMonthBuckets,
@@ -856,6 +857,8 @@ type ObsSummaryRow = {
   kind: ObsKind
   completed_at: string
   completed_by_name: string
+  completed_by_user_id: string
+  master_cell_id: string
   score: number
 }
 
@@ -866,120 +869,318 @@ function tabButtonClass(active: boolean): string {
 }
 
 function ObsAllReportPage() {
-  const { hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells } = useLdrWorkspace()
+  const { masterCellJoinById, hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells } = useLdrWorkspace()
   const allowedCellIds = useMemo(
     () => masterCellIdsForHcObsFilter(hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells),
     [hcObsSiteId, hcObsPlantId, hcObsCellId, allPlants, allCells],
   )
+  const [fromDateTime, setFromDateTime] = useState(() => defaultRangeForGranularity('day').from)
+  const [toDateTime, setToDateTime] = useState(() => defaultRangeForGranularity('day').to)
+  const [filterUserId, setFilterUserId] = useState('')
+  const [brushCellId, setBrushCellId] = useState<string | null>(null)
   const [rows, setRows] = useState<ObsSummaryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const counts = useMemo(
-    () => ({
-      sos: rows.filter((r) => r.kind === 'sos').length,
-      qos: rows.filter((r) => r.kind === 'qos').length,
-      ppo: rows.filter((r) => r.kind === 'ppo').length,
-    }),
-    [rows],
-  )
+
+  const cellColumns = useMemo(() => {
+    const ids = [...allowedCellIds]
+    ids.sort((a, b) => {
+      const ja = ldrMasterCellJoinFromId(a, masterCellJoinById)
+      const jb = ldrMasterCellJoinFromId(b, masterCellJoinById)
+      const la = ja ? ldrMasterCellLabel(ja) : a
+      const lb = jb ? ldrMasterCellLabel(jb) : b
+      return la.localeCompare(lb, undefined, { sensitivity: 'base' })
+    })
+    return ids.map((cellId) => {
+      const j = ldrMasterCellJoinFromId(cellId, masterCellJoinById)
+      const label = j ? ldrMasterCellLabel(j) : `${cellId.slice(0, 8)}…`
+      return { cellId, label }
+    })
+  }, [allowedCellIds, masterCellJoinById])
+
+  const load = useCallback(async () => {
+    setError(null)
+    setLoading(true)
+    try {
+      if (allowedCellIds.length === 0) {
+        setRows([])
+        setLoading(false)
+        return
+      }
+      const { fromIso, toIso } = toIsoBounds(fromDateTime, toDateTime)
+      const loadTable = async (table: 'sos_records' | 'qos_records' | 'ppo_records', k: ObsKind) => {
+        const mergedChunk: ObsSummaryRow[] = []
+        for (let i = 0; i < allowedCellIds.length; i += OBS_REP_IN_CHUNK) {
+          const slice = allowedCellIds.slice(i, i + OBS_REP_IN_CHUNK)
+          let q = supabase
+            .from(table)
+            .select('id, completed_at, completed_by_name, completed_by_user_id, score, master_cell_id')
+            .not('completed_at', 'is', null)
+            .gte('completed_at', fromIso)
+            .lte('completed_at', toIso)
+            .in('master_cell_id', slice)
+            .order('completed_at', { ascending: false })
+            .limit(400)
+          if (filterUserId) q = q.eq('completed_by_user_id', filterUserId)
+          const res = await q
+          if (res.error) throw new Error(res.error.message)
+          mergedChunk.push(
+            ...((res.data ?? []) as Omit<ObsSummaryRow, 'kind'>[]).map((r) => ({ ...r, kind: k })),
+          )
+        }
+        return mergedChunk
+      }
+      const [sosRows, qosRows, ppoRows] = await Promise.all([
+        loadTable('sos_records', 'sos'),
+        loadTable('qos_records', 'qos'),
+        loadTable('ppo_records', 'ppo'),
+      ])
+      const merged = [...sosRows, ...qosRows, ...ppoRows].sort(
+        (a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime(),
+      )
+      setRows(merged.slice(0, 800))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load summary report.')
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+  }, [allowedCellIds, fromDateTime, toDateTime, filterUserId])
 
   useEffect(() => {
     queueMicrotask(() => {
-      void (async () => {
-        setLoading(true)
-        setError(null)
-        try {
-          if (allowedCellIds.length === 0) {
-            setRows([])
-            setLoading(false)
-            return
-          }
-          const loadTable = async (table: 'sos_records' | 'qos_records' | 'ppo_records', k: ObsKind) => {
-            const mergedChunk: ObsSummaryRow[] = []
-            for (let i = 0; i < allowedCellIds.length; i += OBS_REP_IN_CHUNK) {
-              const slice = allowedCellIds.slice(i, i + OBS_REP_IN_CHUNK)
-              const res = await supabase
-                .from(table)
-                .select('id, completed_at, completed_by_name, score')
-                .not('completed_at', 'is', null)
-                .in('master_cell_id', slice)
-                .limit(300)
-              if (res.error) throw new Error(res.error.message)
-              mergedChunk.push(
-                ...((res.data ?? []) as Omit<ObsSummaryRow, 'kind'>[]).map((r) => ({ ...r, kind: k })),
-              )
-            }
-            return mergedChunk
-          }
-          const [sosRows, qosRows, ppoRows] = await Promise.all([
-            loadTable('sos_records', 'sos'),
-            loadTable('qos_records', 'qos'),
-            loadTable('ppo_records', 'ppo'),
-          ])
-          const merged = [...sosRows, ...qosRows, ...ppoRows].sort(
-            (a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime(),
-          )
-          setRows(merged)
-        } catch (e) {
-          setError(e instanceof Error ? e.message : 'Failed to load summary report.')
-        } finally {
-          setLoading(false)
-        }
-      })()
+      void load()
     })
-  }, [allowedCellIds])
+  }, [load])
+
+  useEffect(() => {
+    setBrushCellId(null)
+  }, [fromDateTime, toDateTime, filterUserId, allowedCellIds])
+
+  const completerOptions = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const r of rows) {
+      const id = r.completed_by_user_id
+      const name = r.completed_by_name?.trim() || id.slice(0, 8)
+      if (!m.has(id)) m.set(id, name)
+    }
+    return [...m.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [rows])
+
+  const cellKindCounts = useMemo(() => {
+    return cellColumns.map(({ cellId, label }) => {
+      const inCell = rows.filter((r) => r.master_cell_id === cellId)
+      return {
+        cellId,
+        label,
+        sos: inCell.filter((r) => r.kind === 'sos').length,
+        qos: inCell.filter((r) => r.kind === 'qos').length,
+        ppo: inCell.filter((r) => r.kind === 'ppo').length,
+      }
+    })
+  }, [rows, cellColumns])
+
+  const displayRows = useMemo(() => {
+    if (!brushCellId) return rows
+    return rows.filter((r) => r.master_cell_id === brushCellId)
+  }, [rows, brushCellId])
+
+  const counts = useMemo(
+    () => ({
+      sos: displayRows.filter((r) => r.kind === 'sos').length,
+      qos: displayRows.filter((r) => r.kind === 'qos').length,
+      ppo: displayRows.filter((r) => r.kind === 'ppo').length,
+    }),
+    [displayRows],
+  )
+
+  const selectedCellLabel = brushCellId
+    ? cellColumns.find((c) => c.cellId === brushCellId)?.label ?? brushCellId.slice(0, 8)
+    : null
+
+  function applyRangePreset(days: number) {
+    setFromDateTime(dateTimeInputValueFromNowMinusDays(days))
+    setToDateTime(formatForDatetimeLocal(new Date()))
+    setBrushCellId(null)
+  }
+
+  function clearAllFilters() {
+    const r = defaultRangeForGranularity('day')
+    setFromDateTime(r.from)
+    setToDateTime(r.to)
+    setFilterUserId('')
+    setBrushCellId(null)
+  }
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 shadow-sm">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs font-medium text-muted">
+            Start (date and time)
+            <input
+              type="datetime-local"
+              className="mt-1 block min-h-10 min-w-[11rem] rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+              value={fromDateTime}
+              onChange={(e) => setFromDateTime(e.target.value)}
+            />
+          </label>
+          <label className="text-xs font-medium text-muted">
+            End (date and time)
+            <input
+              type="datetime-local"
+              className="mt-1 block min-h-10 min-w-[11rem] rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+              value={toDateTime}
+              onChange={(e) => setToDateTime(e.target.value)}
+            />
+          </label>
+          <label className="text-xs font-medium text-muted">
+            Completer
+            <select
+              className="mt-1 block h-10 min-w-[10rem] rounded-lg border border-border bg-surface px-3 text-sm"
+              value={filterUserId}
+              onChange={(e) => setFilterUserId(e.target.value)}
+            >
+              <option value="">All</option>
+              {completerOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="h-10 rounded-lg border border-border px-3 text-xs text-muted hover:bg-surface-raised"
+              onClick={() => applyRangePreset(7)}
+            >
+              Last 7d
+            </button>
+            <button
+              type="button"
+              className="h-10 rounded-lg border border-border px-3 text-xs text-muted hover:bg-surface-raised"
+              onClick={() => applyRangePreset(30)}
+            >
+              Last 30d
+            </button>
+            <button
+              type="button"
+              className="h-10 rounded-lg border border-border px-3 text-xs text-muted hover:bg-surface-raised"
+              onClick={() => applyRangePreset(90)}
+            >
+              Last 90d
+            </button>
+            <button
+              type="button"
+              className="h-10 rounded-lg border border-border bg-surface-raised px-3 text-xs font-semibold text-fg hover:bg-surface-raised/80"
+              onClick={clearAllFilters}
+            >
+              Reset all
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-muted">
+          Totals and the table reflect the date range and completer. Click a column in the chart to filter the list by
+          cell; the chart stays full (same idea as other OS report charts).
+        </p>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-border bg-surface p-4 text-sm">
-          <div className="text-xs text-muted">SOS done</div>
+          <div className="text-xs text-muted">SOS {brushCellId ? '(filtered)' : ''}</div>
           <div className="mt-1 text-2xl font-semibold">{counts.sos}</div>
         </div>
         <div className="rounded-xl border border-border bg-surface p-4 text-sm">
-          <div className="text-xs text-muted">QOS done</div>
+          <div className="text-xs text-muted">QOS {brushCellId ? '(filtered)' : ''}</div>
           <div className="mt-1 text-2xl font-semibold">{counts.qos}</div>
         </div>
         <div className="rounded-xl border border-border bg-surface p-4 text-sm">
-          <div className="text-xs text-muted">PPOS done</div>
+          <div className="text-xs text-muted">PPOS {brushCellId ? '(filtered)' : ''}</div>
           <div className="mt-1 text-2xl font-semibold">{counts.ppo}</div>
         </div>
       </div>
+
+      {brushCellId ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-raised/40 px-3 py-2 text-xs">
+          <span className="font-semibold text-muted">Cell filter:</span>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-full border border-sky-600/40 bg-sky-500/10 px-2 py-1 font-medium text-sky-900 dark:text-sky-100"
+            onClick={() => setBrushCellId(null)}
+          >
+            {selectedCellLabel}
+            <X className="size-3.5 shrink-0" aria-hidden />
+          </button>
+        </div>
+      ) : null}
+
+      <CompactStackedCellKindBars
+        title="Observations by cell"
+        subtitle="Stacked SOS / QOS / PPOS per location in scope. Click a column to filter the table; chart totals stay for all cells."
+        cells={cellKindCounts}
+        selectedCellId={brushCellId}
+        onToggleCell={(id) => setBrushCellId((cur) => (cur === id ? null : id))}
+        emptyHint="No cells in the current site / plant / cell scope."
+      />
+
       {error ? (
         <div className="rounded-2xl border border-danger/35 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>
       ) : null}
       <div className="overflow-x-auto rounded-2xl border border-border bg-surface shadow-sm">
+        <div className="border-b border-border bg-surface-raised/60 px-4 py-2">
+          <h2 className="text-sm font-semibold text-fg">Records</h2>
+          <p className="text-xs text-muted">
+            Showing {displayRows.length} of {rows.length} loaded in range
+            {brushCellId ? ' (cell filter on)' : ''}.
+          </p>
+        </div>
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-border bg-surface-raised/60 text-xs font-semibold uppercase text-muted">
             <tr>
               <th className="px-4 py-3">When</th>
               <th className="px-4 py-3">System</th>
+              <th className="px-4 py-3">Location</th>
               <th className="px-4 py-3">Completer</th>
               <th className="px-4 py-3">Score</th>
+              <th className="px-4 py-3 text-right"> </th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-muted">
+                <td colSpan={6} className="px-4 py-8 text-center text-muted">
                   Loading…
                 </td>
               </tr>
-            ) : rows.length === 0 ? (
+            ) : displayRows.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-muted">
-                  No submitted records.
+                <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                  No submitted records match the current filters.
                 </td>
               </tr>
             ) : (
-              rows.slice(0, 200).map((r) => (
-                <tr key={`${r.kind}-${r.id}`} className="border-b border-border/80">
-                  <td className="px-4 py-2 tabular-nums text-muted">{new Date(r.completed_at).toLocaleString()}</td>
-                  <td className="px-4 py-2">{r.kind === 'sos' ? 'S' : r.kind === 'qos' ? 'Q' : 'PP'}</td>
-                  <td className="px-4 py-2">{r.completed_by_name}</td>
-                  <td className="px-4 py-2">{r.score}%</td>
-                </tr>
-              ))
+              displayRows.slice(0, 200).map((r) => {
+                const j = ldrMasterCellJoinFromId(r.master_cell_id, masterCellJoinById)
+                const loc = j ? ldrMasterCellLabel(j) : `${r.master_cell_id.slice(0, 8)}…`
+                return (
+                  <tr key={`${r.kind}-${r.id}`} className="border-b border-border/80">
+                    <td className="px-4 py-2 tabular-nums text-muted">{new Date(r.completed_at).toLocaleString()}</td>
+                    <td className="px-4 py-2">{r.kind === 'sos' ? 'S' : r.kind === 'qos' ? 'Q' : 'PP'}</td>
+                    <td className="px-4 py-2">{loc}</td>
+                    <td className="px-4 py-2">{r.completed_by_name}</td>
+                    <td className="px-4 py-2">{r.score}%</td>
+                    <td className="px-4 py-2 text-right">
+                      <Link
+                        to={`${obsBasePath(r.kind)}/${r.id}`}
+                        className="text-sm font-semibold text-sky-700 hover:underline dark:text-sky-300"
+                      >
+                        Open
+                      </Link>
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>

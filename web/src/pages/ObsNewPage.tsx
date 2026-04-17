@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ClipboardList } from 'lucide-react'
+import { ClipboardList } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLdrWorkspace } from '../features/ldr/LdrWorkspaceContext'
@@ -20,7 +20,7 @@ type TypeRow = {
 
 type TemplateRow = { id: string; version: number; name: string; active: boolean }
 
-export function ObsNewPage({ kind }: { kind: ObsKind }) {
+export function ObsNewPage({ kind, embedded = false }: { kind: ObsKind; embedded?: boolean }) {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { user } = useAuth()
@@ -399,23 +399,20 @@ export function ObsNewPage({ kind }: { kind: ObsKind }) {
     'h-10 w-full min-w-0 rounded-lg border border-border-strong bg-surface px-3 text-sm text-fg shadow-sm'
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-center gap-3">
-        <Link
-          to={base}
-          className="inline-flex size-10 items-center justify-center rounded-xl border border-border text-muted hover:bg-surface-raised"
-          aria-label="Back to list"
-        >
-          <ArrowLeft className="size-5" />
-        </Link>
-        <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-800 dark:text-sky-200">
-          <ClipboardList className="size-6" aria-hidden />
-        </span>
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">New {obsLabel(kind)}</h1>
-          <p className="text-sm text-muted">{obsTitle(kind)} — choose type, then continue on the next screen. Location comes from the site / plant / cell bar above.</p>
+    <div className={embedded ? 'space-y-6' : 'mx-auto max-w-2xl space-y-6'}>
+      {embedded ? null : (
+        <div className="flex items-center gap-3">
+          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-800 dark:text-sky-200">
+            <ClipboardList className="size-6" aria-hidden />
+          </span>
+          <div>
+            <h1 className="font-display text-2xl font-semibold tracking-tight">New {obsLabel(kind)}</h1>
+            <p className="text-sm text-muted">
+              {obsTitle(kind)} — choose type, then continue on the next screen. Location comes from the site / plant / cell bar above.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {error ? (
         <div className="rounded-2xl border border-danger/35 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
@@ -493,49 +490,67 @@ export function PpoNewPage() {
 }
 
 export function ObsSystemNewPage() {
-  const [searchParams] = useSearchParams()
-  const rosterContext =
-    Boolean(searchParams.get('assignmentId')) || Boolean(searchParams.get('activityId')) || Boolean(searchParams.get('masterCellId'))
+  const [searchParams, setSearchParams] = useSearchParams()
   const osKindParam = searchParams.get('osKind')
-  const prefilledKind: ObsKind | null =
-    rosterContext && (osKindParam === 'sos' || osKindParam === 'qos' || osKindParam === 'ppo') ? osKindParam : null
-  const [selectedKind, setSelectedKind] = useState<ObsKind | null>(prefilledKind)
+  const selectedKind: ObsKind | null =
+    osKindParam === 'sos' || osKindParam === 'qos' || osKindParam === 'ppo' ? osKindParam : null
+
+  function setOsKind(k: ObsKind) {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev)
+        p.set('osKind', k)
+        return p
+      },
+      { replace: true },
+    )
+  }
 
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-fg">Observation System</h2>
-        <p className="mt-1 text-xs text-muted">Select one system before choosing Type.</p>
-        <div
-          className={`mt-3 inline-flex w-fit max-w-full flex-wrap gap-2 rounded-xl border p-2 ${
-            selectedKind ? 'border-border' : 'border-danger/45 bg-danger/10'
-          }`}
-        >
-          {(
-            [
-              ['sos', 'S'],
-              ['qos', 'Q'],
-              ['ppo', 'PP'],
-            ] as const
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => {
-                setSelectedKind(k)
-              }}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                selectedKind === k
-                  ? 'bg-sky-600 text-white'
-                  : 'border border-border bg-surface text-muted hover:bg-surface-raised'
+        <div className="flex flex-wrap items-start gap-3">
+          <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-800 dark:text-sky-200">
+            <ClipboardList className="size-5" aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1 space-y-1">
+            <h2 className="text-sm font-semibold text-fg">Observation System</h2>
+            <p className="text-xs text-muted">Choose a system, then pick Type below. Location comes from the site / plant / cell bar above.</p>
+            <div
+              className={`mt-3 inline-flex w-fit max-w-full flex-wrap gap-2 rounded-xl border p-2 ${
+                selectedKind ? 'border-border' : 'border-danger/45 bg-danger/10'
               }`}
+              role="group"
+              aria-label="Observation kind"
             >
-              {label}
-            </button>
-          ))}
+              {(
+                [
+                  ['sos', obsLabel('sos')],
+                  ['qos', obsLabel('qos')],
+                  ['ppo', obsLabel('ppo')],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setOsKind(k)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                    selectedKind === k ? 'bg-sky-600 text-white' : 'border border-border bg-surface text-muted hover:bg-surface-raised'
+                  }`}
+                >
+                  New {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
+        {selectedKind ? (
+          <div className="mt-5 border-t border-border pt-5">
+            <p className="text-sm font-semibold text-fg">{obsTitle(selectedKind)}</p>
+            <ObsNewPage kind={selectedKind} embedded />
+          </div>
+        ) : null}
       </div>
-      {selectedKind ? <ObsNewPage kind={selectedKind} /> : null}
     </div>
   )
 }
