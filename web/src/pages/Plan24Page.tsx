@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CalendarDays,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   CircleDot,
   ClipboardList,
-  Inbox,
   Loader2,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   Search,
   Trash2,
@@ -621,7 +621,7 @@ export function Plan24Page() {
         </div>
         <p className="max-w-3xl text-sm text-muted">{shiftLabel}</p>
         <p className="max-w-3xl text-xs text-muted">
-          Drag checks to move time or change role · click a role header to assign a person · Unassigned and Tasks open below the grid ·{' '}
+          Drag checks to move time or change role · click a role header to assign a person · Unassigned slides in from the right; Tasks open below the grid ·{' '}
           <kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">←</kbd>/<kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">→</kbd> day · <kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">[</kbd>/<kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">]</kbd> shift · <kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">T</kbd> today
         </p>
       </header>
@@ -705,6 +705,24 @@ export function Plan24Page() {
             })
           )}
         </div>
+        <button
+          type="button"
+          className={`ml-auto inline-flex items-center rounded-xl border border-border bg-surface py-2 text-xs font-semibold text-fg shadow-sm hover:bg-surface-raised/80 ${
+            panelOpen ? 'gap-1.5 px-3' : 'px-2'
+          }`}
+          onClick={() => setPanelOpen((o) => !o)}
+          aria-expanded={panelOpen}
+          aria-controls="plan24-unassigned-drawer"
+          aria-label={panelOpen ? 'Close unassigned panel' : 'Open unassigned panel'}
+          title={`${panelOpen ? 'Close' : 'Open'} unassigned · ${unassignedEvents.length}`}
+        >
+          {panelOpen ? <PanelRightClose className="size-4 shrink-0" aria-hidden /> : <PanelRightOpen className="size-4 shrink-0" aria-hidden />}
+          {panelOpen ? (
+            <span>Unassigned{unassignedEvents.length ? ` · ${unassignedEvents.length}` : ''}</span>
+          ) : unassignedEvents.length ? (
+            <span className="ml-1 rounded-full bg-accent px-1.5 text-[10px] text-white">{unassignedEvents.length}</span>
+          ) : null}
+        </button>
       </div>
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -735,72 +753,33 @@ export function Plan24Page() {
             <div className="min-h-[12rem] flex-1 rounded-2xl border border-dashed border-border bg-surface-raised/30" />
           )}
 
-          {panelOpen || taskBarOpen ? (
-            <div
-              role="presentation"
-              className="absolute inset-0 z-10 rounded-2xl bg-black/25"
-              onClick={() => {
-                setPanelOpen(false)
-                setTaskBarOpen(false)
-              }}
-            />
-          ) : null}
-        </div>
-
-        <div className="shrink-0 rounded-xl border border-border bg-surface shadow-[0_-2px_16px_rgba(0,0,0,0.06)] dark:shadow-[0_-2px_16px_rgba(0,0,0,0.25)]">
-          <div className="flex h-11 items-stretch divide-x divide-border">
-            <button
-              type="button"
-              className={`flex min-w-0 flex-1 items-center justify-center gap-2 px-2 text-xs font-semibold transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06] ${
-                panelOpen ? 'bg-accent-dim/60 text-accent' : 'text-fg/85'
-              }`}
-              onClick={() => {
-                setPanelOpen((o) => {
-                  const next = !o
-                  if (next) setTaskBarOpen(false)
-                  return next
-                })
-              }}
-              aria-expanded={panelOpen}
-              aria-controls="plan24-unassigned-panel"
-            >
-              <Inbox className="size-4 shrink-0 opacity-80" aria-hidden />
-              <span className="truncate">Unassigned</span>
-              {unassignedEvents.length > 0 ? (
-                <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] text-white">
-                  {unassignedEvents.length}
-                </span>
-              ) : null}
-              {panelOpen ? <ChevronDown className="size-3.5 shrink-0 opacity-60" aria-hidden /> : <ChevronUp className="size-3.5 shrink-0 opacity-60" aria-hidden />}
-            </button>
-            <button
-              type="button"
-              className={`flex min-w-0 flex-1 items-center justify-center gap-2 px-2 text-xs font-semibold transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.06] ${
-                taskBarOpen ? 'bg-accent-dim/60 text-accent' : 'text-fg/85'
-              }`}
-              onClick={() => {
-                setTaskBarOpen((o) => {
-                  const next = !o
-                  if (next) setPanelOpen(false)
-                  return next
-                })
-              }}
-              aria-expanded={taskBarOpen}
-              aria-controls="plan24-tasks-panel"
-            >
-              <ClipboardList className="size-4 shrink-0 opacity-80" aria-hidden />
-              <span className="truncate">Tasks</span>
-              {taskBarOpen ? <ChevronDown className="size-3.5 shrink-0 opacity-60" aria-hidden /> : <ChevronUp className="size-3.5 shrink-0 opacity-60" aria-hidden />}
-            </button>
-          </div>
-
           {panelOpen ? (
             <div
-              id="plan24-unassigned-panel"
-              className="max-h-[42vh] space-y-2 overflow-y-auto border-t border-border p-2"
-              role="region"
-              aria-label="Unassigned checks"
-            >
+              role="presentation"
+              className="absolute inset-0 z-10 rounded-2xl bg-black/25 transition-opacity duration-300"
+              onClick={() => setPanelOpen(false)}
+            />
+          ) : null}
+
+          <aside
+            id="plan24-unassigned-drawer"
+            className={`absolute inset-y-0 right-0 z-20 flex w-[min(18rem,calc(100vw-2rem))] max-w-full min-w-0 flex-col rounded-l-2xl border border-border-strong border-r-0 bg-surface shadow-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${
+              panelOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'
+            }`}
+            aria-hidden={!panelOpen}
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-fg/70">Unassigned</span>
+              <button
+                type="button"
+                className="inline-flex rounded-lg p-1 text-muted hover:bg-black/[0.06] hover:text-fg"
+                aria-label="Close unassigned panel"
+                onClick={() => setPanelOpen(false)}
+              >
+                <PanelRightClose className="size-4" aria-hidden />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-2">
               {unassignedEvents.length === 0 ? (
                 <p className="px-1 py-2 text-xs text-muted">No unassigned checks.</p>
               ) : (
@@ -824,60 +803,87 @@ export function Plan24Page() {
                 ))
               )}
             </div>
-          ) : null}
+          </aside>
+        </div>
 
-          {taskBarOpen ? (
-            <div id="plan24-tasks-panel" className="border-t border-border px-4 pb-3 pt-2" role="region" aria-label="Tasks">
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="text-xs text-muted">
-                  Role
-                  <select
-                    className={`${inputClass} mt-0.5 min-w-[8rem]`}
-                    value={taskRoleName}
-                    onChange={(e) => setTaskRoleName(e.target.value)}
+        <div className="shrink-0 overflow-hidden rounded-t-xl border border-border bg-surface shadow-[0_-4px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_24px_rgba(0,0,0,0.28)]">
+          <button
+            type="button"
+            className="flex h-11 w-full items-center justify-between px-4 text-left text-xs font-semibold uppercase tracking-wide text-fg/80 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+            onClick={() => setTaskBarOpen((o) => !o)}
+            aria-expanded={taskBarOpen}
+            aria-controls="plan24-tasks-panel"
+          >
+            <span className="inline-flex items-center gap-2">
+              <ClipboardList className="size-4 opacity-80" aria-hidden />
+              Tasks
+            </span>
+            <span className="inline-flex items-center gap-1 text-[10px] font-normal text-muted">
+              {taskBarOpen ? 'Hide' : 'Show'}
+              <ChevronUp
+                className={`size-4 shrink-0 transition-transform duration-300 ease-out motion-reduce:transition-none ${taskBarOpen ? 'rotate-180' : ''}`}
+                aria-hidden
+              />
+            </span>
+          </button>
+          <div
+            className={`grid w-full transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
+              taskBarOpen ? '[grid-template-rows:1fr]' : '[grid-template-rows:0fr]'
+            }`}
+          >
+            <div id="plan24-tasks-panel" className="min-h-0 overflow-hidden border-t border-border">
+              <div className="max-h-[min(40vh,22rem)] overflow-y-auto overscroll-contain px-4 pb-3 pt-2" role="region" aria-label="Tasks">
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="text-xs text-muted">
+                    Role
+                    <select
+                      className={`${inputClass} mt-0.5 min-w-[8rem]`}
+                      value={taskRoleName}
+                      onChange={(e) => setTaskRoleName(e.target.value)}
+                    >
+                      {activeRoles.map((r) => (
+                        <option key={r.id} value={r.name}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="min-w-[12rem] flex-1 text-xs text-muted">
+                    New task
+                    <input
+                      className={`${inputClass} mt-0.5`}
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      placeholder="Describe the task"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95"
+                    onClick={() => void addTask()}
                   >
-                    {activeRoles.map((r) => (
-                      <option key={r.id} value={r.name}>
-                        {r.name}
-                      </option>
+                    <Plus className="mr-1 inline size-3.5 align-text-bottom" aria-hidden />
+                    Add
+                  </button>
+                </div>
+                <ul className="mt-3 space-y-1 text-sm">
+                  {tasks
+                    .filter((t) => t.role_name === taskRoleName)
+                    .map((t) => (
+                      <li key={t.id} className="flex items-center gap-2 rounded-lg border border-border px-2 py-1.5">
+                        <input
+                          type="checkbox"
+                          className="size-4 rounded border-border"
+                          checked={t.done}
+                          onChange={() => void toggleTask(t)}
+                        />
+                        <span className={t.done ? 'text-muted line-through' : ''}>{t.title}</span>
+                      </li>
                     ))}
-                  </select>
-                </label>
-                <label className="min-w-[12rem] flex-1 text-xs text-muted">
-                  New task
-                  <input
-                    className={`${inputClass} mt-0.5`}
-                    value={newTaskTitle}
-                    onChange={(e) => setNewTaskTitle(e.target.value)}
-                    placeholder="Describe the task"
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95"
-                  onClick={() => void addTask()}
-                >
-                  <Plus className="mr-1 inline size-3.5 align-text-bottom" aria-hidden />
-                  Add
-                </button>
+                </ul>
               </div>
-              <ul className="mt-3 max-h-[min(28vh,16rem)] space-y-1 overflow-y-auto text-sm">
-                {tasks
-                  .filter((t) => t.role_name === taskRoleName)
-                  .map((t) => (
-                    <li key={t.id} className="flex items-center gap-2 rounded-lg border border-border px-2 py-1.5">
-                      <input
-                        type="checkbox"
-                        className="size-4 rounded border-border"
-                        checked={t.done}
-                        onChange={() => void toggleTask(t)}
-                      />
-                      <span className={t.done ? 'text-muted line-through' : ''}>{t.title}</span>
-                    </li>
-                  ))}
-              </ul>
             </div>
-          ) : null}
+          </div>
         </div>
       </div>
 
