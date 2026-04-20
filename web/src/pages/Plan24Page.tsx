@@ -490,15 +490,18 @@ export function Plan24Page() {
         </div>
         <button
           type="button"
-          className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-xs font-semibold text-fg shadow-sm hover:bg-surface-raised/80 lg:hidden"
+          className={`ml-auto inline-flex items-center rounded-xl border border-border bg-surface py-2 text-xs font-semibold text-fg shadow-sm hover:bg-surface-raised/80 ${
+            panelOpen ? 'gap-1.5 px-3' : 'px-2'
+          }`}
           onClick={() => setPanelOpen((o) => !o)}
+          aria-label={panelOpen ? 'Close unassigned panel' : 'Open unassigned panel'}
         >
           {panelOpen ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
-          Unassigned
+          {panelOpen ? 'Unassigned' : null}
         </button>
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 gap-2 pb-28">
+      <div className="relative min-h-0 min-w-0 flex-1 pb-28">
         {roster ? (
           <Plan24Grid
             windowStart={windowBounds.start}
@@ -516,16 +519,25 @@ export function Plan24Page() {
           <div className="min-h-[12rem] flex-1 rounded-2xl border border-dashed border-border bg-surface-raised/30" />
         )}
 
-        <aside
-          className={`min-h-0 flex-col rounded-2xl border border-border-strong bg-surface shadow-sm transition-[width,opacity] ${
-            panelOpen ? 'flex w-72 shrink-0' : 'hidden w-0 overflow-hidden lg:flex lg:w-0 lg:shrink-0 lg:border-transparent lg:opacity-0'
+        <div
+          className={`absolute inset-0 z-10 rounded-2xl bg-black/25 transition-opacity ${
+            panelOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
           }`}
+          onClick={() => setPanelOpen(false)}
+          aria-hidden={!panelOpen}
+        />
+
+        <aside
+          className={`absolute inset-y-0 right-0 z-20 flex w-72 min-h-0 flex-col rounded-2xl border border-border-strong bg-surface shadow-xl transition-transform duration-200 ${
+            panelOpen ? 'translate-x-0' : 'translate-x-[110%]'
+          }`}
+          aria-hidden={!panelOpen}
         >
           <div className="flex items-center justify-between border-b border-border px-3 py-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-fg/70">Unassigned</span>
             <button
               type="button"
-              className="hidden rounded-lg p-1 text-muted hover:bg-black/[0.06] hover:text-fg lg:inline-flex"
+              className="inline-flex rounded-lg p-1 text-muted hover:bg-black/[0.06] hover:text-fg"
               aria-label="Toggle unassigned panel"
               onClick={() => setPanelOpen((o) => !o)}
             >

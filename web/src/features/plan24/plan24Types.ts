@@ -44,6 +44,41 @@ export type Plan24RosterRow = {
   sort_order: number
   is_active: boolean
   effective_from: string | null
+  pattern_length: number
+  pattern_start_date: string | null
+}
+
+export type Plan24TeamRow = {
+  id: string
+  roster_id: string
+  name: string
+  color: string
+  sort_order: number
+}
+
+export type Plan24PatternSlotRow = {
+  id: string
+  roster_id: string
+  pattern_day: number
+  shift_kind: string
+  team_id: string | null
+}
+
+export type Plan24RoleTeamDefaultRow = {
+  id: string
+  role_id: string
+  team_id: string
+  person_id: string | null
+}
+
+export type Plan24ShiftRow = {
+  id: string
+  roster_id: string
+  kind: string
+  display_name: string | null
+  start_local: string
+  end_local: string
+  sort_order: number
 }
 
 export type Plan24RoleAssignmentRow = {
