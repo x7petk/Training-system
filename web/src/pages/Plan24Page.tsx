@@ -588,7 +588,7 @@ export function Plan24Page() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-3">
       <header className="shrink-0 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="font-display text-2xl font-semibold tracking-tight">Plan 24</h1>
@@ -716,7 +716,7 @@ export function Plan24Page() {
         </button>
       </div>
 
-      <div className="relative min-h-0 min-w-0 flex-1 pb-28">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col pb-16 md:pb-20">
         {roster && shifts.length > 0 && activeRoles.length > 0 ? (
           <Plan24Grid
             windowStart={windowBounds.start}

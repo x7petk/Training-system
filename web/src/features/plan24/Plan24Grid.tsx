@@ -315,7 +315,7 @@ export function Plan24Grid(props: {
   const nowTopPx = nowMinFromStart !== null ? nowMinFromStart * pixelsPerMinute : null
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border-strong bg-surface shadow-sm">
+    <div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border-strong bg-surface shadow-sm">
       {/* Horizontal scroll wraps header + body so column widths stay identical (no scrollbar mismatch). */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-auto overflow-y-hidden">
         <div
