@@ -5,12 +5,12 @@ export function parseLocalTimeParts(s: string): { h: number; m: number } {
   return { h: Number(m[1]), m: Number(m[2]) }
 }
 
-export type ShiftRow = { kind: 'day' | 'night'; start_local: string; end_local: string }
+export type ShiftRow = { kind: string; start_local: string; end_local: string; display_name?: string | null }
 
 /**
  * Shift window in browser-local time. Night (e.g. 17:00–05:00) spans to the next calendar day (D1, D14).
  */
-export function shiftWindowBounds(planDateYmd: string, shiftKind: 'day' | 'night', shifts: ShiftRow[]): { start: Date; end: Date } {
+export function shiftWindowBounds(planDateYmd: string, shiftKind: string, shifts: ShiftRow[]): { start: Date; end: Date } {
   const row = shifts.find((s) => s.kind === shiftKind)
   if (!row) {
     const d = parseYmdLocal(planDateYmd)
@@ -40,4 +40,17 @@ export function minutesBetween(a: Date, b: Date): number {
 
 export function addMinutes(d: Date, n: number): Date {
   return new Date(d.getTime() + n * 60000)
+}
+
+/** 1-based pattern day index from roster anchor date (UTC date arithmetic). */
+export function patternDayIndex(planDateYmd: string, startYmd: string | null, length: number): number {
+  const L = Math.max(1, length)
+  if (!startYmd) return 1
+  const [y, mo, d] = planDateYmd.split('-').map(Number)
+  const [y1, mo1, d1] = startYmd.split('-').map(Number)
+  const t0 = Date.UTC(y, mo - 1, d)
+  const t1 = Date.UTC(y1, mo1 - 1, d1)
+  const diff = Math.floor((t0 - t1) / 86400000)
+  const mod = ((diff % L) + L) % L
+  return mod + 1
 }

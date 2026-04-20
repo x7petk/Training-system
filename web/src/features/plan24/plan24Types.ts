@@ -1,11 +1,12 @@
-export type Plan24ShiftKind = 'day' | 'night'
+/** Matches `plan24_roster_shifts.kind` (e.g. day, afternoon, night). */
+export type Plan24ShiftKind = string
 
 export type Plan24EventRow = {
   id: string
   master_cell_id: string
   roster_id: string | null
   plan_date: string
-  shift_kind: Plan24ShiftKind
+  shift_kind: string
   role_name: string | null
   title: string
   event_type: string
@@ -44,8 +45,9 @@ export type Plan24RosterRow = {
   sort_order: number
   is_active: boolean
   effective_from: string | null
-  pattern_length: number
-  pattern_start_date: string | null
+  /** Present after roster migration; default 8 in UI when missing. */
+  pattern_length?: number
+  pattern_start_date?: string | null
 }
 
 export type Plan24TeamRow = {
@@ -84,7 +86,7 @@ export type Plan24ShiftRow = {
 export type Plan24RoleAssignmentRow = {
   roster_id: string
   plan_date: string
-  shift_kind: Plan24ShiftKind
+  shift_kind: string
   role_name: string
   person_id: string | null
 }

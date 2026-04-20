@@ -4,15 +4,18 @@ import { supabase } from '../lib/supabase'
 import { localYMD } from '../lib/dueDateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { Plan24Grid, PLAN24_DRAG_MIME } from '../features/plan24/Plan24Grid'
-import { shiftWindowBounds, type ShiftRow } from '../features/plan24/plan24ShiftUtils'
+import { patternDayIndex, shiftWindowBounds, type ShiftRow } from '../features/plan24/plan24ShiftUtils'
 import type {
   Plan24EventRow,
+  Plan24PatternSlotRow,
+  Plan24RoleTeamDefaultRow,
   Plan24RosterRoleRow,
   Plan24RosterRow,
   Plan24RoleAssignmentRow,
   Plan24ShiftKind,
   Plan24SubTask,
   Plan24TaskRow,
+  Plan24TeamRow,
 } from '../features/plan24/plan24Types'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { addMinutes, minutesBetween } from '../features/plan24/plan24ShiftUtils'
@@ -30,10 +33,11 @@ function personLabel(p: {
   return a || p.display_name || p.id.slice(0, 8)
 }
 
-function shiftDefaultPersonId(r: Plan24RosterRoleRow, sk: Plan24ShiftKind): string | null {
-  const day = r.default_person_day_id ?? r.default_person_id ?? null
-  const night = r.default_person_night_id ?? r.default_person_id ?? null
-  return sk === 'day' ? day : night
+/** Legacy defaults when no team / pattern row applies. */
+function legacyDefaultPersonId(r: Plan24RosterRoleRow, sk: string): string | null {
+  if (sk === 'day') return r.default_person_day_id ?? r.default_person_id ?? null
+  if (sk === 'night') return r.default_person_night_id ?? r.default_person_id ?? null
+  return r.default_person_id ?? null
 }
 
 function parseSubTasks(raw: unknown): Plan24SubTask[] {
@@ -64,6 +68,9 @@ export function Plan24Page() {
   const [roles, setRoles] = useState<Plan24RosterRoleRow[]>([])
   const [events, setEvents] = useState<Plan24EventRow[]>([])
   const [assignments, setAssignments] = useState<Plan24RoleAssignmentRow[]>([])
+  const [patternSlots, setPatternSlots] = useState<Plan24PatternSlotRow[]>([])
+  const [roleTeamDefaults, setRoleTeamDefaults] = useState<Plan24RoleTeamDefaultRow[]>([])
+  const [teams, setTeams] = useState<Plan24TeamRow[]>([])
   const [people, setPeople] = useState<
     { id: string; display_name: string | null; first_name: string | null; last_name: string | null }[]
   >([])
@@ -101,17 +108,45 @@ export function Plan24Page() {
     return m
   }, [assignments])
 
+  const patternDay = useMemo(() => {
+    const plen = roster?.pattern_length != null ? roster.pattern_length : 8
+    return patternDayIndex(planDate, roster?.pattern_start_date ?? null, plen)
+  }, [planDate, roster?.pattern_start_date, roster?.pattern_length])
+
+  const activeTeamId = useMemo(() => {
+    const slot = patternSlots.find((p) => p.pattern_day === patternDay && p.shift_kind === shiftKind)
+    return slot?.team_id ?? null
+  }, [patternSlots, patternDay, shiftKind])
+
   const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people])
+
+  const personIdByRole = useMemo(() => {
+    const m = new Map<string, string | null>()
+    for (const r of activeRoles) {
+      if (assignmentByRole.has(r.name)) {
+        m.set(r.name, assignmentByRole.get(r.name) ?? null)
+        continue
+      }
+      let pid: string | null = null
+      if (activeTeamId) {
+        const d = roleTeamDefaults.find((x) => x.role_id === r.id && x.team_id === activeTeamId)
+        pid = d?.person_id ?? null
+      }
+      if (!pid) pid = legacyDefaultPersonId(r, shiftKind)
+      m.set(r.name, pid)
+    }
+    return m
+  }, [activeRoles, assignmentByRole, roleTeamDefaults, activeTeamId, shiftKind])
 
   const roleCols = useMemo(
     () =>
       activeRoles.map((r) => {
-        const aid = assignmentByRole.get(r.name) ?? shiftDefaultPersonId(r, shiftKind)
+        const aid = personIdByRole.get(r.name) ?? null
         const p = aid ? peopleById.get(aid) : undefined
         const sub = p ? personLabel(p) : undefined
         return { name: r.name, subtitle: sub }
       }),
-    [activeRoles, assignmentByRole, peopleById, shiftKind],
+    [activeRoles, personIdByRole, peopleById],
   )
 
   const assignedEvents = useMemo(() => events.filter((e) => e.role_name && !e.deleted_at), [events])
@@ -124,7 +159,7 @@ export function Plan24Page() {
     setLoadErr(null)
     const rosterRes = await supabase
       .from('plan24_rosters')
-      .select('id, master_cell_id, name, sort_order, is_active, effective_from')
+      .select('id, master_cell_id, name, sort_order, is_active, effective_from, pattern_length, pattern_start_date')
       .eq('master_cell_id', cellId)
       .eq('is_active', true)
       .maybeSingle()
@@ -139,10 +174,17 @@ export function Plan24Page() {
       setRoles([])
       setEvents([])
       setAssignments([])
+      setPatternSlots([])
+      setRoleTeamDefaults([])
+      setTeams([])
       return
     }
-    const [shRes, roleRes, evRes, asRes, peRes] = await Promise.all([
-      supabase.from('plan24_roster_shifts').select('kind, start_local, end_local').eq('roster_id', r.id).order('sort_order'),
+    const [shRes, roleRes, evRes, asRes, peRes, patRes, teamRes] = await Promise.all([
+      supabase
+        .from('plan24_roster_shifts')
+        .select('kind, start_local, end_local, display_name')
+        .eq('roster_id', r.id)
+        .order('sort_order'),
       supabase
         .from('plan24_roster_roles')
         .select('id, roster_id, name, sort_order, is_active, default_person_id, default_person_day_id, default_person_night_id')
@@ -162,6 +204,8 @@ export function Plan24Page() {
         .eq('plan_date', planDate)
         .eq('shift_kind', shiftKind),
       supabase.from('people').select('id, display_name, first_name, last_name').order('display_name').limit(400),
+      supabase.from('plan24_pattern_slots').select('*').eq('roster_id', r.id),
+      supabase.from('plan24_teams').select('*').eq('roster_id', r.id).order('sort_order'),
     ])
     if (shRes.error) setLoadErr(shRes.error.message)
     else setShifts((shRes.data ?? []) as ShiftRow[])
@@ -173,6 +217,20 @@ export function Plan24Page() {
     else setAssignments((asRes.data ?? []) as Plan24RoleAssignmentRow[])
     if (peRes.error) setLoadErr(peRes.error.message)
     else setPeople((peRes.data ?? []) as typeof people)
+    if (patRes.error) setLoadErr(patRes.error.message)
+    else setPatternSlots((patRes.data ?? []) as Plan24PatternSlotRow[])
+    if (teamRes.error) setLoadErr(teamRes.error.message)
+    else setTeams((teamRes.data ?? []) as Plan24TeamRow[])
+
+    const roleRows = (roleRes.data ?? []) as Plan24RosterRoleRow[]
+    const roleIds = roleRows.map((x) => x.id)
+    if (roleIds.length > 0) {
+      const rtdRes = await supabase.from('plan24_role_team_defaults').select('*').in('role_id', roleIds)
+      if (rtdRes.error) setLoadErr(rtdRes.error.message)
+      else setRoleTeamDefaults((rtdRes.data ?? []) as Plan24RoleTeamDefaultRow[])
+    } else {
+      setRoleTeamDefaults([])
+    }
 
     if (user?.id) {
       const tRes = await supabase
@@ -188,6 +246,13 @@ export function Plan24Page() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  const shiftTabs = useMemo(() => [...shifts], [shifts])
+
+  useEffect(() => {
+    if (shiftTabs.length === 0) return
+    if (!shiftTabs.some((s) => s.kind === shiftKind)) setShiftKind(shiftTabs[0].kind)
+  }, [shiftTabs, shiftKind])
 
   useEffect(() => {
     const first = activeRoles[0]?.name ?? ''
@@ -271,13 +336,15 @@ export function Plan24Page() {
     [refresh],
   )
 
-  const onRoleHeaderClick = useCallback((roleName: string) => {
-    setRolePickName(roleName)
-    const row = activeRoles.find((r) => r.name === roleName)
-    const pid = assignmentByRole.get(roleName) ?? (row ? shiftDefaultPersonId(row, shiftKind) : null) ?? ''
-    setRolePickPersonId(pid || '')
-    setRolePickOpen(true)
-  }, [activeRoles, assignmentByRole, shiftKind])
+  const onRoleHeaderClick = useCallback(
+    (roleName: string) => {
+      setRolePickName(roleName)
+      const pid = personIdByRole.get(roleName) ?? ''
+      setRolePickPersonId(pid || '')
+      setRolePickOpen(true)
+    },
+    [personIdByRole],
+  )
 
   const onDropUnassigned = useCallback(
     async (eventId: string, roleName: string, startAt: Date) => {
@@ -400,11 +467,18 @@ export function Plan24Page() {
   const shiftLabel = useMemo(() => {
     const a = windowBounds.start
     const b = windowBounds.end
-    if (shiftKind === 'night') {
-      return `Night · ${a.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${formatClock(a)} → ${b.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${formatClock(b)}`
-    }
-    return `Day · ${a.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}`
-  }, [shiftKind, windowBounds])
+    const meta = shifts.find((s) => s.kind === shiftKind)
+    const name = (meta?.display_name?.trim() || meta?.kind || shiftKind).replace(/_/g, ' ')
+    const crosses =
+      b.getDate() !== a.getDate() ||
+      b.getMonth() !== a.getMonth() ||
+      b.getFullYear() !== a.getFullYear()
+    const timeRange = `${a.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${formatClock(a)} → ${b.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${formatClock(b)}`
+    if (crosses) return `${name} · ${timeRange}`
+    return `${name} · ${a.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${formatClock(a)}–${formatClock(b)}`
+  }, [shiftKind, windowBounds, shifts])
+
+  const activeTeam = useMemo(() => teams.find((t) => t.id === activeTeamId), [teams, activeTeamId])
 
   if (scopeStatus !== 'ready') {
     return <div className="text-sm text-muted">Loading scope…</div>
@@ -422,7 +496,15 @@ export function Plan24Page() {
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <header className="shrink-0 space-y-1">
         <h1 className="font-display text-2xl font-semibold tracking-tight">Plan 24</h1>
-        <p className="max-w-3xl text-sm text-muted">{shiftLabel}</p>
+        <p className="max-w-3xl text-sm text-muted">
+          {shiftLabel}
+          {activeTeam ? (
+            <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-semibold text-fg/80">
+              <span className="size-2 rounded-sm" style={{ backgroundColor: activeTeam.color }} aria-hidden />
+              Team {activeTeam.name} · pattern day {patternDay}
+            </span>
+          ) : null}
+        </p>
         <p className="max-w-3xl text-xs text-muted">
           Time grid shows <strong className="font-medium text-fg/80">hourly</strong> lines; you can still place checks at any minute. Drag checks to move time or to another role; click a person name under a role to set who is on that role for this day and shift.
         </p>
@@ -474,19 +556,26 @@ export function Plan24Page() {
             <ChevronRight className="size-4" />
           </button>
         </div>
-        <div className="inline-flex rounded-xl border border-border bg-surface p-1" role="group" aria-label="Shift">
-          {(['day', 'night'] as const).map((k) => (
-            <button
-              key={k}
-              type="button"
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
-                shiftKind === k ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg'
-              }`}
-              onClick={() => setShiftKind(k)}
-            >
-              {k}
-            </button>
-          ))}
+        <div className="inline-flex flex-wrap rounded-xl border border-border bg-surface p-1" role="group" aria-label="Shift">
+          {shiftTabs.length === 0 ? (
+            <span className="px-2 py-1.5 text-xs text-muted">No shifts configured</span>
+          ) : (
+            shiftTabs.map((s) => {
+              const label = (s.display_name?.trim() || s.kind).replace(/_/g, ' ')
+              return (
+                <button
+                  key={s.kind}
+                  type="button"
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                    shiftKind === s.kind ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg'
+                  }`}
+                  onClick={() => setShiftKind(s.kind)}
+                >
+                  {label}
+                </button>
+              )
+            })
+          )}
         </div>
         <button
           type="button"
