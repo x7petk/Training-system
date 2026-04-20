@@ -166,8 +166,6 @@ export function Plan24Page() {
   const assignedEvents = useMemo(() => events.filter((e) => e.role_name && !e.deleted_at), [events])
   const unassignedEvents = useMemo(() => events.filter((e) => !e.role_name && !e.deleted_at), [events])
 
-  const pixelsPerMinute = 1.65
-
   const refresh = useCallback(async () => {
     if (!cellId || scopeStatus !== 'ready') return
     setLoadErr(null)
@@ -725,7 +723,6 @@ export function Plan24Page() {
             windowEnd={windowBounds.end}
             roles={roleCols}
             events={assignedEvents}
-            pixelsPerMinute={pixelsPerMinute}
             onBackgroundClick={onBackgroundClick}
             onEventClick={openDetail}
             onEventMove={onEventMove}

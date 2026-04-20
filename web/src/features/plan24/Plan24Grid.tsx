@@ -75,12 +75,15 @@ type DragSession = {
   moved: boolean
 }
 
+const TIME_COL = '4.5rem'
+/** Minimum width per role column when many roles force horizontal scroll. */
+const ROLE_COL_MIN = '6.5rem'
+
 export function Plan24Grid(props: {
   windowStart: Date
   windowEnd: Date
   roles: Plan24GridRoleCol[]
   events: Plan24EventRow[]
-  pixelsPerMinute: number
   onBackgroundClick: (roleName: string, startAt: Date) => void
   onEventClick: (ev: Plan24EventRow) => void
   /** When role changes, updates `role_name` on the event. */
@@ -93,7 +96,6 @@ export function Plan24Grid(props: {
     windowEnd,
     roles,
     events,
-    pixelsPerMinute,
     onBackgroundClick,
     onEventClick,
     onEventMove,
@@ -101,7 +103,25 @@ export function Plan24Grid(props: {
     onRoleHeaderClick,
   } = props
   const totalMin = Math.max(15, minutesBetween(windowStart, windowEnd))
-  const totalPx = totalMin * pixelsPerMinute
+
+  const bodyMeasureRef = useRef<HTMLDivElement>(null)
+  const [bodyHeightPx, setBodyHeightPx] = useState(320)
+
+  useEffect(() => {
+    const el = bodyMeasureRef.current
+    if (!el) return
+    const measure = () => {
+      const h = Math.floor(el.getBoundingClientRect().height)
+      if (h > 0) setBodyHeightPx(h)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  /** Scale timeline so the full shift fits the measured body height (one screen, no inner vertical scroll). */
+  const pixelsPerMinute = bodyHeightPx / totalMin
 
   const columnBodyRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const dragSessionRef = useRef<DragSession | null>(null)
@@ -134,7 +154,14 @@ export function Plan24Grid(props: {
     return null
   }, [])
 
-  const ticks = useMemo(() => buildHourTicks(windowStart, totalMin, pixelsPerMinute), [windowStart, totalMin, pixelsPerMinute])
+  const ticks = useMemo(
+    () => buildHourTicks(windowStart, totalMin, pixelsPerMinute),
+    [windowStart, totalMin, pixelsPerMinute],
+  )
+
+  const gridTemplateColumns =
+    roles.length === 0 ? TIME_COL : `${TIME_COL} repeat(${roles.length}, minmax(${ROLE_COL_MIN}, 1fr))`
+  const chartMinWidth = roles.length === 0 ? undefined : `max(100%, calc(4.5rem + ${roles.length} * 6.5rem))`
 
   const byRole = useMemo(() => buildEventsByRole(roles, events), [roles, events])
 
@@ -289,178 +316,198 @@ export function Plan24Grid(props: {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border-strong bg-surface shadow-sm">
-      <div className="flex shrink-0 border-b border-border bg-surface-raised/40">
-        <div className="w-[4.5rem] shrink-0 border-r border-border" aria-hidden />
-        {roles.map((r) => (
-          <div key={r.name} className="min-w-[8rem] flex-1 border-l border-border px-1.5 py-2 text-center">
-            {onRoleHeaderClick ? (
-              <button
-                type="button"
-                title={`Assign person for ${r.name}`}
-                aria-label={r.subtitle ? `${r.name} — ${r.subtitle}. Click to reassign.` : `${r.name} — assign person`}
-                className="w-full rounded-lg px-1 py-1 text-center transition-colors hover:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/10"
-                onClick={() => onRoleHeaderClick(r.name)}
-              >
-                <div className="text-xs font-semibold leading-tight text-fg">{r.name}</div>
-                <div
-                  className={`mt-1 min-h-[2.25rem] text-[11px] leading-snug ${r.subtitle ? 'text-accent hover:underline' : 'italic text-muted/80 hover:underline'}`}
-                >
-                  {r.subtitle ?? 'Assign person'}
-                </div>
-              </button>
-            ) : (
-              <>
-                <div className="text-xs font-semibold leading-tight text-fg">{r.name}</div>
-                {r.subtitle ? <div className="mt-1 text-[11px] leading-snug text-muted">{r.subtitle}</div> : null}
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-      <div className="relative min-h-[min(70vh,42rem)] flex-1 overflow-auto">
-        <div className="flex" style={{ height: totalPx }}>
-          <div className="sticky left-0 z-20 w-[4.5rem] shrink-0 border-r border-border bg-surface">
-            {ticks.map((t) => (
-              <div
-                key={t.label + String(t.top)}
-                className="absolute right-1 text-[10px] font-medium tabular-nums text-muted"
-                style={{ top: t.top - 6 }}
-              >
-                {t.label}
+      {/* Horizontal scroll wraps header + body so column widths stay identical (no scrollbar mismatch). */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-auto overflow-y-hidden">
+        <div
+          className="flex min-h-0 w-full flex-1 flex-col"
+          style={chartMinWidth ? { minWidth: chartMinWidth } : undefined}
+        >
+          <div
+            className="grid shrink-0 border-b border-border bg-surface-raised/40"
+            style={{ gridTemplateColumns }}
+          >
+            <div className="min-w-0 border-r border-border" aria-hidden />
+            {roles.map((r) => (
+              <div key={r.name} className="min-w-0 border-l border-border px-1.5 py-2 text-center">
+                {onRoleHeaderClick ? (
+                  <button
+                    type="button"
+                    title={`Assign person for ${r.name}`}
+                    aria-label={r.subtitle ? `${r.name} — ${r.subtitle}. Click to reassign.` : `${r.name} — assign person`}
+                    className="w-full rounded-lg px-1 py-1 text-center transition-colors hover:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/10"
+                    onClick={() => onRoleHeaderClick(r.name)}
+                  >
+                    <div className="text-xs font-semibold leading-tight text-fg">{r.name}</div>
+                    <div
+                      className={`mt-1 min-h-[2.25rem] text-[11px] leading-snug ${r.subtitle ? 'text-accent hover:underline' : 'italic text-muted/80 hover:underline'}`}
+                    >
+                      {r.subtitle ?? 'Assign person'}
+                    </div>
+                  </button>
+                ) : (
+                  <>
+                    <div className="text-xs font-semibold leading-tight text-fg">{r.name}</div>
+                    {r.subtitle ? <div className="mt-1 text-[11px] leading-snug text-muted">{r.subtitle}</div> : null}
+                  </>
+                )}
               </div>
             ))}
           </div>
-          <div className="relative flex min-w-0 flex-1">
+
+          <div ref={bodyMeasureRef} className="relative min-h-0 flex-1">
+            <div
+              className="relative grid min-h-0"
+              style={{
+                gridTemplateColumns,
+                height: bodyHeightPx,
+              }}
+            >
+              <div className="relative z-10 min-w-0 border-r border-border bg-surface">
+                {ticks.map((t) => (
+                  <div
+                    key={t.label + String(t.top)}
+                    className="absolute right-1 text-[10px] font-medium tabular-nums text-muted"
+                    style={{ top: t.top - 6 }}
+                  >
+                    {t.label}
+                  </div>
+                ))}
+              </div>
+
+              {roles.map((r) => {
+                const list = byRole.get(r.name) ?? []
+                const layoutItems = list.map((ev) => ({
+                  id: ev.id,
+                  start: minutesBetween(windowStart, new Date(ev.start_at)),
+                  end: minutesBetween(windowStart, new Date(ev.end_at)),
+                }))
+                const layout = assignLanes(layoutItems)
+                const isHoverDrop = dragUi && dragUi.hoverRole === r.name && dragUi.sourceRole !== dragUi.hoverRole
+                const previewMin = dragUi?.previewMin ?? null
+                const previewTopPx = previewMin !== null ? previewMin * pixelsPerMinute : 0
+
+                return (
+                  <div
+                    key={r.name}
+                    ref={(el) => setColumnBodyRef(r.name, el)}
+                    data-plan24-role-col={r.name}
+                    className={`relative z-10 min-w-0 border-l border-border bg-surface transition-[box-shadow] ${
+                      dragUi && dragUi.hoverRole === r.name ? 'z-[15] ring-2 ring-accent/50 ring-inset' : ''
+                    }`}
+                    style={gridLineStyle}
+                    role="presentation"
+                    onClick={(e) => roleBackgroundClick(r.name, e)}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      const id = e.dataTransfer.getData(DRAG_DT)
+                      if (!id) return
+                      const el = e.currentTarget
+                      const rect = el.getBoundingClientRect()
+                      const y = e.clientY - rect.top
+                      const minFromStart = Math.max(0, Math.min(totalMin - 1, y / pixelsPerMinute))
+                      const startAt = addMinutes(windowStart, minFromStart)
+                      onDropUnassigned(id, r.name, startAt)
+                    }}
+                  >
+                    {isHoverDrop && dragUi ? (
+                      <div
+                        className="pointer-events-none absolute right-1 left-1 z-[8] rounded-md border-2 border-dashed border-accent bg-accent/10"
+                        style={{ top: previewTopPx, height: dragUi.blockHeightPx }}
+                        aria-hidden
+                      />
+                    ) : null}
+                    {list.map((ev) => {
+                      const start = new Date(ev.start_at)
+                      const end = new Date(ev.end_at)
+                      const topMin = minutesBetween(windowStart, start)
+                      const hMin = Math.max(2, minutesBetween(start, end))
+                      const top = topMin * pixelsPerMinute
+                      const h = hMin * pixelsPerMinute
+                      const lane = layout.get(ev.id)
+                      const lc = lane?.laneCount ?? 1
+                      const ln = lane?.lane ?? 0
+                      const innerLeft = `${(ln / lc) * 100}%`
+                      const innerW = `${(1 / lc) * 100}%`
+                      const isAdHoc = ev.source === 'ad_hoc'
+                      const isDone = ev.status === 'complete'
+                      const inProgress = ev.status === 'in_progress'
+                      const isDragging = dragUi?.eventId === ev.id
+                      const sameColumn = isDragging && dragUi.sourceRole === dragUi.hoverRole
+                      const topPx = isDragging && sameColumn && previewMin !== null ? previewMin * pixelsPerMinute : top
+                      const fadedCross = isDragging && !sameColumn
+                      const statusClass = isDone
+                        ? 'border-emerald-500/40 bg-emerald-950/70 text-emerald-50 line-through decoration-emerald-300/70 dark:bg-emerald-950/80'
+                        : inProgress
+                          ? 'border-amber-400/60 bg-amber-500 text-amber-950 shadow-amber-900/20 dark:bg-amber-400 dark:text-amber-950'
+                          : 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
+                      const statusLabel = isDone ? 'Complete' : inProgress ? 'In progress' : 'Scheduled'
+                      return (
+                        <button
+                          key={ev.id}
+                          type="button"
+                          data-plan24-event
+                          aria-label={`${ev.title}, ${formatClock(start)} to ${formatClock(end)}, ${statusLabel}${isAdHoc ? ', ad hoc' : ''}`}
+                          title={`${ev.title}\n${formatClock(start)}–${formatClock(end)}\n${statusLabel}${isAdHoc ? ' · Ad hoc' : ''}`}
+                          className={`group absolute flex flex-col overflow-hidden rounded-md border px-1 py-0.5 text-left text-[11px] font-medium leading-tight shadow-sm transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${statusClass} ${isAdHoc ? 'border-dashed' : ''} ${isDragging ? 'z-[6] cursor-grabbing' : 'cursor-grab hover:ring-2 hover:ring-accent/40'}`}
+                          style={{
+                            top: topPx,
+                            height: h,
+                            left: innerLeft,
+                            width: innerW,
+                            touchAction: 'none',
+                            opacity: fadedCross ? 0.35 : 1,
+                          }}
+                          onPointerDown={(pe) => {
+                            pe.stopPropagation()
+                            startMove(ev, r.name, pe)
+                          }}
+                          onClick={(ce) => {
+                            ce.stopPropagation()
+                            if (lastDragMovedIdRef.current === ev.id) return
+                            onEventClick(ev)
+                          }}
+                          onKeyDown={(ke) => {
+                            if (ke.key === 'Enter' || ke.key === ' ') {
+                              ke.preventDefault()
+                              onEventClick(ev)
+                            }
+                          }}
+                        >
+                          {inProgress ? (
+                            <span
+                              aria-hidden
+                              className="pointer-events-none absolute right-1 top-1 inline-flex size-1.5 rounded-full bg-amber-900/90"
+                            />
+                          ) : null}
+                          <span className="pointer-events-none truncate">{ev.title}</span>
+                          <span className="pointer-events-none truncate text-[9px] font-normal opacity-90">
+                            {formatClock(start)}–{formatClock(end)}
+                            {isAdHoc ? ' · Ad hoc' : ''}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </div>
+
             {nowTopPx !== null ? (
               <div
-                className="pointer-events-none absolute inset-x-0 z-[4] flex items-center"
-                style={{ top: nowTopPx }}
+                className="pointer-events-none absolute top-0 bottom-0 z-[4]"
+                style={{ left: TIME_COL, right: 0 }}
                 aria-hidden
               >
-                <span className="-ml-1 mr-1 inline-block size-2 rounded-full bg-rose-500 shadow-[0_0_0_2px_rgba(255,255,255,0.6)]" />
-                <span className="h-px flex-1 bg-rose-500/70" />
+                <div className="absolute right-0 left-0 flex items-center" style={{ top: nowTopPx }}>
+                  <span className="-ml-1 mr-1 inline-block size-2 rounded-full bg-rose-500 shadow-[0_0_0_2px_rgba(255,255,255,0.6)]" />
+                  <span className="h-px flex-1 bg-rose-500/70" />
+                </div>
               </div>
             ) : null}
-            {roles.map((r) => {
-              const list = byRole.get(r.name) ?? []
-              const layoutItems = list.map((ev) => ({
-                id: ev.id,
-                start: minutesBetween(windowStart, new Date(ev.start_at)),
-                end: minutesBetween(windowStart, new Date(ev.end_at)),
-              }))
-              const layout = assignLanes(layoutItems)
-              const isHoverDrop = dragUi && dragUi.hoverRole === r.name && dragUi.sourceRole !== dragUi.hoverRole
-              const previewMin = dragUi?.previewMin ?? null
-              const previewTopPx = previewMin !== null ? previewMin * pixelsPerMinute : 0
-
-              return (
-                <div
-                  key={r.name}
-                  ref={(el) => setColumnBodyRef(r.name, el)}
-                  data-plan24-role-col={r.name}
-                  className={`relative min-w-[8rem] flex-1 border-l border-border bg-surface transition-[box-shadow] ${
-                    dragUi && dragUi.hoverRole === r.name ? 'z-[5] ring-2 ring-accent/50 ring-inset' : ''
-                  }`}
-                  style={gridLineStyle}
-                  role="presentation"
-                  onClick={(e) => roleBackgroundClick(r.name, e)}
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                    e.dataTransfer.dropEffect = 'move'
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    const id = e.dataTransfer.getData(DRAG_DT)
-                    if (!id) return
-                    const el = e.currentTarget
-                    const rect = el.getBoundingClientRect()
-                    const y = e.clientY - rect.top
-                    const minFromStart = Math.max(0, Math.min(totalMin - 1, y / pixelsPerMinute))
-                    const startAt = addMinutes(windowStart, minFromStart)
-                    onDropUnassigned(id, r.name, startAt)
-                  }}
-                >
-                  {isHoverDrop && dragUi ? (
-                    <div
-                      className="pointer-events-none absolute right-1 left-1 z-[8] rounded-md border-2 border-dashed border-accent bg-accent/10"
-                      style={{ top: previewTopPx, height: dragUi.blockHeightPx }}
-                      aria-hidden
-                    />
-                  ) : null}
-                  {list.map((ev) => {
-                    const start = new Date(ev.start_at)
-                    const end = new Date(ev.end_at)
-                    const topMin = minutesBetween(windowStart, start)
-                    const hMin = Math.max(2, minutesBetween(start, end))
-                    const top = topMin * pixelsPerMinute
-                    const h = hMin * pixelsPerMinute
-                    const lane = layout.get(ev.id)
-                    const lc = lane?.laneCount ?? 1
-                    const ln = lane?.lane ?? 0
-                    const innerLeft = `${(ln / lc) * 100}%`
-                    const innerW = `${(1 / lc) * 100}%`
-                    const isAdHoc = ev.source === 'ad_hoc'
-                    const isDone = ev.status === 'complete'
-                    const inProgress = ev.status === 'in_progress'
-                    const isDragging = dragUi?.eventId === ev.id
-                    const sameColumn = isDragging && dragUi.sourceRole === dragUi.hoverRole
-                    const topPx = isDragging && sameColumn && previewMin !== null ? previewMin * pixelsPerMinute : top
-                    const fadedCross = isDragging && !sameColumn
-                    const statusClass = isDone
-                      ? 'border-emerald-500/40 bg-emerald-950/70 text-emerald-50 line-through decoration-emerald-300/70 dark:bg-emerald-950/80'
-                      : inProgress
-                        ? 'border-amber-400/60 bg-amber-500 text-amber-950 shadow-amber-900/20 dark:bg-amber-400 dark:text-amber-950'
-                        : 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
-                    const statusLabel = isDone ? 'Complete' : inProgress ? 'In progress' : 'Scheduled'
-                    return (
-                      <button
-                        key={ev.id}
-                        type="button"
-                        data-plan24-event
-                        aria-label={`${ev.title}, ${formatClock(start)} to ${formatClock(end)}, ${statusLabel}${isAdHoc ? ', ad hoc' : ''}`}
-                        title={`${ev.title}\n${formatClock(start)}–${formatClock(end)}\n${statusLabel}${isAdHoc ? ' · Ad hoc' : ''}`}
-                        className={`group absolute flex flex-col overflow-hidden rounded-md border px-1 py-0.5 text-left text-[11px] font-medium leading-tight shadow-sm transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${statusClass} ${isAdHoc ? 'border-dashed' : ''} ${isDragging ? 'z-[6] cursor-grabbing' : 'cursor-grab hover:ring-2 hover:ring-accent/40'}`}
-                        style={{
-                          top: topPx,
-                          height: h,
-                          left: innerLeft,
-                          width: innerW,
-                          touchAction: 'none',
-                          opacity: fadedCross ? 0.35 : 1,
-                        }}
-                        onPointerDown={(pe) => {
-                          pe.stopPropagation()
-                          startMove(ev, r.name, pe)
-                        }}
-                        onClick={(ce) => {
-                          ce.stopPropagation()
-                          if (lastDragMovedIdRef.current === ev.id) return
-                          onEventClick(ev)
-                        }}
-                        onKeyDown={(ke) => {
-                          if (ke.key === 'Enter' || ke.key === ' ') {
-                            ke.preventDefault()
-                            onEventClick(ev)
-                          }
-                        }}
-                      >
-                        {inProgress ? (
-                          <span
-                            aria-hidden
-                            className="pointer-events-none absolute right-1 top-1 inline-flex size-1.5 rounded-full bg-amber-900/90"
-                          />
-                        ) : null}
-                        <span className="pointer-events-none truncate">{ev.title}</span>
-                        <span className="pointer-events-none truncate text-[9px] font-normal opacity-90">
-                          {formatClock(start)}–{formatClock(end)}
-                          {isAdHoc ? ' · Ad hoc' : ''}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-            })}
           </div>
         </div>
       </div>
