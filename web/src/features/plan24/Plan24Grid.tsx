@@ -13,6 +13,8 @@ import type { Plan24EventRow } from './plan24Types'
 const DRAG_DT = 'application/x-plan24-event'
 /** Major time grid: hour lines and labels (free-minute placement unchanged). */
 const GRID_MAJOR_MIN = 60
+/** Minor time grid: half-hour guide lines. */
+const GRID_MINOR_MIN = 30
 
 export type Plan24GridRoleCol = { name: string; subtitle?: string }
 
@@ -264,9 +266,26 @@ export function Plan24Grid(props: {
   }
 
   const hourStepPx = pixelsPerMinute * GRID_MAJOR_MIN
+  const halfHourStepPx = pixelsPerMinute * GRID_MINOR_MIN
   const gridLineStyle: CSSProperties = {
-    backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourStepPx - 1}px, rgba(0,0,0,0.1) ${hourStepPx - 1}px, rgba(0,0,0,0.1) ${hourStepPx}px)`,
+    backgroundImage: [
+      `repeating-linear-gradient(to bottom, transparent 0, transparent ${halfHourStepPx - 1}px, rgba(0,0,0,0.045) ${halfHourStepPx - 1}px, rgba(0,0,0,0.045) ${halfHourStepPx}px)`,
+      `repeating-linear-gradient(to bottom, transparent 0, transparent ${hourStepPx - 1}px, rgba(0,0,0,0.12) ${hourStepPx - 1}px, rgba(0,0,0,0.12) ${hourStepPx}px)`,
+    ].join(','),
   }
+
+  const [nowTs, setNowTs] = useState(() => Date.now())
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTs(Date.now()), 30000)
+    return () => window.clearInterval(id)
+  }, [])
+  const nowMinFromStart = useMemo(() => {
+    const startMs = windowStart.getTime()
+    const endMs = windowEnd.getTime()
+    if (nowTs < startMs || nowTs > endMs) return null
+    return (nowTs - startMs) / 60000
+  }, [nowTs, windowStart, windowEnd])
+  const nowTopPx = nowMinFromStart !== null ? nowMinFromStart * pixelsPerMinute : null
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border-strong bg-surface shadow-sm">
@@ -277,11 +296,15 @@ export function Plan24Grid(props: {
             {onRoleHeaderClick ? (
               <button
                 type="button"
-                className="w-full rounded-lg px-1 py-1 text-center transition-colors hover:bg-black/[0.06] dark:hover:bg-white/10"
+                title={`Assign person for ${r.name}`}
+                aria-label={r.subtitle ? `${r.name} — ${r.subtitle}. Click to reassign.` : `${r.name} — assign person`}
+                className="w-full rounded-lg px-1 py-1 text-center transition-colors hover:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/10"
                 onClick={() => onRoleHeaderClick(r.name)}
               >
                 <div className="text-xs font-semibold leading-tight text-fg">{r.name}</div>
-                <div className="mt-1 min-h-[2.25rem] text-[11px] leading-snug text-accent hover:underline">
+                <div
+                  className={`mt-1 min-h-[2.25rem] text-[11px] leading-snug ${r.subtitle ? 'text-accent hover:underline' : 'italic text-muted/80 hover:underline'}`}
+                >
                   {r.subtitle ?? 'Assign person'}
                 </div>
               </button>
@@ -308,6 +331,16 @@ export function Plan24Grid(props: {
             ))}
           </div>
           <div className="relative flex min-w-0 flex-1">
+            {nowTopPx !== null ? (
+              <div
+                className="pointer-events-none absolute inset-x-0 z-[4] flex items-center"
+                style={{ top: nowTopPx }}
+                aria-hidden
+              >
+                <span className="-ml-1 mr-1 inline-block size-2 rounded-full bg-rose-500 shadow-[0_0_0_2px_rgba(255,255,255,0.6)]" />
+                <span className="h-px flex-1 bg-rose-500/70" />
+              </div>
+            ) : null}
             {roles.map((r) => {
               const list = byRole.get(r.name) ?? []
               const layoutItems = list.map((ev) => ({
@@ -368,20 +401,25 @@ export function Plan24Grid(props: {
                     const innerW = `${(1 / lc) * 100}%`
                     const isAdHoc = ev.source === 'ad_hoc'
                     const isDone = ev.status === 'complete'
+                    const inProgress = ev.status === 'in_progress'
                     const isDragging = dragUi?.eventId === ev.id
                     const sameColumn = isDragging && dragUi.sourceRole === dragUi.hoverRole
                     const topPx = isDragging && sameColumn && previewMin !== null ? previewMin * pixelsPerMinute : top
                     const fadedCross = isDragging && !sameColumn
+                    const statusClass = isDone
+                      ? 'border-emerald-500/40 bg-emerald-950/70 text-emerald-50 line-through decoration-emerald-300/70 dark:bg-emerald-950/80'
+                      : inProgress
+                        ? 'border-amber-400/60 bg-amber-500 text-amber-950 shadow-amber-900/20 dark:bg-amber-400 dark:text-amber-950'
+                        : 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
+                    const statusLabel = isDone ? 'Complete' : inProgress ? 'In progress' : 'Scheduled'
                     return (
                       <button
                         key={ev.id}
                         type="button"
                         data-plan24-event
-                        className={`absolute flex flex-col overflow-hidden rounded-md border px-1 py-0.5 text-left text-[11px] font-medium leading-tight shadow-sm transition-opacity ${
-                          isDone
-                            ? 'border-slate-600/40 bg-slate-800/25 text-fg/80 line-through decoration-slate-500/80 dark:bg-slate-950/40'
-                            : 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
-                        } ${isAdHoc ? 'border-dashed' : ''} ${isDragging ? 'z-[6] cursor-grabbing' : 'cursor-grab hover:ring-2 hover:ring-accent/40'}`}
+                        aria-label={`${ev.title}, ${formatClock(start)} to ${formatClock(end)}, ${statusLabel}${isAdHoc ? ', ad hoc' : ''}`}
+                        title={`${ev.title}\n${formatClock(start)}–${formatClock(end)}\n${statusLabel}${isAdHoc ? ' · Ad hoc' : ''}`}
+                        className={`group absolute flex flex-col overflow-hidden rounded-md border px-1 py-0.5 text-left text-[11px] font-medium leading-tight shadow-sm transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${statusClass} ${isAdHoc ? 'border-dashed' : ''} ${isDragging ? 'z-[6] cursor-grabbing' : 'cursor-grab hover:ring-2 hover:ring-accent/40'}`}
                         style={{
                           top: topPx,
                           height: h,
@@ -399,7 +437,19 @@ export function Plan24Grid(props: {
                           if (lastDragMovedIdRef.current === ev.id) return
                           onEventClick(ev)
                         }}
+                        onKeyDown={(ke) => {
+                          if (ke.key === 'Enter' || ke.key === ' ') {
+                            ke.preventDefault()
+                            onEventClick(ev)
+                          }
+                        }}
                       >
+                        {inProgress ? (
+                          <span
+                            aria-hidden
+                            className="pointer-events-none absolute right-1 top-1 inline-flex size-1.5 rounded-full bg-amber-900/90"
+                          />
+                        ) : null}
                         <span className="pointer-events-none truncate">{ev.title}</span>
                         <span className="pointer-events-none truncate text-[9px] font-normal opacity-90">
                           {formatClock(start)}–{formatClock(end)}

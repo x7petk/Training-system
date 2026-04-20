@@ -128,8 +128,10 @@ export function Plan24AdminRosterTab() {
   const saveShift = useCallback(async (s: Plan24ShiftRow) => {
     setErr(null)
     const { error } = await supabase.from('plan24_roster_shifts').update({
-      kind: s.kind, display_name: s.display_name, start_local: toTime(timeInputValue(s.start_local)),
-      end_local: toTime(timeInputValue(s.end_local)), sort_order: s.sort_order,
+      display_name: s.display_name,
+      start_local: toTime(timeInputValue(s.start_local)),
+      end_local: toTime(timeInputValue(s.end_local)),
+      sort_order: s.sort_order,
     }).eq('id', s.id)
     if (error) setErr(error.message); else void loadDetail()
   }, [loadDetail])
@@ -206,16 +208,17 @@ export function Plan24AdminRosterTab() {
     if (!window.confirm('Generate default pattern (2 on / 2 on / 4 off for each team)? This replaces the current pattern.')) return
     setErr(null)
     await supabase.from('plan24_pattern_slots').delete().eq('roster_id', selectedId)
+    const sortedTeamsLocal = [...teams].sort((a, b) => a.sort_order - b.sort_order)
+    const sortedShiftsLocal = [...shifts].sort((a, b) => a.sort_order - b.sort_order)
+    const nTeams = sortedTeamsLocal.length
+    const nShifts = sortedShiftsLocal.length
     const rows: { roster_id: string; pattern_day: number; shift_kind: string; team_id: string }[] = []
-    const nTeams = teams.length
-    const sortedShifts = [...shifts].sort((a, b) => a.sort_order - b.sort_order)
-    const nShifts = sortedShifts.length
     for (let day = 1; day <= patternLength; day++) {
       for (let si = 0; si < nShifts; si++) {
         const teamIdx = (Math.floor((day - 1 + si * (patternLength / nShifts)) / 2)) % nTeams
-        const team = teams.sort((a, b) => a.sort_order - b.sort_order)[teamIdx]
+        const team = sortedTeamsLocal[teamIdx]
         if (team) {
-          rows.push({ roster_id: selectedId, pattern_day: day, shift_kind: sortedShifts[si].kind, team_id: team.id })
+          rows.push({ roster_id: selectedId, pattern_day: day, shift_kind: sortedShiftsLocal[si].kind, team_id: team.id })
         }
       }
     }
@@ -327,9 +330,22 @@ export function Plan24AdminRosterTab() {
                 <div key={s.id} className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-canvas/40 p-3">
                   <label className="min-w-[8rem] flex-1 text-xs text-muted">
                     Name
-                    <input className={`${inputClass} mt-1`} value={s.display_name ?? s.kind}
-                      onChange={(e) => setShifts((prev) => prev.map((x) => x.id === s.id ? { ...x, display_name: e.target.value, kind: e.target.value.toLowerCase().replace(/\s+/g, '_') } : x))} />
+                    <input
+                      className={`${inputClass} mt-1`}
+                      value={s.display_name ?? s.kind}
+                      onChange={(e) => setShifts((prev) => prev.map((x) => x.id === s.id ? { ...x, display_name: e.target.value } : x))}
+                      placeholder="e.g. Day"
+                    />
                   </label>
+                  <div className="min-w-[6rem] text-xs text-muted">
+                    ID
+                    <div
+                      className="mt-1 truncate rounded-xl border border-border bg-canvas/20 px-3 py-2 font-mono text-[11px] text-muted"
+                      title="Internal key; locked after creation to keep events and pattern slots in sync."
+                    >
+                      {s.kind}
+                    </div>
+                  </div>
                   <label className="min-w-[7rem] text-xs text-muted">
                     Start
                     <input type="time" className={`${inputClass} mt-1`} value={timeInputValue(s.start_local)}
@@ -352,6 +368,9 @@ export function Plan24AdminRosterTab() {
                 </div>
               ))}
               {shifts.length === 0 ? <p className="text-xs text-muted">No shifts defined — add at least one.</p> : null}
+              <p className="text-[11px] text-muted">
+                Display name can change freely. The internal <code className="rounded bg-canvas/40 px-1 font-mono">ID</code> is generated once to keep events and pattern slots linked.
+              </p>
             </div>
           </section>
 
@@ -397,16 +416,41 @@ export function Plan24AdminRosterTab() {
             <div className="flex flex-wrap items-end gap-4">
               <label className="text-xs text-muted">
                 Roster Length (days)
-                <input type="number" min={1} max={56} className={`${inputClass} mt-1 w-20`} value={patternLength}
-                  onChange={(e) => void savePatternLength(Number(e.target.value) || 8)} />
+                <input
+                  type="number"
+                  min={1}
+                  max={56}
+                  className={`${inputClass} mt-1 w-24`}
+                  defaultValue={patternLength}
+                  key={`plen-${selectedId}-${patternLength}`}
+                  onBlur={(e) => {
+                    const n = Number(e.target.value) || 8
+                    if (n !== patternLength) void savePatternLength(n)
+                  }}
+                />
               </label>
               <label className="text-xs text-muted">
                 Start Date
-                <input type="date" className={`${inputClass} mt-1`} value={selected?.pattern_start_date ?? ''}
-                  onChange={(e) => void savePatternStartDate(e.target.value)} />
+                <input
+                  type="date"
+                  className={`${inputClass} mt-1`}
+                  defaultValue={selected?.pattern_start_date ?? ''}
+                  key={`pstart-${selectedId}-${selected?.pattern_start_date ?? ''}`}
+                  onBlur={(e) => {
+                    if ((e.target.value || null) !== (selected?.pattern_start_date ?? null)) {
+                      void savePatternStartDate(e.target.value)
+                    }
+                  }}
+                />
               </label>
-              <button type="button" className="rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95" onClick={() => void generateDefaultPattern()}>
-                Generate
+              <button
+                type="button"
+                className="rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => void generateDefaultPattern()}
+                disabled={shifts.length === 0 || teams.length === 0}
+                title={shifts.length === 0 || teams.length === 0 ? 'Add shifts and teams first' : undefined}
+              >
+                Generate default pattern
               </button>
             </div>
             {shifts.length > 0 && teams.length > 0 ? (

@@ -1,5 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Plus, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  CircleDot,
+  Loader2,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { localYMD } from '../lib/dueDateUtils'
 import { useAuth } from '../hooks/useAuth'
@@ -92,8 +103,11 @@ export function Plan24Page() {
   const [rolePickOpen, setRolePickOpen] = useState(false)
   const [rolePickName, setRolePickName] = useState('')
   const [rolePickPersonId, setRolePickPersonId] = useState<string>('')
+  const [rolePickQuery, setRolePickQuery] = useState('')
 
   const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [loading, setLoading] = useState(false)
+  const dateInputRef = useRef<HTMLInputElement | null>(null)
 
   const windowBounds = useMemo(
     () => shiftWindowBounds(planDate, shiftKind, shifts),
@@ -157,6 +171,7 @@ export function Plan24Page() {
   const refresh = useCallback(async () => {
     if (!cellId || scopeStatus !== 'ready') return
     setLoadErr(null)
+    setLoading(true)
     const rosterRes = await supabase
       .from('plan24_rosters')
       .select('id, master_cell_id, name, sort_order, is_active, effective_from, pattern_length, pattern_start_date')
@@ -165,6 +180,7 @@ export function Plan24Page() {
       .maybeSingle()
     if (rosterRes.error) {
       setLoadErr(rosterRes.error.message)
+      setLoading(false)
       return
     }
     const r = rosterRes.data as Plan24RosterRow | null
@@ -177,6 +193,7 @@ export function Plan24Page() {
       setPatternSlots([])
       setRoleTeamDefaults([])
       setTeams([])
+      setLoading(false)
       return
     }
     const [shRes, roleRes, evRes, asRes, peRes, patRes, teamRes] = await Promise.all([
@@ -241,6 +258,7 @@ export function Plan24Page() {
         .order('sort_order')
       if (!tRes.error) setTasks((tRes.data ?? []) as Plan24TaskRow[])
     }
+    setLoading(false)
   }, [cellId, scopeStatus, planDate, shiftKind, user?.id])
 
   useEffect(() => {
@@ -341,6 +359,7 @@ export function Plan24Page() {
       setRolePickName(roleName)
       const pid = personIdByRole.get(roleName) ?? ''
       setRolePickPersonId(pid || '')
+      setRolePickQuery('')
       setRolePickOpen(true)
     },
     [personIdByRole],
@@ -464,6 +483,84 @@ export function Plan24Page() {
     [refresh],
   )
 
+  const stepDay = useCallback(
+    (delta: number) => {
+      const d = new Date(planDate + 'T12:00:00')
+      d.setDate(d.getDate() + delta)
+      setPlanDate(localYMD(d))
+    },
+    [planDate],
+  )
+
+  const gotoToday = useCallback(() => {
+    setPlanDate(localYMD(new Date()))
+  }, [])
+
+  const cycleShift = useCallback(
+    (dir: 1 | -1) => {
+      if (shifts.length === 0) return
+      const i = shifts.findIndex((s) => s.kind === shiftKind)
+      const next = shifts[(i + dir + shifts.length) % shifts.length]
+      if (next) setShiftKind(next.kind)
+    },
+    [shifts, shiftKind],
+  )
+
+  useEffect(() => {
+    const anyModalOpen = adhocOpen || detailEv !== null || deleteEv !== null || rolePickOpen
+    function onKey(e: KeyboardEvent) {
+      if (e.defaultPrevented) return
+      if (e.key === 'Escape') {
+        if (deleteEv) setDeleteEv(null)
+        else if (rolePickOpen) setRolePickOpen(false)
+        else if (adhocOpen) setAdhocOpen(false)
+        else if (detailEv) setDetailEv(null)
+        return
+      }
+      if (anyModalOpen) return
+      const t = e.target as HTMLElement | null
+      const isTyping =
+        !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
+      if (isTyping) return
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        stepDay(-1)
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        stepDay(1)
+      } else if (e.key.toLowerCase() === 't') {
+        e.preventDefault()
+        gotoToday()
+      } else if (e.key === '[') {
+        e.preventDefault()
+        cycleShift(-1)
+      } else if (e.key === ']') {
+        e.preventDefault()
+        cycleShift(1)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [adhocOpen, detailEv, deleteEv, rolePickOpen, stepDay, gotoToday, cycleShift])
+
+  const filteredPickPeople = useMemo(() => {
+    const q = rolePickQuery.trim().toLowerCase()
+    if (!q) return people
+    return people.filter((p) => {
+      const label = personLabel(p).toLowerCase()
+      return label.includes(q)
+    })
+  }, [people, rolePickQuery])
+
+  const progress = useMemo(() => {
+    const total = assignedEvents.length
+    const done = assignedEvents.filter((e) => e.status === 'complete').length
+    const inProg = assignedEvents.filter((e) => e.status === 'in_progress').length
+    return { total, done, inProg }
+  }, [assignedEvents])
+
+  const isToday = planDate === localYMD(new Date())
+
   const shiftLabel = useMemo(() => {
     const a = windowBounds.start
     const b = windowBounds.end
@@ -495,18 +592,34 @@ export function Plan24Page() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <header className="shrink-0 space-y-1">
-        <h1 className="font-display text-2xl font-semibold tracking-tight">Plan 24</h1>
-        <p className="max-w-3xl text-sm text-muted">
-          {shiftLabel}
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Plan 24</h1>
+          {loading ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-accent-dim px-2 py-0.5 text-[11px] font-medium text-accent"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 className="size-3 animate-spin" aria-hidden /> Loading
+            </span>
+          ) : null}
+          {roster && progress.total > 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-fg/80">
+              <CircleDot className="size-3 text-emerald-600" aria-hidden />
+              {progress.done}/{progress.total} complete
+              {progress.inProg > 0 ? ` · ${progress.inProg} in progress` : ''}
+            </span>
+          ) : null}
           {activeTeam ? (
-            <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-semibold text-fg/80">
+            <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-semibold text-fg/80">
               <span className="size-2 rounded-sm" style={{ backgroundColor: activeTeam.color }} aria-hidden />
               Team {activeTeam.name} · pattern day {patternDay}
             </span>
           ) : null}
-        </p>
+        </div>
+        <p className="max-w-3xl text-sm text-muted">{shiftLabel}</p>
         <p className="max-w-3xl text-xs text-muted">
-          Time grid shows <strong className="font-medium text-fg/80">hourly</strong> lines; you can still place checks at any minute. Drag checks to move time or to another role; click a person name under a role to set who is on that role for this day and shift.
+          Drag checks to move time or change role · click a role header to assign a person · <kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">←</kbd>/<kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">→</kbd> day · <kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">[</kbd>/<kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">]</kbd> shift · <kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">T</kbd> today
         </p>
       </header>
 
@@ -529,49 +642,61 @@ export function Plan24Page() {
             type="button"
             className="rounded-lg p-1.5 text-muted hover:bg-black/[0.06] hover:text-fg"
             aria-label="Previous day"
-            onClick={() => {
-              const d = new Date(planDate + 'T12:00:00')
-              d.setDate(d.getDate() - 1)
-              setPlanDate(localYMD(d))
-            }}
+            onClick={() => stepDay(-1)}
           >
             <ChevronLeft className="size-4" />
           </button>
           <input
+            ref={dateInputRef}
             type="date"
             className="rounded-lg border-0 bg-transparent px-2 py-1 text-sm font-medium text-fg outline-none"
             value={planDate}
             onChange={(e) => setPlanDate(e.target.value)}
+            aria-label="Plan date"
           />
           <button
             type="button"
             className="rounded-lg p-1.5 text-muted hover:bg-black/[0.06] hover:text-fg"
             aria-label="Next day"
-            onClick={() => {
-              const d = new Date(planDate + 'T12:00:00')
-              d.setDate(d.getDate() + 1)
-              setPlanDate(localYMD(d))
-            }}
+            onClick={() => stepDay(1)}
           >
             <ChevronRight className="size-4" />
           </button>
         </div>
+        <button
+          type="button"
+          className={`inline-flex items-center gap-1 rounded-xl border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold shadow-sm hover:bg-surface-raised/80 ${
+            isToday ? 'text-accent' : 'text-fg/80'
+          }`}
+          onClick={gotoToday}
+          aria-label="Go to today"
+          title="Today (T)"
+          disabled={isToday}
+        >
+          <CalendarDays className="size-3.5" aria-hidden />
+          Today
+        </button>
         <div className="inline-flex flex-wrap rounded-xl border border-border bg-surface p-1" role="group" aria-label="Shift">
           {shiftTabs.length === 0 ? (
             <span className="px-2 py-1.5 text-xs text-muted">No shifts configured</span>
           ) : (
             shiftTabs.map((s) => {
               const label = (s.display_name?.trim() || s.kind).replace(/_/g, ' ')
+              const range = `${(s.start_local || '').slice(0, 5)}–${(s.end_local || '').slice(0, 5)}`
+              const isActive = shiftKind === s.kind
               return (
                 <button
                   key={s.kind}
                   type="button"
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
-                    shiftKind === s.kind ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg'
+                  aria-pressed={isActive}
+                  className={`flex min-w-[5rem] flex-col items-center rounded-lg px-3 py-1 text-xs font-semibold capitalize transition-colors ${
+                    isActive ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg'
                   }`}
                   onClick={() => setShiftKind(s.kind)}
+                  title={`${label} (${range})`}
                 >
-                  {label}
+                  <span>{label}</span>
+                  <span className="text-[9px] font-normal tabular-nums opacity-75">{range}</span>
                 </button>
               )
             })
@@ -584,14 +709,17 @@ export function Plan24Page() {
           }`}
           onClick={() => setPanelOpen((o) => !o)}
           aria-label={panelOpen ? 'Close unassigned panel' : 'Open unassigned panel'}
+          title={`${panelOpen ? 'Close' : 'Open'} unassigned · ${unassignedEvents.length}`}
         >
           {panelOpen ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}
-          {panelOpen ? 'Unassigned' : null}
+          {panelOpen ? `Unassigned${unassignedEvents.length ? ` · ${unassignedEvents.length}` : ''}` : unassignedEvents.length ? (
+            <span className="ml-1 rounded-full bg-accent px-1.5 text-[10px] text-white">{unassignedEvents.length}</span>
+          ) : null}
         </button>
       </div>
 
       <div className="relative min-h-0 min-w-0 flex-1 pb-28">
-        {roster ? (
+        {roster && shifts.length > 0 && activeRoles.length > 0 ? (
           <Plan24Grid
             windowStart={windowBounds.start}
             windowEnd={windowBounds.end}
@@ -604,6 +732,16 @@ export function Plan24Page() {
             onDropUnassigned={onDropUnassigned}
             onRoleHeaderClick={onRoleHeaderClick}
           />
+        ) : roster ? (
+          <div className="flex min-h-[12rem] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-surface-raised/30 p-6 text-center text-sm text-muted">
+            <p className="text-fg/80">
+              {shifts.length === 0 ? 'No shifts configured for this roster.' : 'No active roles yet.'}
+            </p>
+            <p className="max-w-md text-xs">
+              Go to <strong className="font-medium text-fg">RTT systems → Admin → Plan 24</strong> to{' '}
+              {shifts.length === 0 ? 'add shifts' : 'add roles'} for this roster.
+            </p>
+          </div>
         ) : (
           <div className="min-h-[12rem] flex-1 rounded-2xl border border-dashed border-border bg-surface-raised/30" />
         )}
@@ -662,7 +800,7 @@ export function Plan24Page() {
 
       {/* Bottom task bar */}
       <div
-        className={`fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-surface shadow-[0_-4px_24px_rgba(0,0,0,0.08)] transition-[max-height] dark:shadow-[0_-4px_24px_rgba(0,0,0,0.35) ${
+        className={`fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-surface shadow-[0_-4px_24px_rgba(0,0,0,0.08)] transition-[max-height] dark:shadow-[0_-4px_24px_rgba(0,0,0,0.35)] ${
           taskBarOpen ? 'max-h-[40vh]' : 'max-h-11'
         }`}
       >
@@ -917,18 +1055,59 @@ export function Plan24Page() {
           <div className="space-y-3">
             <h2 className="font-display text-lg font-semibold">Person on {rolePickName}</h2>
             <p className="text-xs text-muted">Applies to this day and shift only.</p>
-            <select
-              className={inputClass}
-              value={rolePickPersonId}
-              onChange={(e) => setRolePickPersonId(e.target.value)}
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden />
+              <input
+                autoFocus
+                className={`${inputClass} pl-9`}
+                placeholder="Search people"
+                value={rolePickQuery}
+                onChange={(e) => setRolePickQuery(e.target.value)}
+                aria-label="Search people"
+              />
+            </label>
+            <ul
+              className="max-h-64 overflow-y-auto rounded-xl border border-border"
+              role="listbox"
+              aria-label="People"
             >
-              <option value="">— None —</option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {personLabel(p)}
-                </option>
-              ))}
-            </select>
+              <li>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={rolePickPersonId === ''}
+                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent-dim/50 ${
+                    rolePickPersonId === '' ? 'bg-accent-dim text-accent' : 'text-muted'
+                  }`}
+                  onClick={() => setRolePickPersonId('')}
+                >
+                  <span>— None —</span>
+                  {rolePickPersonId === '' ? <span className="text-[10px] font-semibold">selected</span> : null}
+                </button>
+              </li>
+              {filteredPickPeople.map((p) => {
+                const sel = rolePickPersonId === p.id
+                return (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={sel}
+                      className={`flex w-full items-center justify-between border-t border-border px-3 py-2 text-left text-sm hover:bg-accent-dim/40 ${
+                        sel ? 'bg-accent-dim text-accent' : 'text-fg'
+                      }`}
+                      onClick={() => setRolePickPersonId(p.id)}
+                    >
+                      <span>{personLabel(p)}</span>
+                      {sel ? <span className="text-[10px] font-semibold">selected</span> : null}
+                    </button>
+                  </li>
+                )
+              })}
+              {filteredPickPeople.length === 0 ? (
+                <li className="border-t border-border px-3 py-3 text-xs text-muted">No people match.</li>
+              ) : null}
+            </ul>
             <div className="flex justify-end gap-2">
               <button type="button" className="rounded-xl px-3 py-2 text-sm text-muted hover:bg-black/[0.06]" onClick={() => setRolePickOpen(false)}>
                 Cancel
