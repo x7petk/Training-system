@@ -946,6 +946,7 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
               >
                 <option value="numeric">Numeric (1–4)</option>
                 <option value="certification">Certification (yes/no)</option>
+                <option value="plan">Plan (stage-based)</option>
               </select>
             </div>
             <div>

@@ -6,12 +6,14 @@ import {
   ChevronUp,
   CircleDot,
   ClipboardList,
+  GripHorizontal,
   Loader2,
   PanelRightClose,
   PanelRightOpen,
   Plus,
   Search,
   Trash2,
+  X,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { localYMD } from '../lib/dueDateUtils'
@@ -36,6 +38,14 @@ import { addMinutes, minutesBetween } from '../features/plan24/plan24ShiftUtils'
 const inputClass =
   'w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2'
 
+/** Check detail modal: same border/focus colour as idle (no accent shift while editing). */
+const detailInputClass =
+  'w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm outline-none focus:border-border focus:ring-1 focus:ring-fg/10 dark:focus:ring-white/10'
+
+/** Save in check detail: neutral pressed/focus states (no accent / teal flash on click). */
+const detailSaveButtonClass =
+  'rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-fg outline-none [-webkit-tap-highlight-color:transparent] transition-colors hover:bg-black/[0.05] active:border-border active:bg-black/[0.08] active:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border/60 focus-visible:ring-offset-0 dark:hover:bg-white/[0.05] dark:active:bg-white/[0.1]'
+
 function personLabel(p: {
   id: string
   display_name: string | null
@@ -51,6 +61,28 @@ function legacyDefaultPersonId(r: Plan24RosterRoleRow, sk: string): string | nul
   if (sk === 'day') return r.default_person_day_id ?? r.default_person_id ?? null
   if (sk === 'night') return r.default_person_night_id ?? r.default_person_id ?? null
   return r.default_person_id ?? null
+}
+
+const PLAN24_TASKS_PANEL_H_KEY = 'rtt-systems.plan24.tasksPanelHeight.v1'
+const TASK_PANEL_MIN_PX = 140
+const TASK_PANEL_DEFAULT_PX = 260
+const TASK_PANEL_MAX_PX = 640
+const PLAN24_VISIBLE_DAYS_AHEAD = 90
+
+function clampTaskPanelHeight(px: number, viewportH: number): number {
+  const cap = Math.floor(Math.min(TASK_PANEL_MAX_PX, viewportH * 0.68))
+  return Math.min(cap, Math.max(TASK_PANEL_MIN_PX, Math.round(px)))
+}
+
+function readStoredTaskPanelHeight(): number {
+  if (typeof window === 'undefined') return TASK_PANEL_DEFAULT_PX
+  try {
+    const n = Number(localStorage.getItem(PLAN24_TASKS_PANEL_H_KEY))
+    if (Number.isFinite(n)) return clampTaskPanelHeight(n, window.innerHeight)
+  } catch {
+    /* ignore */
+  }
+  return TASK_PANEL_DEFAULT_PX
 }
 
 function parseSubTasks(raw: unknown): Plan24SubTask[] {
@@ -98,6 +130,7 @@ export function Plan24Page() {
   const [detailEv, setDetailEv] = useState<Plan24EventRow | null>(null)
   const [detailSubs, setDetailSubs] = useState<Plan24SubTask[]>([])
   const [detailOverride, setDetailOverride] = useState(false)
+  const [detailDurationMin, setDetailDurationMin] = useState('30')
 
   const [deleteEv, setDeleteEv] = useState<Plan24EventRow | null>(null)
   const [deleteComment, setDeleteComment] = useState('')
@@ -110,6 +143,83 @@ export function Plan24Page() {
   const [newTaskTitle, setNewTaskTitle] = useState('')
   const [loading, setLoading] = useState(false)
   const dateInputRef = useRef<HTMLInputElement | null>(null)
+  const todayYmd = localYMD(new Date())
+  const maxVisibleYmd = useMemo(() => {
+    const d = new Date(todayYmd + 'T12:00:00')
+    d.setDate(d.getDate() + (PLAN24_VISIBLE_DAYS_AHEAD - 1))
+    return localYMD(d)
+  }, [todayYmd])
+  const clampPlanDate = useCallback(
+    (raw: string) => {
+      if (!raw) return todayYmd
+      if (raw < todayYmd) return todayYmd
+      if (raw > maxVisibleYmd) return maxVisibleYmd
+      return raw
+    },
+    [todayYmd, maxVisibleYmd],
+  )
+
+  const [taskPanelHeight, setTaskPanelHeight] = useState(readStoredTaskPanelHeight)
+  const taskPanelHeightRef = useRef(taskPanelHeight)
+  taskPanelHeightRef.current = taskPanelHeight
+  const [taskResizing, setTaskResizing] = useState(false)
+
+  useEffect(() => {
+    function onResize() {
+      setTaskPanelHeight((h) => clampTaskPanelHeight(h, window.innerHeight))
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    setPlanDate((prev) => clampPlanDate(prev))
+  }, [clampPlanDate])
+
+  const beginTaskResize = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!taskBarOpen) return
+      e.preventDefault()
+      e.stopPropagation()
+      const handle = e.currentTarget
+      const pid = e.pointerId
+      const startY = e.clientY
+      const startH = taskPanelHeightRef.current
+      setTaskResizing(true)
+      let lastH = startH
+
+      const cap = () => clampTaskPanelHeight(9999, window.innerHeight)
+
+      const move = (pe: PointerEvent) => {
+        if (pe.pointerId !== pid) return
+        lastH = Math.min(cap(), Math.max(TASK_PANEL_MIN_PX, Math.round(startH + (startY - pe.clientY))))
+        setTaskPanelHeight(lastH)
+      }
+      const stop = (pe: PointerEvent) => {
+        if (pe.pointerId !== pid) return
+        document.removeEventListener('pointermove', move, true)
+        document.removeEventListener('pointerup', stop, true)
+        document.removeEventListener('pointercancel', stop, true)
+        try {
+          handle.releasePointerCapture(pid)
+        } catch {
+          /* ignore */
+        }
+        setTaskResizing(false)
+        try {
+          localStorage.setItem(PLAN24_TASKS_PANEL_H_KEY, String(lastH))
+        } catch {
+          /* ignore */
+        }
+      }
+
+      handle.setPointerCapture(pid)
+      document.addEventListener('pointermove', move, true)
+      document.addEventListener('pointerup', stop, true)
+      document.addEventListener('pointercancel', stop, true)
+    },
+    [taskBarOpen],
+  )
 
   const windowBounds = useMemo(
     () => shiftWindowBounds(planDate, shiftKind, shifts),
@@ -172,6 +282,14 @@ export function Plan24Page() {
     if (!cellId || scopeStatus !== 'ready') return
     setLoadErr(null)
     setLoading(true)
+    const materializeRes = await supabase.rpc('plan24_materialize_check_schedules', {
+      p_master_cell_id: cellId,
+      p_from_date: planDate,
+      p_to_date: planDate,
+    })
+    if (materializeRes.error) {
+      setLoadErr(materializeRes.error.message)
+    }
     const rosterRes = await supabase
       .from('plan24_rosters')
       .select('id, master_cell_id, name, sort_order, is_active, effective_from, pattern_length, pattern_start_date')
@@ -321,6 +439,7 @@ export function Plan24Page() {
       plan_date: planDate,
       shift_kind: shiftKind,
       role_name: adhocRole,
+      schedule_role_name: adhocRole || '',
       title: adhocTitle.trim() || 'Check',
       event_type: 'check',
       source: 'ad_hoc',
@@ -346,6 +465,7 @@ export function Plan24Page() {
           start_at: startAt.toISOString(),
           end_at: endAt.toISOString(),
           role_name: roleName,
+          schedule_role_name: roleName || '',
         })
         .eq('id', eventId)
       if (error) setLoadErr(error.message)
@@ -373,7 +493,12 @@ export function Plan24Page() {
       const endAt = addMinutes(startAt, Math.max(5, dur))
       const { error } = await supabase
         .from('plan24_events')
-        .update({ role_name: roleName, start_at: startAt.toISOString(), end_at: endAt.toISOString() })
+        .update({
+          role_name: roleName,
+          schedule_role_name: roleName || '',
+          start_at: startAt.toISOString(),
+          end_at: endAt.toISOString(),
+        })
         .eq('id', eventId)
       if (error) setLoadErr(error.message)
       else void refresh()
@@ -385,6 +510,8 @@ export function Plan24Page() {
     setDetailEv(ev)
     setDetailSubs(parseSubTasks(ev.sub_tasks))
     setDetailOverride(false)
+    const dur = Math.max(5, Math.round(minutesBetween(new Date(ev.start_at), new Date(ev.end_at))))
+    setDetailDurationMin(String(dur))
   }, [])
 
   const saveDetail = useCallback(async () => {
@@ -395,6 +522,13 @@ export function Plan24Page() {
       status = 'in_progress'
       opened_at = new Date().toISOString()
     }
+    const isCheck =
+      !detailEv.event_type || String(detailEv.event_type).toLowerCase() === 'check'
+    const startAt = new Date(detailEv.start_at)
+    const durRaw = Math.max(5, Math.round(Number(detailDurationMin)) || 5)
+    const maxDurInWindow = Math.max(5, Math.floor(minutesBetween(startAt, windowBounds.end)))
+    const dur = isCheck ? Math.min(maxDurInWindow, durRaw) : durRaw
+    const endAt = isCheck ? addMinutes(startAt, dur).toISOString() : detailEv.end_at
     const { error } = await supabase
       .from('plan24_events')
       .update({
@@ -402,6 +536,7 @@ export function Plan24Page() {
         sub_tasks: detailSubs,
         status,
         opened_at,
+        end_at: endAt,
       })
       .eq('id', detailEv.id)
     if (error) setLoadErr(error.message)
@@ -409,7 +544,7 @@ export function Plan24Page() {
       setDetailEv(null)
       void refresh()
     }
-  }, [detailEv, detailSubs, refresh])
+  }, [detailEv, detailSubs, detailDurationMin, refresh, windowBounds.end])
 
   const markComplete = useCallback(async () => {
     if (!detailEv || !user?.id) return
@@ -487,14 +622,14 @@ export function Plan24Page() {
     (delta: number) => {
       const d = new Date(planDate + 'T12:00:00')
       d.setDate(d.getDate() + delta)
-      setPlanDate(localYMD(d))
+      setPlanDate(clampPlanDate(localYMD(d)))
     },
-    [planDate],
+    [planDate, clampPlanDate],
   )
 
   const gotoToday = useCallback(() => {
-    setPlanDate(localYMD(new Date()))
-  }, [])
+    setPlanDate(todayYmd)
+  }, [todayYmd])
 
   const cycleShift = useCallback(
     (dir: 1 | -1) => {
@@ -561,7 +696,8 @@ export function Plan24Page() {
     return { total, done, inProg }
   }, [assignedEvents])
 
-  const isToday = planDate === localYMD(new Date())
+  const isToday = planDate === todayYmd
+  const atMaxVisible = planDate >= maxVisibleYmd
 
   const shiftLabel = useMemo(() => {
     const a = windowBounds.start
@@ -592,39 +728,142 @@ export function Plan24Page() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-2">
-      <header className="shrink-0 space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Plan 24</h1>
-          {loading ? (
-            <span
-              className="inline-flex items-center gap-1 rounded-full bg-accent-dim px-2 py-0.5 text-[11px] font-medium text-accent"
-              role="status"
-              aria-live="polite"
-            >
-              <Loader2 className="size-3 animate-spin" aria-hidden /> Loading
-            </span>
-          ) : null}
-          {roster && progress.total > 0 ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-fg/80">
-              <CircleDot className="size-3 text-emerald-600" aria-hidden />
-              {progress.done}/{progress.total} complete
-              {progress.inProg > 0 ? ` · ${progress.inProg} in progress` : ''}
-            </span>
-          ) : null}
-          {activeTeam ? (
-            <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] font-semibold text-fg/80">
-              <span className="size-2 rounded-sm" style={{ backgroundColor: activeTeam.color }} aria-hidden />
-              Team {activeTeam.name} · pattern day {patternDay}
-            </span>
-          ) : null}
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-1">
+      <div className="flex min-h-0 min-w-0 shrink-0 items-center gap-2 overflow-x-auto border-b border-border/50 pb-2">
+        <h1 className="shrink-0 font-display text-lg font-semibold tracking-tight md:text-xl">Plan 24</h1>
+        {loading ? (
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-dim px-2 py-0.5 text-[11px] font-medium text-accent"
+            role="status"
+            aria-live="polite"
+          >
+            <Loader2 className="size-3 animate-spin" aria-hidden /> Loading
+          </span>
+        ) : null}
+        {roster && progress.total > 0 ? (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-fg/80">
+            <CircleDot className="size-3 text-emerald-600" aria-hidden />
+            {progress.done}/{progress.total}
+            {progress.inProg > 0 ? ` · ${progress.inProg} prog` : ''}
+          </span>
+        ) : null}
+
+        <span className="hidden h-5 w-px shrink-0 bg-border sm:block" aria-hidden />
+
+        <div className="inline-flex shrink-0 items-center gap-0.5 rounded-xl border border-border bg-surface px-0.5 py-0.5">
+          <button
+            type="button"
+            className="rounded-lg p-1 text-muted hover:bg-black/[0.06] hover:text-fg"
+            aria-label="Previous day"
+            onClick={() => stepDay(-1)}
+          >
+            <ChevronLeft className="size-4" />
+          </button>
+          <input
+            ref={dateInputRef}
+            type="date"
+            className="max-w-[9.5rem] rounded-lg border-0 bg-transparent px-1 py-0.5 text-xs font-medium text-fg outline-none sm:text-sm"
+            value={planDate}
+            min={todayYmd}
+            max={maxVisibleYmd}
+            onChange={(e) => setPlanDate(clampPlanDate(e.target.value))}
+            aria-label="Plan date"
+          />
+          <button
+            type="button"
+            className="rounded-lg p-1 text-muted hover:bg-black/[0.06] hover:text-fg"
+            aria-label="Next day"
+            onClick={() => stepDay(1)}
+            disabled={atMaxVisible}
+          >
+            <ChevronRight className="size-4" />
+          </button>
         </div>
-        <p className="max-w-3xl text-sm text-muted">{shiftLabel}</p>
-        <p className="max-w-3xl text-xs text-muted">
-          Drag checks to move time or change role · click a role header to assign a person · Unassigned slides in from the right; Tasks open below the grid ·{' '}
-          <kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">←</kbd>/<kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">→</kbd> day · <kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">[</kbd>/<kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">]</kbd> shift · <kbd className="rounded border border-border bg-surface-raised/60 px-1 font-mono text-[10px]">T</kbd> today
-        </p>
-      </header>
+        <button
+          type="button"
+          className={`inline-flex shrink-0 items-center gap-1 rounded-xl border border-border bg-surface px-2 py-1 text-xs font-semibold shadow-sm hover:bg-surface-raised/80 ${
+            isToday ? 'text-accent' : 'text-fg/80'
+          }`}
+          onClick={gotoToday}
+          aria-label="Go to today"
+          title="Today (T)"
+          disabled={isToday}
+        >
+          <CalendarDays className="size-3.5 shrink-0" aria-hidden />
+          <span className="hidden sm:inline">Today</span>
+        </button>
+        <div
+          className="inline-flex w-fit shrink-0 flex-nowrap items-center rounded-md border border-border bg-surface p-px"
+          role="group"
+          aria-label="Shift"
+          title={shiftLabel}
+        >
+          {shiftTabs.length === 0 ? (
+            <span className="px-1.5 py-0.5 text-[10px] text-muted">No shifts</span>
+          ) : (
+            shiftTabs.map((s) => {
+              const label = (s.display_name?.trim() || s.kind).replace(/_/g, ' ')
+              const range = `${(s.start_local || '').slice(0, 5)}–${(s.end_local || '').slice(0, 5)}`
+              const isActive = shiftKind === s.kind
+              return (
+                <button
+                  key={s.kind}
+                  type="button"
+                  aria-pressed={isActive}
+                  aria-label={`${label}, ${range}`}
+                  className={`inline-flex h-6 min-h-6 shrink-0 items-center whitespace-nowrap rounded-sm px-2 text-[10px] font-semibold capitalize leading-none transition-colors ${
+                    isActive ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg'
+                  }`}
+                  onClick={() => setShiftKind(s.kind)}
+                  title={`${label} · ${range}`}
+                >
+                  {label}
+                </button>
+              )
+            })
+          )}
+        </div>
+        {activeTeam ? (
+          <span
+            className="inline-flex w-max min-w-0 max-w-[calc(100vw-2rem)] shrink-0 items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1 text-left text-[11px] font-semibold leading-none text-fg/90 sm:max-w-[min(96rem,calc(100vw-2rem))]"
+            title={`${activeTeam.name} - pattern day ${patternDay}`}
+          >
+            <span
+              className="size-3 shrink-0 rounded-sm ring-1 ring-black/10 dark:ring-white/15"
+              style={{ backgroundColor: activeTeam.color }}
+              aria-hidden
+            />
+            <span className="flex min-w-0 items-baseline gap-x-1 overflow-hidden">
+              <span className="min-w-0 truncate">{activeTeam.name}</span>
+              <span className="shrink-0 whitespace-nowrap font-medium text-muted">
+                {' '}
+                - pattern day {patternDay}
+              </span>
+            </span>
+          </span>
+        ) : null}
+        <span className="inline-flex shrink-0 rounded-lg border border-border bg-surface px-2 py-1 text-[10px] font-medium text-muted">
+          Visible horizon: today to {maxVisibleYmd}
+        </span>
+        <button
+          type="button"
+          className={`ml-auto inline-flex shrink-0 items-center rounded-xl border border-border bg-surface py-1.5 text-xs font-semibold text-fg shadow-sm hover:bg-surface-raised/80 ${
+            panelOpen ? 'gap-1 px-2 sm:px-2.5' : 'px-1.5 sm:px-2'
+          }`}
+          onClick={() => setPanelOpen((o) => !o)}
+          aria-expanded={panelOpen}
+          aria-controls="plan24-unassigned-drawer"
+          aria-label={panelOpen ? 'Close unassigned panel' : 'Open unassigned panel'}
+          title={`${panelOpen ? 'Close' : 'Open'} unassigned · ${unassignedEvents.length}`}
+        >
+          {panelOpen ? <PanelRightClose className="size-4 shrink-0" aria-hidden /> : <PanelRightOpen className="size-4 shrink-0" aria-hidden />}
+          {panelOpen ? (
+            <span className="hidden sm:inline">Unassigned{unassignedEvents.length ? ` · ${unassignedEvents.length}` : ''}</span>
+          ) : unassignedEvents.length ? (
+            <span className="ml-0.5 rounded-full bg-accent px-1.5 text-[10px] text-white sm:ml-1">{unassignedEvents.length}</span>
+          ) : null}
+        </button>
+      </div>
 
       {loadErr ? (
         <div className="rounded-xl border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">
@@ -639,94 +878,8 @@ export function Plan24Page() {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex items-center gap-1 rounded-xl border border-border bg-surface px-1 py-1">
-          <button
-            type="button"
-            className="rounded-lg p-1.5 text-muted hover:bg-black/[0.06] hover:text-fg"
-            aria-label="Previous day"
-            onClick={() => stepDay(-1)}
-          >
-            <ChevronLeft className="size-4" />
-          </button>
-          <input
-            ref={dateInputRef}
-            type="date"
-            className="rounded-lg border-0 bg-transparent px-2 py-1 text-sm font-medium text-fg outline-none"
-            value={planDate}
-            onChange={(e) => setPlanDate(e.target.value)}
-            aria-label="Plan date"
-          />
-          <button
-            type="button"
-            className="rounded-lg p-1.5 text-muted hover:bg-black/[0.06] hover:text-fg"
-            aria-label="Next day"
-            onClick={() => stepDay(1)}
-          >
-            <ChevronRight className="size-4" />
-          </button>
-        </div>
-        <button
-          type="button"
-          className={`inline-flex items-center gap-1 rounded-xl border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold shadow-sm hover:bg-surface-raised/80 ${
-            isToday ? 'text-accent' : 'text-fg/80'
-          }`}
-          onClick={gotoToday}
-          aria-label="Go to today"
-          title="Today (T)"
-          disabled={isToday}
-        >
-          <CalendarDays className="size-3.5" aria-hidden />
-          Today
-        </button>
-        <div className="inline-flex flex-wrap rounded-xl border border-border bg-surface p-1" role="group" aria-label="Shift">
-          {shiftTabs.length === 0 ? (
-            <span className="px-2 py-1.5 text-xs text-muted">No shifts configured</span>
-          ) : (
-            shiftTabs.map((s) => {
-              const label = (s.display_name?.trim() || s.kind).replace(/_/g, ' ')
-              const range = `${(s.start_local || '').slice(0, 5)}–${(s.end_local || '').slice(0, 5)}`
-              const isActive = shiftKind === s.kind
-              return (
-                <button
-                  key={s.kind}
-                  type="button"
-                  aria-pressed={isActive}
-                  className={`flex min-w-[5rem] flex-col items-center rounded-lg px-3 py-1 text-xs font-semibold capitalize transition-colors ${
-                    isActive ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg'
-                  }`}
-                  onClick={() => setShiftKind(s.kind)}
-                  title={`${label} (${range})`}
-                >
-                  <span>{label}</span>
-                  <span className="text-[9px] font-normal tabular-nums opacity-75">{range}</span>
-                </button>
-              )
-            })
-          )}
-        </div>
-        <button
-          type="button"
-          className={`ml-auto inline-flex items-center rounded-xl border border-border bg-surface py-2 text-xs font-semibold text-fg shadow-sm hover:bg-surface-raised/80 ${
-            panelOpen ? 'gap-1.5 px-3' : 'px-2'
-          }`}
-          onClick={() => setPanelOpen((o) => !o)}
-          aria-expanded={panelOpen}
-          aria-controls="plan24-unassigned-drawer"
-          aria-label={panelOpen ? 'Close unassigned panel' : 'Open unassigned panel'}
-          title={`${panelOpen ? 'Close' : 'Open'} unassigned · ${unassignedEvents.length}`}
-        >
-          {panelOpen ? <PanelRightClose className="size-4 shrink-0" aria-hidden /> : <PanelRightOpen className="size-4 shrink-0" aria-hidden />}
-          {panelOpen ? (
-            <span>Unassigned{unassignedEvents.length ? ` · ${unassignedEvents.length}` : ''}</span>
-          ) : unassignedEvents.length ? (
-            <span className="ml-1 rounded-full bg-accent px-1.5 text-[10px] text-white">{unassignedEvents.length}</span>
-          ) : null}
-        </button>
-      </div>
-
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl">
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl pb-11">
           {roster && shifts.length > 0 && activeRoles.length > 0 ? (
             <Plan24Grid
               windowStart={windowBounds.start}
@@ -804,83 +957,109 @@ export function Plan24Page() {
               )}
             </div>
           </aside>
-        </div>
 
-        <div className="shrink-0 overflow-hidden rounded-t-xl border border-border bg-surface shadow-[0_-4px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_24px_rgba(0,0,0,0.28)]">
-          <button
-            type="button"
-            className="flex h-11 w-full items-center justify-between px-4 text-left text-xs font-semibold uppercase tracking-wide text-fg/80 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
-            onClick={() => setTaskBarOpen((o) => !o)}
-            aria-expanded={taskBarOpen}
-            aria-controls="plan24-tasks-panel"
-          >
-            <span className="inline-flex items-center gap-2">
-              <ClipboardList className="size-4 opacity-80" aria-hidden />
-              Tasks
-            </span>
-            <span className="inline-flex items-center gap-1 text-[10px] font-normal text-muted">
-              {taskBarOpen ? 'Hide' : 'Show'}
-              <ChevronUp
-                className={`size-4 shrink-0 transition-transform duration-300 ease-out motion-reduce:transition-none ${taskBarOpen ? 'rotate-180' : ''}`}
-                aria-hidden
-              />
-            </span>
-          </button>
-          <div
-            className={`grid w-full transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
-              taskBarOpen ? '[grid-template-rows:1fr]' : '[grid-template-rows:0fr]'
-            }`}
-          >
-            <div id="plan24-tasks-panel" className="min-h-0 overflow-hidden border-t border-border">
-              <div className="max-h-[min(40vh,22rem)] overflow-y-auto overscroll-contain px-4 pb-3 pt-2" role="region" aria-label="Tasks">
-                <div className="flex flex-wrap items-end gap-2">
-                  <label className="text-xs text-muted">
-                    Role
-                    <select
-                      className={`${inputClass} mt-0.5 min-w-[8rem]`}
-                      value={taskRoleName}
-                      onChange={(e) => setTaskRoleName(e.target.value)}
-                    >
-                      {activeRoles.map((r) => (
-                        <option key={r.id} value={r.name}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="min-w-[12rem] flex-1 text-xs text-muted">
-                    New task
-                    <input
-                      className={`${inputClass} mt-0.5`}
-                      value={newTaskTitle}
-                      onChange={(e) => setNewTaskTitle(e.target.value)}
-                      placeholder="Describe the task"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95"
-                    onClick={() => void addTask()}
+          {/* Bottom sheet: anchored to grid bottom; flex-col-reverse keeps the bar at the viewport bottom and grows content upward over the grid. */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[15]">
+            <div className="pointer-events-auto flex flex-col-reverse rounded-t-xl border border-border bg-surface shadow-[0_-8px_32px_rgba(0,0,0,0.12)] dark:shadow-[0_-8px_32px_rgba(0,0,0,0.45)]">
+              <button
+                type="button"
+                className="flex h-11 w-full items-center justify-between px-4 text-left text-xs font-semibold uppercase tracking-wide text-fg/80 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                onClick={() => setTaskBarOpen((o) => !o)}
+                aria-expanded={taskBarOpen}
+                aria-controls="plan24-tasks-panel"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <ClipboardList className="size-4 opacity-80" aria-hidden />
+                  Tasks
+                </span>
+                <span className="inline-flex items-center gap-1 text-[10px] font-normal text-muted">
+                  {taskBarOpen ? 'Hide' : 'Show'}
+                  <ChevronUp
+                    className={`size-4 shrink-0 transition-transform duration-300 ease-out motion-reduce:transition-none ${taskBarOpen ? '' : 'rotate-180'}`}
+                    aria-hidden
+                  />
+                </span>
+              </button>
+              <div
+                id="plan24-tasks-panel"
+                className={`overflow-hidden border-t border-border motion-reduce:transition-none ${
+                  taskResizing ? '' : 'transition-[height] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]'
+                }`}
+                style={{ height: taskBarOpen ? taskPanelHeight : 0 }}
+              >
+                <div className="flex h-full min-h-0 flex-col">
+                  <div
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Resize tasks panel"
+                    title="Drag to resize · double-click to reset height"
+                    onPointerDown={beginTaskResize}
+                    onDoubleClick={(ev) => {
+                      ev.preventDefault()
+                      ev.stopPropagation()
+                      const d = clampTaskPanelHeight(TASK_PANEL_DEFAULT_PX, window.innerHeight)
+                      setTaskPanelHeight(d)
+                      try {
+                        localStorage.setItem(PLAN24_TASKS_PANEL_H_KEY, String(d))
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                    className="flex shrink-0 cursor-row-resize touch-none select-none items-center justify-center border-b border-border py-1.5 hover:bg-accent-dim/20 active:bg-accent-dim/35"
                   >
-                    <Plus className="mr-1 inline size-3.5 align-text-bottom" aria-hidden />
-                    Add
-                  </button>
-                </div>
-                <ul className="mt-3 space-y-1 text-sm">
-                  {tasks
-                    .filter((t) => t.role_name === taskRoleName)
-                    .map((t) => (
-                      <li key={t.id} className="flex items-center gap-2 rounded-lg border border-border px-2 py-1.5">
+                    <GripHorizontal className="size-5 text-muted" aria-hidden />
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 pt-2" role="region" aria-label="Tasks">
+                    <div className="flex flex-wrap items-end gap-2">
+                      <label className="text-xs text-muted">
+                        Role
+                        <select
+                          className={`${inputClass} mt-0.5 min-w-[8rem]`}
+                          value={taskRoleName}
+                          onChange={(e) => setTaskRoleName(e.target.value)}
+                        >
+                          {activeRoles.map((r) => (
+                            <option key={r.id} value={r.name}>
+                              {r.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="min-w-[12rem] flex-1 text-xs text-muted">
+                        New task
                         <input
-                          type="checkbox"
-                          className="size-4 rounded border-border"
-                          checked={t.done}
-                          onChange={() => void toggleTask(t)}
+                          className={`${inputClass} mt-0.5`}
+                          value={newTaskTitle}
+                          onChange={(e) => setNewTaskTitle(e.target.value)}
+                          placeholder="Describe the task"
                         />
-                        <span className={t.done ? 'text-muted line-through' : ''}>{t.title}</span>
-                      </li>
-                    ))}
-                </ul>
+                      </label>
+                      <button
+                        type="button"
+                        className="rounded-xl bg-accent px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95"
+                        onClick={() => void addTask()}
+                      >
+                        <Plus className="mr-1 inline size-3.5 align-text-bottom" aria-hidden />
+                        Add
+                      </button>
+                    </div>
+                    <ul className="mt-3 space-y-1 text-sm">
+                      {tasks
+                        .filter((t) => t.role_name === taskRoleName)
+                        .map((t) => (
+                          <li key={t.id} className="flex items-center gap-2 rounded-lg border border-border px-2 py-1.5">
+                            <input
+                              type="checkbox"
+                              className="size-4 rounded border-border"
+                              checked={t.done}
+                              onChange={() => void toggleTask(t)}
+                            />
+                            <span className={t.done ? 'text-muted line-through' : ''}>{t.title}</span>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -950,17 +1129,47 @@ export function Plan24Page() {
             className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border-strong bg-surface p-5 shadow-xl"
             role="dialog"
             aria-modal="true"
+            aria-labelledby="plan24-check-detail-title"
           >
           <div className="space-y-3">
-            <h2 className="font-display text-lg font-semibold">Check</h2>
+            <div className="flex items-start justify-between gap-3">
+              <h2 id="plan24-check-detail-title" className="font-display text-lg font-semibold">
+                Check
+              </h2>
+              <button
+                type="button"
+                className="shrink-0 rounded-lg p-1.5 text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/10"
+                aria-label="Close"
+                onClick={() => setDetailEv(null)}
+              >
+                <X className="size-5" aria-hidden />
+              </button>
+            </div>
             <label className="block text-xs font-medium text-muted">
               Title
               <input
-                className={`${inputClass} mt-1`}
+                className={`${detailInputClass} mt-1`}
                 value={detailEv.title}
                 onChange={(e) => setDetailEv({ ...detailEv, title: e.target.value })}
               />
             </label>
+            {!detailEv.event_type || String(detailEv.event_type).toLowerCase() === 'check' ? (
+              <label className="block text-xs font-medium text-muted">
+                Duration (minutes)
+                <input
+                  type="number"
+                  min={5}
+                  step={1}
+                  className={`${detailInputClass} mt-1`}
+                  inputMode="numeric"
+                  value={detailDurationMin}
+                  onChange={(e) => setDetailDurationMin(e.target.value)}
+                />
+                <span className="mt-1 block text-[10px] text-muted/90">
+                  Starts {formatClock(new Date(detailEv.start_at))} · end updates from duration
+                </span>
+              </label>
+            ) : null}
             <div className="text-xs text-muted">
               {detailEv.role_name ? `Role: ${detailEv.role_name}` : 'Unassigned'} · {detailEv.source === 'ad_hoc' ? 'Ad hoc' : 'Scheduled'}
             </div>
@@ -978,7 +1187,7 @@ export function Plan24Page() {
                     }}
                   />
                   <input
-                    className={`${inputClass} flex-1 py-1.5`}
+                    className={`${detailInputClass} flex-1 py-1.5`}
                     value={s.label}
                     onChange={(e) => {
                       const next = [...detailSubs]
@@ -1005,7 +1214,7 @@ export function Plan24Page() {
               </label>
             ) : null}
             <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-              <button type="button" className="rounded-xl border border-border px-3 py-2 text-sm" onClick={() => void saveDetail()}>
+              <button type="button" className={detailSaveButtonClass} onClick={() => void saveDetail()}>
                 Save
               </button>
               <button

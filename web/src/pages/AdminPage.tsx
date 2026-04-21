@@ -4,6 +4,7 @@ import { Shield } from 'lucide-react'
 import { CatalogManager } from '../features/admin/CatalogManager'
 import { ADMIN_NAV_FLAT, isCatalogSection, parseAdminTab } from '../features/admin/adminNavConfig'
 import { PeopleRoster } from '../features/admin/PeopleRoster'
+import { SkillPlansManager } from '../features/admin/SkillPlansManager'
 import { TeamsManager } from '../features/admin/TeamsManager'
 
 const LazySkillTrainingManager = lazy(async () => {
@@ -45,6 +46,8 @@ export function AdminPage() {
             <LazySkillTrainingManager />
           </Suspense>
         ) : null}
+
+        {active === 'skill-plans' ? <SkillPlansManager /> : null}
 
         {active === 'teams' ? <TeamsManager /> : null}
         {active === 'people' ? <PeopleRoster /> : null}

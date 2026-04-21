@@ -5,6 +5,10 @@ export type Plan24EventRow = {
   id: string
   master_cell_id: string
   roster_id: string | null
+  schedule_id?: string | null
+  template_version_id?: string | null
+  schedule_occurrence_at?: string | null
+  schedule_role_name?: string
   plan_date: string
   shift_kind: string
   role_name: string | null
@@ -99,4 +103,57 @@ export type Plan24TaskRow = {
   title: string
   done: boolean
   sort_order: number
+}
+
+export type Plan24CheckTemplateRow = {
+  id: string
+  master_cell_id: string
+  name: string
+  description: string | null
+  created_at: string
+}
+
+export type Plan24CheckTemplateVersionRow = {
+  id: string
+  template_id: string
+  version_no: number
+  title: string
+  notes: string | null
+  state: 'draft' | 'published' | 'archived'
+  created_at: string
+}
+
+export type Plan24CheckTemplateTaskRow = {
+  id: string
+  version_id: string
+  label: string
+  required: boolean
+  sort_order: number
+}
+
+export type Plan24CheckScheduleRow = {
+  id: string
+  master_cell_id: string
+  template_id: string
+  template_version_id: string
+  name: string
+  shift_kind: string
+  recurrence_kind: 'hourly' | 'daily' | 'weekly' | 'monthly'
+  interval_n: number
+  weekdays: number[]
+  month_day: number | null
+  start_local_time: string
+  hourly_until_local: string | null
+  duration_minutes: number
+  starts_on: string
+  ends_on: string | null
+  timezone: string
+  state: 'active' | 'paused' | 'archived'
+  created_at: string
+}
+
+export type Plan24CheckScheduleRoleRow = {
+  id: string
+  schedule_id: string
+  role_name: string
 }

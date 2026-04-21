@@ -76,6 +76,31 @@ type PsRaw = {
   is_extra: boolean
   due_date: string | null
 }
+type PlanProgressRaw = {
+  person_id: string
+  plan_skill_id: string
+  plan_name: string
+  stage_id: string
+  stage_no: number
+  stage_name: string
+  duration_months: number
+  is_unlocked: boolean
+  target_date: string | null
+  progress_percent: number
+  total_knowledges: number
+  completed_knowledges: number
+}
+type PlanKnowledgeRaw = {
+  person_id: string
+  plan_skill_id: string
+  stage_id: string
+  stage_no: number
+  stage_name: string
+  knowledge_skill_id: string
+  knowledge_name: string
+  actual_level: number | null
+  is_unlocked: boolean
+}
 
 type TrainingPackRaw = {
   skill_id: string
@@ -268,6 +293,8 @@ export function MySkillsPage() {
   const [psRows, setPsRows] = useState<PsRaw[]>([])
   const [trainingPacks, setTrainingPacks] = useState<TrainingPackRaw[]>([])
   const [trainingQuestions, setTrainingQuestions] = useState<TrainingQuestionRaw[]>([])
+  const [planProgress, setPlanProgress] = useState<PlanProgressRaw[]>([])
+  const [planKnowledges, setPlanKnowledges] = useState<PlanKnowledgeRaw[]>([])
   const [trainingSkillId, setTrainingSkillId] = useState<string | null>(null)
   const [assessors, setAssessors] = useState<AssessorCard[]>([])
   const [assessorSkillInfo, setAssessorSkillInfo] = useState<{ skillName: string; required: number } | null>(null)
@@ -290,6 +317,8 @@ export function MySkillsPage() {
         setAdminNoPeople(false)
         setTrainingPacks([])
         setTrainingQuestions([])
+        setPlanProgress([])
+        setPlanKnowledges([])
         setAssessors([])
         setTrainingSkillId(null)
         setLoading(false)
@@ -344,6 +373,8 @@ export function MySkillsPage() {
             setPsRows([])
             setTrainingPacks([])
             setTrainingQuestions([])
+            setPlanProgress([])
+            setPlanKnowledges([])
             setAssessors([])
             setTrainingSkillId(null)
             setSelectedPersonId(null)
@@ -379,6 +410,8 @@ export function MySkillsPage() {
           setPsRows([])
           setTrainingPacks([])
           setTrainingQuestions([])
+          setPlanProgress([])
+          setPlanKnowledges([])
           setAssessors([])
           setTrainingSkillId(null)
           setLoading(false)
@@ -406,6 +439,8 @@ export function MySkillsPage() {
         setPsRows([])
         setTrainingPacks([])
         setTrainingQuestions([])
+        setPlanProgress([])
+        setPlanKnowledges([])
         setAssessors([])
         setTrainingSkillId(null)
         setLoading(false)
@@ -415,7 +450,7 @@ export function MySkillsPage() {
       setPerson(pRow as PersonRow)
       setNoLink(false)
 
-      const [sk, rs, ps, tp, tq, assessorProfiles] = await Promise.all([
+      const [sk, rs, ps, tp, tq, assessorProfiles, pp, pk] = await Promise.all([
         supabase.from('skills').select('id, name, kind, sort_order, skill_groups(name)').order('sort_order', {
           ascending: true,
         }),
@@ -431,6 +466,18 @@ export function MySkillsPage() {
           )
           .order('sort_order', { ascending: true }),
         supabase.from('profiles').select('id, display_name, role').eq('role', 'assessor').order('display_name'),
+        supabase
+          .from('v_person_plan_stage_progress')
+          .select(
+            'person_id, plan_skill_id, plan_name, stage_id, stage_no, stage_name, duration_months, is_unlocked, target_date, progress_percent, total_knowledges, completed_knowledges',
+          )
+          .eq('person_id', pid),
+        supabase
+          .from('v_person_plan_stage_knowledges')
+          .select(
+            'person_id, plan_skill_id, stage_id, stage_no, stage_name, knowledge_skill_id, knowledge_name, actual_level, is_unlocked',
+          )
+          .eq('person_id', pid),
       ])
 
       if (cancel) return
@@ -448,6 +495,10 @@ export function MySkillsPage() {
       else setTrainingPacks([])
       if (!tq.error && tq.data) setTrainingQuestions(tq.data as TrainingQuestionRaw[])
       else setTrainingQuestions([])
+      if (!pp.error && pp.data) setPlanProgress(pp.data as PlanProgressRaw[])
+      else setPlanProgress([])
+      if (!pk.error && pk.data) setPlanKnowledges(pk.data as PlanKnowledgeRaw[])
+      else setPlanKnowledges([])
       const assessorProfileRows = (assessorProfiles.data ?? []) as AssessorProfileRaw[]
       if (assessorProfiles.error || assessorProfileRows.length === 0) {
         setAssessors([])
@@ -524,8 +575,10 @@ export function MySkillsPage() {
   const { requiredRows, optionalRows, addableSkillOptions } = useMemo(() => {
     const required: SkillRowModel[] = []
     const optional: SkillRowModel[] = []
+    const knowledgeSkillIds = new Set(planKnowledges.map((x) => x.knowledge_skill_id))
 
     for (const s of sortedSkills) {
+      if (s.kind === 'plan' || knowledgeSkillIds.has(s.id)) continue
       const req = maxRequiredForRoles(rsrMap, roleIds, s.id)
       const ps = psMap.get(s.id)
       const actual = ps?.actual ?? null
@@ -554,6 +607,7 @@ export function MySkillsPage() {
     }
 
     const addable = sortedSkills.filter((s) => {
+      if (s.kind === 'plan' || knowledgeSkillIds.has(s.id)) return false
       const req = maxRequiredForRoles(rsrMap, roleIds, s.id)
       if (req != null) return false
       const ps = psMap.get(s.id)
@@ -562,7 +616,7 @@ export function MySkillsPage() {
     })
 
     return { requiredRows: required, optionalRows: optional, addableSkillOptions: addable }
-  }, [sortedSkills, roleIds, rsrMap, psMap])
+  }, [sortedSkills, roleIds, rsrMap, psMap, planKnowledges])
 
   const gapCounts = useMemo(() => {
     const c: Record<GapKind, number> = {
@@ -733,8 +787,15 @@ export function MySkillsPage() {
       if ((questionsBySkill.get(r.skillId) ?? []).length === 0) continue
       s.add(r.skillId)
     }
+    for (const k of planKnowledges) {
+      const actual = k.actual_level ?? 1
+      if (actual !== 1) continue
+      if (!packBySkill.has(k.knowledge_skill_id)) continue
+      if ((questionsBySkill.get(k.knowledge_skill_id) ?? []).length === 0) continue
+      s.add(k.knowledge_skill_id)
+    }
     return s
-  }, [requiredRows, optionalRows, packBySkill, questionsBySkill])
+  }, [requiredRows, optionalRows, planKnowledges, packBySkill, questionsBySkill])
 
   const needsAssessorRows = useMemo(
     () =>
@@ -760,6 +821,32 @@ export function MySkillsPage() {
       }),
     [optionalRows],
   )
+
+  const planCards = useMemo(() => {
+    const byPlan = new Map<string, { planName: string; stages: PlanProgressRaw[] }>()
+    for (const st of planProgress) {
+      const cur = byPlan.get(st.plan_skill_id) ?? { planName: st.plan_name, stages: [] }
+      cur.stages.push(st)
+      byPlan.set(st.plan_skill_id, cur)
+    }
+    for (const item of byPlan.values()) {
+      item.stages.sort((a, b) => a.stage_no - b.stage_no)
+    }
+    return [...byPlan.entries()].map(([planId, v]) => ({ planId, planName: v.planName, stages: v.stages }))
+  }, [planProgress])
+
+  const knowledgeByStage = useMemo(() => {
+    const m = new Map<string, PlanKnowledgeRaw[]>()
+    for (const row of planKnowledges) {
+      const arr = m.get(row.stage_id) ?? []
+      arr.push(row)
+      m.set(row.stage_id, arr)
+    }
+    for (const arr of m.values()) {
+      arr.sort((a, b) => a.knowledge_name.localeCompare(b.knowledge_name))
+    }
+    return m
+  }, [planKnowledges])
 
   function openEditor(row: SkillRowModel, anchor?: CellEditorAnchor | null) {
     if (!person) return
@@ -1079,6 +1166,67 @@ export function MySkillsPage() {
               </button>
             </div>
           </section>
+
+          <PlanSkillsSection
+            plans={planCards}
+            knowledgeByStage={knowledgeByStage}
+            readOnly={readOnly}
+            trainingEligibleIds={trainingEligibleSkillIds}
+            onSetKnowledgeLevel={(k, level) => {
+              if (!person) return
+              const previous = planKnowledges
+              void supabase
+                .from('person_skills')
+                .upsert(
+                  {
+                    person_id: person.id,
+                    skill_id: k.knowledge_skill_id,
+                    actual_level: level,
+                    is_extra: false,
+                    due_date: null,
+                  },
+                  { onConflict: 'person_id,skill_id' },
+                )
+                .then(({ error }) => {
+                  if (error) return
+                  setPlanKnowledges((prev) =>
+                    prev.map((row) =>
+                      row.person_id === k.person_id && row.knowledge_skill_id === k.knowledge_skill_id
+                        ? { ...row, actual_level: level }
+                        : row,
+                    ),
+                  )
+                  setPlanProgress((prev) =>
+                    prev.map((stage) => {
+                      if (stage.stage_id !== k.stage_id) return stage
+                      const stageKnowledges = previous.filter((row) => row.stage_id === k.stage_id)
+                      const total = stageKnowledges.length
+                      const completed = stageKnowledges.reduce((acc, row) => {
+                        if (row.knowledge_skill_id === k.knowledge_skill_id) {
+                          return acc + (level === 3 ? 1 : 0)
+                        }
+                        return acc + ((row.actual_level ?? 1) === 3 ? 1 : 0)
+                      }, 0)
+                      return {
+                        ...stage,
+                        completed_knowledges: completed,
+                        total_knowledges: total,
+                        progress_percent: total > 0 ? (completed * 100) / total : 0,
+                      }
+                    }),
+                  )
+                })
+            }}
+            onStartTraining={(k) => {
+              setTrainingSkillId(k.knowledge_skill_id)
+            }}
+            onShowAssessors={(k) => {
+              setAssessorSkillInfo({
+                skillName: k.knowledge_name,
+                required: 3,
+              })
+            }}
+          />
 
           <SkillSection
             title="Required for your roles"
@@ -1445,6 +1593,144 @@ function SkillSection(props: {
             </table>
           </div>
         )}
+      </div>
+    </section>
+  )
+}
+
+function PlanSkillsSection(props: {
+  plans: { planId: string; planName: string; stages: PlanProgressRaw[] }[]
+  knowledgeByStage: Map<string, PlanKnowledgeRaw[]>
+  readOnly: boolean
+  trainingEligibleIds: Set<string>
+  onSetKnowledgeLevel: (k: PlanKnowledgeRaw, level: 1 | 2 | 3) => void
+  onStartTraining: (k: PlanKnowledgeRaw) => void
+  onShowAssessors: (k: PlanKnowledgeRaw) => void
+}) {
+  const { plans, knowledgeByStage, readOnly, trainingEligibleIds, onSetKnowledgeLevel, onStartTraining, onShowAssessors } = props
+  const [collapsedStages, setCollapsedStages] = useState<Set<string>>(() => new Set())
+
+  if (plans.length === 0) return null
+
+  function toggleStage(stageId: string) {
+    setCollapsedStages((prev) => {
+      const next = new Set(prev)
+      if (next.has(stageId)) next.delete(stageId)
+      else next.add(stageId)
+      return next
+    })
+  }
+
+  return (
+    <section className="rounded-xl border border-border bg-surface-raised/40 backdrop-blur-sm">
+      <div className="border-b border-border px-2.5 py-2 sm:px-3">
+        <h2 className="font-display text-sm font-semibold tracking-tight sm:text-base">Plan progression</h2>
+      </div>
+      <div className="space-y-3 p-2.5 sm:p-3">
+        {plans.map((plan) => (
+          <article key={plan.planId} className="rounded-lg border border-border bg-surface p-2.5">
+            <h3 className="font-medium text-fg">{plan.planName}</h3>
+            <div className="mt-2 space-y-2">
+              {plan.stages.map((stage) => {
+                const knowledges = knowledgeByStage.get(stage.stage_id) ?? []
+                const collapsed = collapsedStages.has(stage.stage_id)
+                return (
+                  <div key={stage.stage_id} className="rounded-md border border-border/80 bg-canvas/40 p-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleStage(stage.stage_id)}
+                      className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
+                      aria-expanded={!collapsed}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="text-muted" aria-hidden>
+                          {collapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
+                        </span>
+                        <p className="text-sm font-medium text-fg">
+                          {stage.stage_name}{' '}
+                          <span className="text-xs font-normal text-muted">
+                            · {Math.round(stage.progress_percent ?? 0)}% · {stage.completed_knowledges}/{stage.total_knowledges}
+                          </span>
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          stage.is_unlocked ? 'bg-emerald-100 text-emerald-900' : 'bg-zinc-200 text-zinc-700'
+                        }`}
+                      >
+                        {stage.is_unlocked ? `Active · Target ${stage.target_date ?? '—'}` : 'Locked'}
+                      </span>
+                    </button>
+                    {collapsed ? null : knowledges.length > 0 ? (
+                      <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                        {knowledges.map((k) => (
+                          <div key={k.knowledge_skill_id} className="flex items-center justify-between gap-2 rounded border border-border bg-surface px-2 py-1.5">
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-medium text-fg">{k.knowledge_name}</p>
+                              <p className="text-[10px] text-muted">
+                                {trainingEligibleIds.has(k.knowledge_skill_id)
+                                  ? 'Training 1→2, Assessor 2→3'
+                                  : 'Assessor 1→3'}
+                              </p>
+                            </div>
+                            {!readOnly ? (
+                              <div className="flex items-center gap-1">
+                                {([1, 2, 3] as const).map((lv) => {
+                                  const current = (k.actual_level ?? 1) === lv
+                                  return (
+                                    <button
+                                      key={lv}
+                                      type="button"
+                                      disabled={!stage.is_unlocked}
+                                      onClick={() => onSetKnowledgeLevel(k, lv)}
+                                      className={`rounded px-2 py-1 text-[11px] font-semibold ${
+                                        current
+                                          ? 'bg-accent text-white'
+                                          : 'border border-border text-fg'
+                                      } disabled:cursor-not-allowed disabled:opacity-40`}
+                                    >
+                                      {lv}
+                                    </button>
+                                  )
+                                })}
+                                {(k.actual_level ?? 1) <= 1 && trainingEligibleIds.has(k.knowledge_skill_id) ? (
+                                  <button
+                                    type="button"
+                                    disabled={!stage.is_unlocked}
+                                    onClick={() => onStartTraining(k)}
+                                    className="rounded border border-sky-300/80 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-900 disabled:opacity-40"
+                                  >
+                                    Training
+                                  </button>
+                                ) : null}
+                                {(k.actual_level ?? 1) >= 2 || !trainingEligibleIds.has(k.knowledge_skill_id) ? (
+                                  <button
+                                    type="button"
+                                    disabled={!stage.is_unlocked}
+                                    onClick={() => onShowAssessors(k)}
+                                    className="rounded border border-violet-300/80 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-900 disabled:opacity-40"
+                                  >
+                                    Assessor
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <span className="rounded border border-border bg-canvas/70 px-2 py-1 text-[11px] font-semibold text-fg">
+                                L{k.actual_level ?? 1}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-muted">No knowledges assigned yet.</p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </article>
+        ))}
       </div>
     </section>
   )

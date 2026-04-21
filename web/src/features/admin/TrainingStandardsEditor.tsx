@@ -324,6 +324,21 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
     setSaving(true)
     setError(null)
     setInfo(null)
+    const actor = (await supabase.auth.getUser()).data.user?.id ?? null
+    const { error: ensurePackError } = await supabase.from('skill_training_packs').upsert({
+      skill_id: skillId,
+      document_path: null,
+      document_name: null,
+      document_mime: null,
+      document_size_bytes: 0,
+      pass_score_percent: 100,
+      updated_by: actor,
+    })
+    if (ensurePackError) {
+      setSaving(false)
+      setError(ensurePackError.message)
+      return
+    }
     const payload = pages.slice(0, 5).map((p) => ({
       id: p.id,
       contentHtml: sanitizeStandardContentAnchors(p.contentHtml || '<p></p>'),
@@ -333,7 +348,7 @@ export function TrainingStandardsEditor(props: { skillId: string; skillName: str
       skill_id: skillId,
       title: title.trim(),
       pages: payload,
-      updated_by: (await supabase.auth.getUser()).data.user?.id ?? null,
+      updated_by: actor,
     })
     setSaving(false)
     if (e) {

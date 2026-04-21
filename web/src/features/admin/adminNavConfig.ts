@@ -1,17 +1,9 @@
 import type { ComponentType } from 'react'
-import {
-  BookOpen,
-  Briefcase,
-  Layers,
-  ListChecks,
-  Tag,
-  UserCircle,
-  UsersRound,
-} from 'lucide-react'
+import { BookOpen, Briefcase, Layers, ListChecks, Route, Tag, UserCircle, UsersRound } from 'lucide-react'
 
 export type CatalogManagerSection = 'skill-groups' | 'skills' | 'job-roles' | 'role-requirements'
 
-export type AdminNavId = CatalogManagerSection | 'skill-training' | 'teams' | 'people'
+export type AdminNavId = CatalogManagerSection | 'skill-plans' | 'skill-training' | 'teams' | 'people'
 
 export type AdminNavItem = {
   id: AdminNavId
@@ -35,6 +27,7 @@ export const ADMIN_NAV_GROUPS: { heading: string; items: AdminNavItem[] }[] = [
         hint: 'Levels per role',
         icon: ListChecks,
       },
+      { id: 'skill-plans', label: 'Skill plans', hint: 'Stages & knowledges', icon: Route },
     ],
   },
   {

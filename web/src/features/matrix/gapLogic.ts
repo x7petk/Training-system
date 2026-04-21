@@ -8,7 +8,7 @@ export type GapKind =
   | 'exceed'
   | 'extra'
 
-export type SkillKind = 'numeric' | 'certification'
+export type SkillKind = 'numeric' | 'certification' | 'plan'
 
 export function classifyCell(params: {
   kind: SkillKind
@@ -33,6 +33,13 @@ export function classifyCell(params: {
       return 'meet'
     }
     return 'na'
+  }
+
+  if (kind === 'plan') {
+    if (actual == null) return 'na'
+    if (actual >= 100) return 'meet'
+    if (actual <= 0) return 'critical'
+    return 'minor'
   }
 
   if (actual == null) return 'critical'
@@ -119,6 +126,9 @@ export function formatLevel(kind: SkillKind, level: number | null): string {
   if (level == null) return '—'
   if (kind === 'certification') {
     return level >= 1 ? 'Y' : 'N'
+  }
+  if (kind === 'plan') {
+    return `${Math.max(0, Math.round(level))}%`
   }
   return String(level)
 }

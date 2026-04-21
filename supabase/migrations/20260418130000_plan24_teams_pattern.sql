@@ -9,8 +9,14 @@ alter table public.plan24_roster_shifts drop constraint if exists plan24_roster_
 alter table public.plan24_roster_shifts drop constraint if exists plan24_roster_shifts_kind_unique;
 
 -- kind becomes a free-text label (e.g. 'day', 'afternoon', 'night')
-alter table public.plan24_roster_shifts
-  add constraint plan24_roster_shifts_name_unique unique (roster_id, kind);
+do $$
+begin
+  alter table public.plan24_roster_shifts
+    add constraint plan24_roster_shifts_name_unique unique (roster_id, kind);
+exception
+  when duplicate_object then null;
+  when duplicate_table then null;
+end $$;
 
 -- Add display_name for friendlier UI labelling
 alter table public.plan24_roster_shifts
@@ -35,6 +41,7 @@ create table if not exists public.plan24_teams (
 
 create index if not exists plan24_teams_roster_id_idx on public.plan24_teams (roster_id);
 
+drop trigger if exists plan24_teams_touch_updated_at on public.plan24_teams;
 create trigger plan24_teams_touch_updated_at
   before update on public.plan24_teams
   for each row execute function public.master_data_touch_updated_at();
@@ -86,27 +93,33 @@ alter table public.plan24_teams enable row level security;
 alter table public.plan24_pattern_slots enable row level security;
 alter table public.plan24_role_team_defaults enable row level security;
 
+drop policy if exists "plan24_teams_admin_all" on public.plan24_teams;
 create policy "plan24_teams_admin_all"
   on public.plan24_teams for all to authenticated
   using (public.is_app_admin()) with check (public.is_app_admin());
 
+drop policy if exists "plan24_pattern_slots_admin_all" on public.plan24_pattern_slots;
 create policy "plan24_pattern_slots_admin_all"
   on public.plan24_pattern_slots for all to authenticated
   using (public.is_app_admin()) with check (public.is_app_admin());
 
+drop policy if exists "plan24_role_team_defaults_admin_all" on public.plan24_role_team_defaults;
 create policy "plan24_role_team_defaults_admin_all"
   on public.plan24_role_team_defaults for all to authenticated
   using (public.is_app_admin()) with check (public.is_app_admin());
 
 -- Read access for RTT users
+drop policy if exists "plan24_teams_select_rtt" on public.plan24_teams;
 create policy "plan24_teams_select_rtt"
   on public.plan24_teams for select to authenticated
   using (public.app_user_can_access_rtt());
 
+drop policy if exists "plan24_pattern_slots_select_rtt" on public.plan24_pattern_slots;
 create policy "plan24_pattern_slots_select_rtt"
   on public.plan24_pattern_slots for select to authenticated
   using (public.app_user_can_access_rtt());
 
+drop policy if exists "plan24_role_team_defaults_select_rtt" on public.plan24_role_team_defaults;
 create policy "plan24_role_team_defaults_select_rtt"
   on public.plan24_role_team_defaults for select to authenticated
   using (public.app_user_can_access_rtt());

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { LayoutDashboard } from 'lucide-react'
 import { Plan24AdminRosterTab } from '../features/plan24/Plan24AdminRosterTab'
+import { Plan24AdminChecksTab } from '../features/plan24/Plan24AdminChecksTab'
 
 type Tab = 'roster' | 'checks'
 
@@ -16,8 +17,7 @@ export function RttSystemsAdminPage() {
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">RTT systems — Admin</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted">
-            Plan 24 roster and shifts are managed here. Scheduling templates for recurring checks will live under the Checks tab
-            when that engine is built.
+            Plan 24 roster and shifts are managed here. Checks tab controls templates, immutable versions, and recurring schedules.
           </p>
         </div>
       </header>
@@ -49,12 +49,7 @@ export function RttSystemsAdminPage() {
 
       {tab === 'roster' ? <Plan24AdminRosterTab /> : null}
 
-      {tab === 'checks' ? (
-        <div className="rounded-2xl border border-border bg-surface-raised/40 px-4 py-6 text-sm text-muted">
-          Recurring check templates and materialisation are planned next (see §3.2 in the Plan 24 spec). For now, operators can add
-          ad hoc checks on the Plan 24 grid.
-        </div>
-      ) : null}
+      {tab === 'checks' ? <Plan24AdminChecksTab /> : null}
     </div>
   )
 }

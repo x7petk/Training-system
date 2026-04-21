@@ -124,7 +124,7 @@ export function MatrixGrid({ skills, rows, loading, emptyMessage, canEditPerson,
                   const act = c?.actual ?? null
                   const req = c?.required ?? null
                   const k = c?.kind ?? s.kind
-                  const editable = canEditPerson(row.personId)
+                  const editable = canEditPerson(row.personId) && k !== 'plan'
                   return (
                     <td key={s.id} className="w-9 min-w-9 max-w-9 p-0.5 align-middle sm:w-10 sm:min-w-10 sm:max-w-10">
                       <button

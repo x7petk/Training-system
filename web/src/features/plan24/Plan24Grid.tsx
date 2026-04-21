@@ -11,6 +11,8 @@ import { addMinutes, minutesBetween } from './plan24ShiftUtils'
 import type { Plan24EventRow } from './plan24Types'
 
 const DRAG_DT = 'application/x-plan24-event'
+/** Minimum duration when resizing a check (minutes). */
+const MIN_EVENT_DURATION_MIN = 5
 /** Major time grid: hour lines and labels (free-minute placement unchanged). */
 const GRID_MAJOR_MIN = 60
 /** Minor time grid: half-hour guide lines. */
@@ -61,6 +63,11 @@ function formatClock(d: Date): string {
   return `${h}:${m}`
 }
 
+function isPlan24EventCheck(ev: Plan24EventRow): boolean {
+  if (!ev.event_type) return true
+  return String(ev.event_type).toLowerCase() === 'check'
+}
+
 type DragSession = {
   pointerId: number
   eventId: string
@@ -72,6 +79,17 @@ type DragSession = {
   durationMin: number
   blockHeightPx: number
   title: string
+  moved: boolean
+}
+
+type ResizeSession = {
+  pointerId: number
+  eventId: string
+  roleName: string
+  originY: number
+  startMin: number
+  initialEndMin: number
+  previewEndMin: number
   moved: boolean
 }
 
@@ -125,8 +143,11 @@ export function Plan24Grid(props: {
 
   const columnBodyRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const dragSessionRef = useRef<DragSession | null>(null)
+  const resizeSessionRef = useRef<ResizeSession | null>(null)
   const rafRef = useRef<number | null>(null)
+  const resizeRafRef = useRef<number | null>(null)
   const lastDragMovedIdRef = useRef<string | null>(null)
+  const lastResizeMovedIdRef = useRef<string | null>(null)
 
   const [dragUi, setDragUi] = useState<null | {
     eventId: string
@@ -139,6 +160,8 @@ export function Plan24Grid(props: {
     blockHeightPx: number
     moved: boolean
   }>(null)
+
+  const [resizeUi, setResizeUi] = useState<null | { eventId: string; roleName: string; previewEndMin: number }>(null)
 
   const setColumnBodyRef = useCallback((roleName: string, el: HTMLDivElement | null) => {
     const m = columnBodyRefs.current
@@ -183,13 +206,27 @@ export function Plan24Grid(props: {
     })
   }, [])
 
+  const flushResizeUi = useCallback((eventId: string, roleName: string, previewEndMin: number) => {
+    if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current)
+    resizeRafRef.current = requestAnimationFrame(() => {
+      resizeRafRef.current = null
+      setResizeUi({ eventId, roleName, previewEndMin })
+    })
+  }, [])
+
   useEffect(() => {
     return () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+      if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current)
     }
   }, [])
 
   const activeDragListenersRef = useRef<{
+    move: (e: PointerEvent) => void
+    up: (e: PointerEvent) => void
+  } | null>(null)
+
+  const activeResizeListenersRef = useRef<{
     move: (e: PointerEvent) => void
     up: (e: PointerEvent) => void
   } | null>(null)
@@ -213,11 +250,18 @@ export function Plan24Grid(props: {
         document.removeEventListener('pointercancel', pair.up, true)
         activeDragListenersRef.current = null
       }
+      const rp = activeResizeListenersRef.current
+      if (rp) {
+        document.removeEventListener('pointermove', rp.move, true)
+        document.removeEventListener('pointerup', rp.up, true)
+        document.removeEventListener('pointercancel', rp.up, true)
+        activeResizeListenersRef.current = null
+      }
     }
   }, [])
 
   const startMove = useCallback(
-    (ev: Plan24EventRow, roleName: string, e: ReactPointerEvent<HTMLButtonElement>) => {
+    (ev: Plan24EventRow, roleName: string, e: ReactPointerEvent<Element>) => {
       if (!ev.role_name) return
       e.preventDefault()
       e.stopPropagation()
@@ -280,6 +324,88 @@ export function Plan24Grid(props: {
       document.addEventListener('pointercancel', up, true)
     },
     [windowStart, pixelsPerMinute, totalMin, findRoleUnderPointer, flushDragUi, onEventMove, endDocumentDrag],
+  )
+
+  const endResizeDocumentDrag = useCallback(
+    (move: (e: PointerEvent) => void, up: (e: PointerEvent) => void) => {
+      document.removeEventListener('pointermove', move, true)
+      document.removeEventListener('pointerup', up, true)
+      document.removeEventListener('pointercancel', up, true)
+      activeResizeListenersRef.current = null
+    },
+    [],
+  )
+
+  const startResizeEnd = useCallback(
+    (ev: Plan24EventRow, roleName: string, e: ReactPointerEvent<Element>) => {
+      if (!ev.role_name || !isPlan24EventCheck(ev)) return
+      e.preventDefault()
+      e.stopPropagation()
+      lastResizeMovedIdRef.current = null
+      const captureEl = e.currentTarget
+
+      const start = new Date(ev.start_at)
+      const end = new Date(ev.end_at)
+      const startMin = minutesBetween(windowStart, start)
+      const endMin = minutesBetween(windowStart, end)
+
+      const session: ResizeSession = {
+        pointerId: e.pointerId,
+        eventId: ev.id,
+        roleName,
+        originY: e.clientY,
+        startMin,
+        initialEndMin: endMin,
+        previewEndMin: endMin,
+        moved: false,
+      }
+      resizeSessionRef.current = session
+      flushResizeUi(ev.id, roleName, endMin)
+      try {
+        captureEl.setPointerCapture(e.pointerId)
+      } catch {
+        /* ignore */
+      }
+
+      const move = (pe: PointerEvent) => {
+        const s = resizeSessionRef.current
+        if (!s || pe.pointerId !== s.pointerId) return
+        if (Math.hypot(pe.clientX - e.clientX, pe.clientY - e.clientY) > 0.5) s.moved = true
+        const deltaMin = (pe.clientY - s.originY) / pixelsPerMinute
+        const raw = s.initialEndMin + deltaMin
+        const clamped = Math.max(s.startMin + MIN_EVENT_DURATION_MIN, Math.min(totalMin, raw))
+        s.previewEndMin = clamped
+        flushResizeUi(s.eventId, s.roleName, clamped)
+      }
+
+      const up = (pe: PointerEvent) => {
+        const s = resizeSessionRef.current
+        if (!s || pe.pointerId !== s.pointerId) return
+        endResizeDocumentDrag(move, up)
+        resizeSessionRef.current = null
+        setResizeUi(null)
+        try {
+          captureEl.releasePointerCapture(pe.pointerId)
+        } catch {
+          /* ignore */
+        }
+        if (s.moved) {
+          lastResizeMovedIdRef.current = s.eventId
+          const startAt = addMinutes(windowStart, s.startMin)
+          const endAt = addMinutes(windowStart, Math.round(s.previewEndMin))
+          onEventMove(s.eventId, startAt, endAt, s.roleName)
+          window.setTimeout(() => {
+            if (lastResizeMovedIdRef.current === s.eventId) lastResizeMovedIdRef.current = null
+          }, 400)
+        }
+      }
+
+      activeResizeListenersRef.current = { move, up }
+      document.addEventListener('pointermove', move, true)
+      document.addEventListener('pointerup', up, true)
+      document.addEventListener('pointercancel', up, true)
+    },
+    [windowStart, pixelsPerMinute, totalMin, flushResizeUi, onEventMove, endResizeDocumentDrag],
   )
 
   function roleBackgroundClick(roleName: string, e: React.MouseEvent<HTMLDivElement>) {
@@ -424,9 +550,7 @@ export function Plan24Grid(props: {
                       const start = new Date(ev.start_at)
                       const end = new Date(ev.end_at)
                       const topMin = minutesBetween(windowStart, start)
-                      const hMin = Math.max(2, minutesBetween(start, end))
                       const top = topMin * pixelsPerMinute
-                      const h = hMin * pixelsPerMinute
                       const lane = layout.get(ev.id)
                       const lc = lane?.laneCount ?? 1
                       const ln = lane?.lane ?? 0
@@ -440,55 +564,96 @@ export function Plan24Grid(props: {
                       const topPx = isDragging && sameColumn && previewMin !== null ? previewMin * pixelsPerMinute : top
                       const fadedCross = isDragging && !sameColumn
                       const statusClass = isDone
-                        ? 'border-emerald-500/40 bg-emerald-950/70 text-emerald-50 line-through decoration-emerald-300/70 dark:bg-emerald-950/80'
+                        ? 'border-sky-950/40 bg-sky-950 text-sky-50 line-through decoration-sky-300/60 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
                         : inProgress
                           ? 'border-amber-400/60 bg-amber-500 text-amber-950 shadow-amber-900/20 dark:bg-amber-400 dark:text-amber-950'
                           : 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
                       const statusLabel = isDone ? 'Complete' : inProgress ? 'In progress' : 'Scheduled'
+                      const resizingThis = resizeUi?.eventId === ev.id && resizeUi.roleName === r.name
+                      const endMinVisual = resizingThis ? resizeUi.previewEndMin : minutesBetween(windowStart, end)
+                      const hMin = Math.max(2, endMinVisual - topMin)
+                      const hVisual = hMin * pixelsPerMinute
+                      const isCheck = isPlan24EventCheck(ev)
+                      const canResizeEnd = isCheck && !!ev.role_name
+                      const tip = `${ev.title}\n${formatClock(start)}–${formatClock(end)}\n${statusLabel}${isAdHoc ? ' · Ad hoc' : ''}`
+                      const donePatternStyle: CSSProperties | undefined = isDone
+                        ? {
+                            backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,255,255,0.28) 5px, rgba(255,255,255,0.28) 9px)`,
+                          }
+                        : undefined
                       return (
-                        <button
+                        <div
                           key={ev.id}
-                          type="button"
                           data-plan24-event
-                          aria-label={`${ev.title}, ${formatClock(start)} to ${formatClock(end)}, ${statusLabel}${isAdHoc ? ', ad hoc' : ''}`}
-                          title={`${ev.title}\n${formatClock(start)}–${formatClock(end)}\n${statusLabel}${isAdHoc ? ' · Ad hoc' : ''}`}
-                          className={`group absolute flex flex-col overflow-hidden rounded-md border px-1 py-0.5 text-left text-[11px] font-medium leading-tight shadow-sm transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 ${statusClass} ${isAdHoc ? 'border-dashed' : ''} ${isDragging ? 'z-[6] cursor-grabbing' : 'cursor-grab hover:ring-2 hover:ring-accent/40'}`}
+                          className={`group absolute flex flex-col overflow-hidden rounded-md border text-left text-[11px] font-medium leading-tight shadow-sm transition-opacity ${statusClass} ${isAdHoc ? 'border-dashed' : ''} ${isDragging ? 'z-[6]' : ''} ${resizeUi?.eventId === ev.id ? 'z-[7]' : ''}`}
                           style={{
                             top: topPx,
-                            height: h,
+                            height: hVisual,
                             left: innerLeft,
                             width: innerW,
                             touchAction: 'none',
                             opacity: fadedCross ? 0.35 : 1,
                           }}
-                          onPointerDown={(pe) => {
-                            pe.stopPropagation()
-                            startMove(ev, r.name, pe)
-                          }}
-                          onClick={(ce) => {
-                            ce.stopPropagation()
-                            if (lastDragMovedIdRef.current === ev.id) return
-                            onEventClick(ev)
-                          }}
-                          onKeyDown={(ke) => {
-                            if (ke.key === 'Enter' || ke.key === ' ') {
-                              ke.preventDefault()
-                              onEventClick(ev)
-                            }
-                          }}
                         >
-                          {inProgress ? (
+                          {isDone ? (
                             <span
                               aria-hidden
-                              className="pointer-events-none absolute right-1 top-1 inline-flex size-1.5 rounded-full bg-amber-900/90"
+                              className="pointer-events-none absolute inset-0 z-0 rounded-md opacity-[0.4]"
+                              style={donePatternStyle}
                             />
                           ) : null}
-                          <span className="pointer-events-none truncate">{ev.title}</span>
-                          <span className="pointer-events-none truncate text-[9px] font-normal opacity-90">
-                            {formatClock(start)}–{formatClock(end)}
-                            {isAdHoc ? ' · Ad hoc' : ''}
-                          </span>
-                        </button>
+                          <button
+                            type="button"
+                            aria-label={`${ev.title}, ${formatClock(start)} to ${formatClock(end)}, ${statusLabel}${isAdHoc ? ', ad hoc' : ''}`}
+                            title={tip}
+                            className={`relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col items-stretch justify-start overflow-hidden border-0 px-1 py-0.5 text-left text-[11px] font-medium leading-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70 ${canResizeEnd ? 'rounded-t-md rounded-b-none' : 'rounded-md'} ${isDragging ? 'cursor-grabbing' : 'cursor-grab hover:ring-2 hover:ring-inset hover:ring-accent/40'}`}
+                            onPointerDown={(pe) => {
+                              pe.stopPropagation()
+                              startMove(ev, r.name, pe)
+                            }}
+                            onClick={(ce) => {
+                              ce.stopPropagation()
+                              if (lastDragMovedIdRef.current === ev.id || lastResizeMovedIdRef.current === ev.id) return
+                              onEventClick(ev)
+                            }}
+                            onKeyDown={(ke) => {
+                              if (ke.key === 'Enter' || ke.key === ' ') {
+                                ke.preventDefault()
+                                if (lastDragMovedIdRef.current === ev.id || lastResizeMovedIdRef.current === ev.id) return
+                                onEventClick(ev)
+                              }
+                            }}
+                          >
+                            {inProgress ? (
+                              <span
+                                aria-hidden
+                                className="pointer-events-none absolute right-1 top-1 inline-flex size-1.5 rounded-full bg-amber-900/90"
+                              />
+                            ) : null}
+                            <span className="pointer-events-none relative z-[2] min-h-0 w-full min-w-0 flex-1 truncate text-left">
+                              {ev.title}
+                            </span>
+                          </button>
+                          {canResizeEnd ? (
+                            <div
+                              role="separator"
+                              aria-orientation="horizontal"
+                              aria-label={`Resize end time for ${ev.title}`}
+                              title="Drag up or down to change duration"
+                              className="pointer-events-auto absolute bottom-0 left-0 right-0 z-[3] flex h-1.5 cursor-ns-resize touch-none items-end justify-center bg-transparent"
+                              onPointerDownCapture={(pe) => {
+                                pe.preventDefault()
+                                pe.stopPropagation()
+                                startResizeEnd(ev, r.name, pe)
+                              }}
+                            >
+                              <span
+                                aria-hidden
+                                className="pointer-events-none mb-px h-px w-4 max-w-[45%] rounded-full bg-white/22 group-hover:bg-white/35"
+                              />
+                            </div>
+                          ) : null}
+                        </div>
                       )
                     })}
                   </div>

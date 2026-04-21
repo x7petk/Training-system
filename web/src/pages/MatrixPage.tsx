@@ -37,6 +37,17 @@ type PsRaw = {
   is_extra: boolean
   due_date: string | null
 }
+type PlanStageProgressRaw = {
+  person_id: string
+  plan_skill_id: string
+  plan_name: string
+  stage_id: string
+  stage_no: number
+  stage_name: string
+  is_unlocked: boolean
+  progress_percent: number
+}
+type PlanKnowledgeRaw = { knowledge_skill_id: string }
 
 type RoleRaw = { id: string; name: string }
 type TeamRaw = { id: string; name: string }
@@ -57,6 +68,8 @@ export function MatrixPage() {
   const [psRows, setPsRows] = useState<PsRaw[]>([])
   const [roles, setRoles] = useState<RoleRaw[]>([])
   const [teams, setTeams] = useState<TeamRaw[]>([])
+  const [planStages, setPlanStages] = useState<PlanStageProgressRaw[]>([])
+  const [planKnowledges, setPlanKnowledges] = useState<PlanKnowledgeRaw[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [personQuery, setPersonQuery] = useState('')
@@ -119,7 +132,11 @@ export function MatrixPage() {
       supabase.from('person_skills').select('person_id, skill_id, actual_level, is_extra, due_date'),
       supabase.from('roles').select('id, name').order('sort_order', { ascending: true }),
       supabase.from('teams').select('id, name').order('sort_order', { ascending: true }),
-    ]).then(([sk, pe, rs, ps, ro, tm]) => {
+      supabase
+        .from('v_person_plan_stage_progress')
+        .select('person_id, plan_skill_id, plan_name, stage_id, stage_no, stage_name, is_unlocked, progress_percent'),
+      supabase.from('skill_plan_stage_knowledges').select('knowledge_skill_id'),
+    ]).then(([sk, pe, rs, ps, ro, tm, pp, pk]) => {
       if (cancelled) return
       if (sk.error) {
         setLoadError(sk.error.message)
@@ -138,6 +155,10 @@ export function MatrixPage() {
       if (!ro.error && ro.data) setRoles(ro.data as RoleRaw[])
       if (!tm.error && tm.data) setTeams(tm.data as TeamRaw[])
       else setTeams([])
+      if (!pp?.error && pp?.data) setPlanStages(pp.data as PlanStageProgressRaw[])
+      else setPlanStages([])
+      if (!pk?.error && pk?.data) setPlanKnowledges(pk.data as PlanKnowledgeRaw[])
+      else setPlanKnowledges([])
       setLoading(false)
     })
 
@@ -173,7 +194,9 @@ export function MatrixPage() {
   }, [psRows])
 
   const sortedSkills = useMemo(() => {
+    const hiddenKnowledgeIds = new Set(planKnowledges.map((x) => x.knowledge_skill_id))
     const copy = [...skillsRaw]
+      .filter((s) => s.kind !== 'plan' && !hiddenKnowledgeIds.has(s.id))
     copy.sort((a, b) => {
       const ga = groupName(a)
       const gb = groupName(b)
@@ -182,17 +205,37 @@ export function MatrixPage() {
       return a.name.localeCompare(b.name)
     })
     return copy
-  }, [skillsRaw])
+  }, [skillsRaw, planKnowledges])
+
+  const stageColumns = useMemo(() => {
+    const map = new Map<
+      string,
+      { id: string; name: string; groupName: string; planId: string; stageNo: number }
+    >()
+    for (const row of planStages) {
+      map.set(row.stage_id, {
+        id: `plan-stage:${row.stage_id}`,
+        name: row.stage_name,
+        groupName: row.plan_name,
+        planId: row.plan_skill_id,
+        stageNo: row.stage_no,
+      })
+    }
+    return [...map.values()].sort((a, b) =>
+      a.groupName === b.groupName ? a.stageNo - b.stageNo : a.groupName.localeCompare(b.groupName),
+    )
+  }, [planStages])
 
   const skillGroupOptions = useMemo(() => {
     const names = new Set<string>()
     for (const s of skillsRaw) names.add(groupName(s) || 'Skills')
+    for (const st of planStages) names.add(st.plan_name || 'Plans')
     return [...names].sort((a, b) => a.localeCompare(b))
-  }, [skillsRaw])
+  }, [skillsRaw, planStages])
 
   const skillColumns: MatrixSkillColumn[] = useMemo(() => {
     const q = skillQuery.trim().toLowerCase()
-    return sortedSkills
+    const baseColumns = sortedSkills
       .filter((s) => {
         const g = groupName(s) || 'Skills'
         if (filterSkillGroups.length > 0 && !filterSkillGroups.includes(g)) return false
@@ -204,7 +247,19 @@ export function MatrixPage() {
         kind: s.kind,
         groupName: groupName(s) || 'Skills',
       }))
-  }, [sortedSkills, skillQuery, filterSkillGroups])
+    const stageCols = stageColumns
+      .filter((s) => {
+        if (filterSkillGroups.length > 0 && !filterSkillGroups.includes(s.groupName)) return false
+        return !q || s.name.toLowerCase().includes(q) || s.groupName.toLowerCase().includes(q)
+      })
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        kind: 'plan' as const,
+        groupName: s.groupName,
+      }))
+    return [...baseColumns, ...stageCols]
+  }, [sortedSkills, stageColumns, skillQuery, filterSkillGroups])
 
   const peopleFiltered = useMemo(() => {
     const pq = personQuery.trim().toLowerCase()
@@ -223,6 +278,20 @@ export function MatrixPage() {
   }, [peopleRaw, personQuery, filterRoleIds, filterTeamIds])
 
   const matrixRows: MatrixRowModel[] = useMemo(() => {
+    const stageByPerson = new Map<
+      string,
+      Map<string, { progress: number; unlocked: boolean }>
+    >()
+    for (const row of planStages) {
+      const key = `${row.person_id}`
+      const m = stageByPerson.get(key) ?? new Map<string, { progress: number; unlocked: boolean }>()
+      m.set(`plan-stage:${row.stage_id}`, {
+        progress: row.progress_percent ?? 0,
+        unlocked: row.is_unlocked,
+      })
+      stageByPerson.set(key, m)
+    }
+
     function maxRequired(roleIds: string[], skillId: string): number | null {
       let max: number | null = null
       for (const rid of roleIds) {
@@ -241,6 +310,20 @@ export function MatrixPage() {
 
       const cells: MatrixRowModel['cells'] = {}
       for (const s of skillColumns) {
+        if (s.kind === 'plan') {
+          const stage = stageByPerson.get(p.id)?.get(s.id)
+          const progress = stage?.progress ?? 0
+          const unlocked = stage?.unlocked ?? false
+          cells[s.id] = {
+            gap: unlocked ? classifyCell({ kind: 'plan', required: 100, actual: progress, isExtra: false }) : 'na',
+            kind: 'plan',
+            required: 100,
+            actual: unlocked ? progress : null,
+            isExtra: false,
+            dueDate: null,
+          }
+          continue
+        }
         const required = maxRequired(roleIds, s.id)
         const ps = psMap.get(`${p.id}\0${s.id}`)
         const actual = ps?.actual ?? null
@@ -268,7 +351,7 @@ export function MatrixPage() {
         cells,
       }
     })
-  }, [peopleFiltered, skillColumns, psMap, rsrMap, roleNameById])
+  }, [peopleFiltered, skillColumns, psMap, rsrMap, roleNameById, planStages])
 
   const filtersActive =
     filterRoleIds.length > 0 ||
