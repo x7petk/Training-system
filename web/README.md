@@ -1,5 +1,9 @@
 # React + TypeScript + Vite
 
+This folder is the **Training-system** web app. For **Supabase** setup, **`npm run supabase:push`** (repo root), and **RTT / Plan 24** documentation, see the repository root [`README.md`](../README.md) and [`plan_24_rtt_planning.md`](../plan_24_rtt_planning.md).
+
+---
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

@@ -33,6 +33,10 @@ npm run supabase:push
 
 (`supabase:bootstrap` now uses `db push` for migrations; `supabase:push` is link + push only.)
 
+### RTT — Plan 24
+
+**Plan 24** (production cell day/shift grid, checks, rosters) is specified in [`plan_24_rtt_planning.md`](./plan_24_rtt_planning.md). It uses the **same Supabase project** as Skill Matrix and LDR tools. After schema changes land in `supabase/migrations/`, run **`npm run supabase:push`** from the repo root so RTT behaviour (materialised checks, suppressions, etc.) matches the deployed web app.
+
 This updates **Auth URL / redirect allow list** for `http://localhost:5173`, **links** the CLI to project `uhwbvwlneenvkldccehq`, and applies [`supabase/migrations/20250323000000_profiles.sql`](./supabase/migrations/20250323000000_profiles.sql).
 
 4. Start the app, **register** (e.g. `x7petk@gmail.com`), then promote admin:

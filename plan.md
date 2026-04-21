@@ -117,5 +117,6 @@ When those three are done, the next coding task is **Auth screens + Supabase cli
 ## References
 
 - Product / data rules: [`skill_matrix.md`](./skill_matrix.md)
+- RTT / **Plan 24** (cell planning grid, checks, rosters): [`plan_24_rtt_planning.md`](./plan_24_rtt_planning.md) — includes **§10a** implementation notes and migration push (`npm run supabase:push` from repo root).
 - [Supabase Auth](https://supabase.com/docs/guides/auth)
 - [Supabase RLS](https://supabase.com/docs/guides/auth/row-level-security)

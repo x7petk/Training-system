@@ -2,6 +2,8 @@
 
 This document defines three LDR tools apps that mirror **Health Checks (HC)** for roster linkage, permissions, admin configuration, drafts, submission, roster RAG/comment sync, duplicate guards, and reporting patterns. Implementation follows the existing `hc_*` schema and `web/src/features/health-checks` UX unless noted below.
 
+**RTT (Plan 24)** — cell-level operational planning (separate from LDR tools) — is specified in [`plan_24_rtt_planning.md`](./plan_24_rtt_planning.md).
+
 ## 1. Names and placement
 
 | Code | Meaning | LDR nav |

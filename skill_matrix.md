@@ -278,6 +278,12 @@ Admin is split into sections:
 
 ---
 
+## Related: RTT (Plan 24)
+
+**Plan 24** — the RTT **cell day / shift** planning grid (checks, rosters, scheduled vs ad-hoc events) — is specified in [`plan_24_rtt_planning.md`](./plan_24_rtt_planning.md). It reuses **People** master data and site → plant → cell scope patterns aligned with this matrix where applicable.
+
+---
+
 ## User Guide
 
 There is an admin-only “User Guide” page at **`/user-guide`**. It’s intended to be the “how to use this day-to-day” reference for end users and admins.

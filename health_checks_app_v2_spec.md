@@ -2,6 +2,7 @@
 
 **Status:** v2.2 — implementation-aligned (see §16–§17); HC UI + report trends + roster integration shipped in app  
 **Placement:** New section under **LDR tools** (same app shell / navigation pattern as Calendar, Roster, Admin)  
+**Related:** **RTT / Plan 24** (cell shift planning, checks on a time grid) is a separate product area — see [`plan_24_rtt_planning.md`](./plan_24_rtt_planning.md).  
 **Location model:** Must use existing **Master data** hierarchy only — `master_sites` → `master_plants` → `master_cells` (same IDs and semantics as LDR scope). Health checks are **completed at cell level only** (a submitted record always references one `master_cells.id`).
 
 **Reference:** Legacy Power Apps “Health Checks” UI (Fonterra example) informed layout expectations; **v2 replaces table-style rows with card-based question UI** and adds live scoring, **Create Action** as a non-functional placeholder button, and immutable submitted records.

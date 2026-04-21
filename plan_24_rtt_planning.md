@@ -1,6 +1,7 @@
-# Plan 24 (RTT) — planning & requirements draft
+# Plan 24 (RTT) — planning & requirements
 
-**Status:** planning only — no implementation yet.  
+**Status:** **Product spec + engineering notes** — Plan 24 is **partially implemented** in this repo (grid, rosters, checks admin, scheduled materialisation, drag moves). Sections **§1–§9** remain the behavioural source of truth; **§10a** summarises what exists in code/DB today and how migrations are applied.
+
 **Reference UI:** “Plan for the Day” style grid (time down the left, roles across the top). Example screenshots (legacy Power Apps — **labels and colours may differ** in our app; capture **behaviour**): see **§11**.
 
 **Naming caveat:** the old app uses names like “DDS Actions”, “Plant Checks”, “Spacefillers”, etc. Our product names (checks, CL, CIL, …) may differ; map **concepts** (event type, legend, filters) not literal strings.
@@ -92,7 +93,7 @@
 
 ### 2.3 Interactions (high level)
 
-- **Drag and drop:** move an event **role to role** and/or **time to time** (validation rules TBD).
+- **Drag and drop:** move an event **role to role** and/or **time to time** (free-minute placement; see **D23**). **Implemented behaviour (checks):** a row from a **check schedule** carries `schedule_id`, `schedule_occurrence_at`, and `schedule_role_name`; unique index `(schedule_id, schedule_occurrence_at, schedule_role_name)` keeps one materialised instance per schedule slot and role. **Time-only** drag off a scheduled block can mark the row `source = ad_hoc` while keeping that tuple so the slot is not duplicated. **Cross-role** drag clears schedule linkage and records **`plan24_check_schedule_occurrence_suppressions`** for the vacated slot so **`plan24_materialize_check_schedules`** does not insert a replacement check on refresh (see **§10a**).
 - **Click event:** open **popup** (or side panel) to view details, sub-tasks, complete / acknowledge / in-progress flow.
 - **Click empty (white) space:** **ad-hoc create** flow — pick event type (for now only **check**; later CL, CIL, etc.).
 - **Click role header:** assign or **change the person** mapped to that role for the plan context (date + shift + roster).
@@ -141,7 +142,7 @@ Implement after core grid + event types exist; v1 may ship a **minimal** subset 
 - **Who may edit:** **admins only** for schedule / recurring definitions (**D11**).
 - Create/configure **checks** with at least: **times**, **frequency**, **role** (and likely cell + roster context — TBD).
 - Ability to define **multiple tasks under one check** (checklist).
-- Scheduling engine: how **frequency** maps to concrete instances on the grid (daily, weekly, per-shift, custom — TBD).
+- Scheduling engine: **frequency → instances** is implemented for active schedules via SQL function **`plan24_materialize_check_schedules`** (invoked when the Plan 24 view refreshes for a cell/date range). Recurrence kinds and hourly/daily-style rules live on **`plan24_check_schedules`**; further product variants remain TBD vs this baseline.
 - **Concrete examples** to support in product copy and rules (**D12**): **daily walk**, **daily DDS**.
 
 ---
@@ -252,7 +253,7 @@ Export / charts / drill-down to individual events — TBD.
 ### 9.2 Templates vs materialised events
 
 4. ~~Roster retroactive~~ → **Decided:** effective date only forward (**D2**).
-5. **Materialisation:** confirm events are **materialised instances** (so **D3** is implementable: past copies frozen, future can be regenerated or patched per policy). Exact job (cron vs on-open) TBD.
+5. **Materialisation:** events are **materialised instances** in **`plan24_events`** (so **D3** is implementable: past copies frozen, future can be regenerated or patched per policy). **Current trigger:** client **on-open / refresh** for the selected cell + plan date calls **`plan24_materialize_check_schedules`** (not a separate cron in v1).
 
 ### 9.3 Roles & people
 
@@ -318,6 +319,21 @@ Export / charts / drill-down to individual events — TBD.
 | **P3** | DnD, click-to-complete popup, ad-hoc on empty cell, delete with comment. |
 | **P4** | Plan 24 report + **soft-delete** audit trail (see §7). |
 | **P5** | Multiple rosters, shift patterns A–D default, CL/CIL/… |
+
+---
+
+## 10a. Implementation status (Supabase + `web/`)
+
+This section is **engineering-facing**: it describes the current repo/DB shape so RTT work stays aligned with migrations and UI. It does not override product decisions in **§1a–§1b**; where behaviour still differs from the draft, treat the **decisions tables** as intent and this section as “what shipped so far”.
+
+| Area | Notes |
+|------|--------|
+| **Web** | Plan 24 day grid: `web/src/pages/Plan24Page.tsx`, `web/src/features/plan24/Plan24Grid.tsx`, types in `web/src/features/plan24/plan24Types.ts`. Drag/drop persistence uses **`plan24PersistCheckMove`** (insert suppression when needed, then `plan24_events` update — no RPC, avoids PostgREST function cache issues). |
+| **DB — events** | `public.plan24_events`: `source` ∈ `scheduled` \| `ad_hoc`; optional `schedule_id`, `schedule_occurrence_at`, `schedule_role_name`, `template_version_id`; unique **`plan24_events_schedule_occurrence_role_unique`** on `(schedule_id, schedule_occurrence_at, schedule_role_name)` where schedule fields are set. |
+| **DB — suppressions** | `public.plan24_check_schedule_occurrence_suppressions`: when a user **moves a check to another role**, the old schedule slot is recorded so materialisation **skips** re-inserting that instance. |
+| **DB — materialise** | `public.plan24_materialize_check_schedules(master_cell_id, from_date, to_date)` upserts scheduled rows; skips suppressed triples; **`ON CONFLICT DO UPDATE`** only updates rows that are still **`source = 'scheduled'`** so manually moved rows are not overwritten. |
+| **Migrations (representative)** | `20260421153000_plan24_checks_templates_schedules.sql` (templates/schedules/events columns); `20260421174500_plan24_events_time_order_guard.sql` (materialiser + `end_at > start_at`); `20260421175500_plan24_manual_move_no_copy.sql` (conflict update guard); `20260422120000_plan24_cross_role_move_no_duplicate_slot.sql` (suppressions table + materialiser skip); `20260422140000_drop_plan24_move_check_event.sql` (removes unused RPC if present). |
+| **Apply migrations** | From **repo root**: configure **`.env.supabase`** (see `.env.supabase.example`), then **`npm run supabase:push`** (see root `README.md`). |
 
 ---
 

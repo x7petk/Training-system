@@ -13,6 +13,8 @@ Current flow is refresh-on-save (no realtime subscriptions yet).
 
 LDR is a separate section inside the app, alongside Skill Matrix and RTT systems.
 
+**RTT (Plan 24)** — production planning grid per cell — is documented in [`plan_24_rtt_planning.md`](./plan_24_rtt_planning.md) (different nav area from LDR; same app and Supabase project). Engineering notes and migration pointers: **§10a** in that file.
+
 Access gates:
 - `SectionAccessRoute(section="ldr")` controls LDR entry.
 - LDR Admin tab is admin/super-admin only via `LdrAdminRoute`.
