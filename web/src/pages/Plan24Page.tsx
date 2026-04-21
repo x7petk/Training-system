@@ -15,6 +15,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { localYMD } from '../lib/dueDateUtils'
 import { useAuth } from '../hooks/useAuth'
@@ -34,6 +35,60 @@ import type {
 } from '../features/plan24/plan24Types'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { addMinutes, minutesBetween } from '../features/plan24/plan24ShiftUtils'
+
+/**
+ * Persist drag move: optional suppression row (so materialize does not refill the vacated
+ * schedule slot), then update the event. Uses table APIs only — no RPC (avoids PostgREST
+ * function schema cache issues).
+ */
+async function plan24PersistCheckMove(
+  client: SupabaseClient,
+  ev: Plan24EventRow,
+  eventId: string,
+  startAt: Date,
+  endAt: Date,
+  roleName: string,
+): Promise<string | null> {
+  if (endAt.getTime() <= startAt.getTime()) {
+    return 'Invalid time range'
+  }
+  const roleChanged = (roleName || '') !== (ev.role_name ?? '')
+  const isScheduledSource = ev.source === 'scheduled' && !!ev.schedule_id
+
+  if (ev.schedule_id && roleChanged && ev.schedule_occurrence_at) {
+    const oldSlot = (ev.schedule_role_name?.trim() || ev.role_name || '').trim() || ''
+    const { error } = await client.from('plan24_check_schedule_occurrence_suppressions').insert({
+      master_cell_id: ev.master_cell_id,
+      schedule_id: ev.schedule_id,
+      schedule_occurrence_at: ev.schedule_occurrence_at,
+      schedule_role_name: oldSlot,
+    })
+    if (error && String(error.code) !== '23505') {
+      return error.message
+    }
+  }
+
+  const nextRole = roleName.trim() === '' ? null : roleName.trim()
+  const payload: Record<string, unknown> = {
+    start_at: startAt.toISOString(),
+    end_at: endAt.toISOString(),
+    role_name: nextRole,
+  }
+  if (isScheduledSource) {
+    payload.source = 'ad_hoc'
+  }
+  if (ev.schedule_id && roleChanged) {
+    payload.schedule_id = null
+    payload.schedule_occurrence_at = null
+    payload.template_version_id = null
+    payload.schedule_role_name = ''
+  } else if (!ev.schedule_id) {
+    payload.schedule_role_name = roleName || ''
+  }
+
+  const { error: uErr } = await client.from('plan24_events').update(payload).eq('id', eventId)
+  return uErr?.message ?? null
+}
 
 const inputClass =
   'w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2'
@@ -459,19 +514,13 @@ export function Plan24Page() {
 
   const onEventMove = useCallback(
     async (eventId: string, startAt: Date, endAt: Date, roleName: string) => {
-      const { error } = await supabase
-        .from('plan24_events')
-        .update({
-          start_at: startAt.toISOString(),
-          end_at: endAt.toISOString(),
-          role_name: roleName,
-          schedule_role_name: roleName || '',
-        })
-        .eq('id', eventId)
-      if (error) setLoadErr(error.message)
+      const ev = events.find((x) => x.id === eventId)
+      if (!ev) return
+      const err = await plan24PersistCheckMove(supabase, ev, eventId, startAt, endAt, roleName)
+      if (err) setLoadErr(err)
       else void refresh()
     },
-    [refresh],
+    [events, refresh],
   )
 
   const onRoleHeaderClick = useCallback(
@@ -491,16 +540,8 @@ export function Plan24Page() {
       if (!ev) return
       const dur = minutesBetween(new Date(ev.start_at), new Date(ev.end_at))
       const endAt = addMinutes(startAt, Math.max(5, dur))
-      const { error } = await supabase
-        .from('plan24_events')
-        .update({
-          role_name: roleName,
-          schedule_role_name: roleName || '',
-          start_at: startAt.toISOString(),
-          end_at: endAt.toISOString(),
-        })
-        .eq('id', eventId)
-      if (error) setLoadErr(error.message)
+      const err = await plan24PersistCheckMove(supabase, ev, eventId, startAt, endAt, roleName)
+      if (err) setLoadErr(err)
       else void refresh()
     },
     [events, refresh],
