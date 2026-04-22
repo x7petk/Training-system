@@ -54,6 +54,11 @@ const RttSystemsUserGuidePage = lazy(() =>
 const RttSystemsAdminPage = lazy(() =>
   import('./pages/RttSystemsAdminPage').then((m) => ({ default: m.RttSystemsAdminPage })),
 )
+const DhDefectHandlingPage = lazy(() =>
+  import('./pages/DhDefectHandlingPage').then((m) => ({ default: m.DhDefectHandlingPage })),
+)
+const DeviationsPage = lazy(() => import('./pages/DeviationsPage').then((m) => ({ default: m.DeviationsPage })))
+const QualityFailsPage = lazy(() => import('./pages/QualityFailsPage').then((m) => ({ default: m.QualityFailsPage })))
 import { LoginAccountsPage } from './pages/LoginAccountsPage'
 import { SuperAdminRoute } from './components/SuperAdminRoute'
 import { MasterDataLayout } from './components/MasterDataLayout'
@@ -177,9 +182,9 @@ export default function App() {
             <Route path="plan-24" element={<Plan24Page />} />
             <Route path="my-plan" element={<RttSystemsSectionPage title="My Plan" />} />
             <Route path="list-view" element={<RttSystemsSectionPage title="List view" />} />
-            <Route path="deviations" element={<RttSystemsSectionPage title="Deviations" />} />
-            <Route path="defect-handling" element={<RttSystemsSectionPage title="Defect Handling" />} />
-            <Route path="quality-fails" element={<RttSystemsSectionPage title="Quality Fails" />} />
+            <Route path="deviations" element={<DeviationsPage />} />
+            <Route path="defect-handling" element={<DhDefectHandlingPage />} />
+            <Route path="quality-fails" element={<QualityFailsPage />} />
             <Route path="user-guide" element={<RttSystemsUserGuidePage />} />
             <Route
               path="admin"

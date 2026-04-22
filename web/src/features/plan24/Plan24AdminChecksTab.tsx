@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Copy, Pause, Play, Plus, Trash2 } from 'lucide-react'
+import { CalendarClock, ChevronDown, Copy, LayoutList, Pause, Play, Plus, Pencil, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { localYMD } from '../../lib/dueDateUtils'
 import { usePlan24Workspace } from './Plan24WorkspaceContext'
@@ -80,6 +80,11 @@ export function Plan24AdminChecksTab() {
 
   const [scheduleDialog, setScheduleDialog] = useState<ScheduleDraft | null>(null)
   const [scheduleSaving, setScheduleSaving] = useState(false)
+
+  /** Split heavy UI: template authoring vs recurring schedules. */
+  const [checksNav, setChecksNav] = useState<'templates' | 'schedules'>('templates')
+  /** Modal for versions + tasks (keeps main view scannable). */
+  const [templateEditorOpen, setTemplateEditorOpen] = useState(false)
 
   const selectedTemplate = useMemo(
     () => templates.find((t) => t.id === selectedTemplateId) ?? null,
@@ -216,6 +221,8 @@ export function Plan24AdminChecksTab() {
     setTemplateDescription('')
     await load()
     setSelectedTemplateId(insTpl.data.id)
+    setChecksNav('templates')
+    setTemplateEditorOpen(true)
   }
 
   async function copyTemplate(template: Plan24CheckTemplateRow) {
@@ -273,6 +280,8 @@ export function Plan24AdminChecksTab() {
     }
     await load()
     setSelectedTemplateId(insTpl.data.id)
+    setChecksNav('templates')
+    setTemplateEditorOpen(true)
   }
 
   async function createVersion() {
@@ -361,6 +370,7 @@ export function Plan24AdminChecksTab() {
   }
 
   function openNewSchedule() {
+    setChecksNav('schedules')
     const activeShift = shifts[0]?.kind ?? 'day'
     const initialVersion = selectedTemplateVersions[0] ?? versions[0]
     setScheduleDialog({
@@ -385,6 +395,7 @@ export function Plan24AdminChecksTab() {
   }
 
   function openEditSchedule(row: Plan24CheckScheduleRow) {
+    setChecksNav('schedules')
     const roleNames = scheduleRoles.filter((r) => r.schedule_id === row.id).map((r) => r.role_name)
     setScheduleDialog({
       id: row.id,
@@ -537,191 +548,150 @@ export function Plan24AdminChecksTab() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {error ? <div className="rounded-xl border border-danger/35 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div> : null}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">Templates and versions</h2>
+
+      <div
+        className="inline-flex rounded-xl border border-border bg-surface-raised/50 p-1"
+        role="tablist"
+        aria-label="Checks admin sections"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={checksNav === 'templates'}
+          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+            checksNav === 'templates' ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg'
+          }`}
+          onClick={() => setChecksNav('templates')}
+        >
+          <LayoutList className="size-4 shrink-0 opacity-70" aria-hidden />
+          Check templates
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={checksNav === 'schedules'}
+          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+            checksNav === 'schedules' ? 'bg-surface text-fg shadow-sm' : 'text-muted hover:text-fg'
+          }`}
+          onClick={() => setChecksNav('schedules')}
+        >
+          <CalendarClock className="size-4 shrink-0 opacity-70" aria-hidden />
+          Schedules
+        </button>
+      </div>
+
+      {checksNav === 'templates' ? (
+        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold tracking-tight">Check templates</h2>
+              <p className="mt-1 max-w-xl text-xs text-muted">
+                Define reusable checks. Open a template to manage published/draft versions and sub-tasks.
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => setTemplateDialogOpen(true)}
-              className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold text-white"
             >
-              <Plus className="size-3.5" aria-hidden />
+              <Plus className="size-4" aria-hidden />
               New template
             </button>
           </div>
-          <div className="space-y-2">
-            {templates.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setSelectedTemplateId(t.id)}
-                className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${
-                  selectedTemplateId === t.id ? 'border-accent/40 bg-accent-dim/40' : 'border-border hover:bg-surface-raised/60'
-                }`}
-              >
-                <span className="font-medium">{t.name}</span>
-                <span className="inline-flex gap-1">
-                  <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted">
-                    {versions.filter((v) => v.template_id === t.id).length} versions
-                  </span>
-                </span>
-              </button>
-            ))}
-            {templates.length === 0 ? <p className="text-sm text-muted">{loading ? 'Loading…' : 'No templates yet.'}</p> : null}
-          </div>
 
-          {selectedTemplate ? (
-            <div className="mt-4 rounded-xl border border-border bg-surface-raised/30 p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase text-muted">{selectedTemplate.name}</p>
-                <button
-                  type="button"
-                  onClick={() => void copyTemplate(selectedTemplate)}
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface"
-                >
-                  <Copy className="size-3.5" aria-hidden />
-                  Copy as draft
-                </button>
-              </div>
-              <div className="space-y-2">
-                {selectedTemplateVersions.map((v) => (
-                  <div
-                    key={v.id}
-                    className={`rounded-lg border px-3 py-2 text-sm ${
-                      selectedVersionId === v.id ? 'border-accent/40 bg-accent-dim/30' : 'border-border'
-                    }`}
+          <ul className="mt-4 divide-y divide-border rounded-xl border border-border">
+            {templates.map((t) => {
+              const vCount = versions.filter((v) => v.template_id === t.id).length
+              return (
+                <li key={t.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-fg">{t.name}</p>
+                    {t.description ? (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-muted">{t.description}</p>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-muted/80">No description</p>
+                    )}
+                    <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted">{vCount} version{vCount === 1 ? '' : 's'}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTemplateId(t.id)
+                      setTemplateEditorOpen(true)
+                    }}
+                    className="inline-flex items-center justify-center gap-1.5 self-start rounded-lg border border-border bg-surface-raised/60 px-3 py-2 text-sm font-semibold hover:bg-surface-raised sm:self-center"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <button type="button" className="text-left font-medium hover:underline" onClick={() => setSelectedVersionId(v.id)}>
-                        v{v.version_no} · {v.title}
-                      </button>
-                      <span className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-surface border border-border">
-                        {v.state}
-                      </span>
-                    </div>
-                    {v.state !== 'published' ? (
-                      <button
-                        type="button"
-                        onClick={() => void publishVersion(v.id)}
-                        className="mt-1 text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300"
-                      >
-                        Publish
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <label className="text-xs text-muted">
-                  New version title
-                  <input className={inputClass} value={versionTitle} onChange={(e) => setVersionTitle(e.target.value)} />
-                </label>
-                <label className="text-xs text-muted">
-                  Notes
-                  <input className={inputClass} value={versionNotes} onChange={(e) => setVersionNotes(e.target.value)} />
-                </label>
-              </div>
-              <button
-                type="button"
-                onClick={() => void createVersion()}
-                disabled={versionSaving || !selectedTemplateId}
-                className="mt-2 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-surface disabled:opacity-50"
-              >
-                {versionSaving ? 'Creating…' : 'Create next version'}
-              </button>
-
-              {selectedVersion ? (
-                <div className="mt-4 rounded-xl border border-border bg-surface p-3">
-                  <p className="text-xs font-semibold uppercase text-muted">Tasks ({selectedVersion.title})</p>
-                  <div className="mt-2 space-y-2">
-                    {selectedVersionTasks.map((t) => (
-                      <div key={t.id} className="flex items-center gap-2 rounded-lg border border-border px-2 py-1.5">
-                        <input
-                          className="h-8 flex-1 rounded border border-border px-2 text-sm"
-                          value={t.label}
-                          onChange={(e) => void updateTask(t, { label: e.target.value })}
-                        />
-                        <label className="inline-flex items-center gap-1 text-xs text-muted">
-                          <input
-                            type="checkbox"
-                            checked={t.required}
-                            onChange={(e) => void updateTask(t, { required: e.target.checked })}
-                          />
-                          Required
-                        </label>
-                        <button type="button" className="rounded p-1 text-danger hover:bg-danger/10" onClick={() => void removeTask(t.id)}>
-                          <Trash2 className="size-4" aria-hidden />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <input
-                      className="h-9 flex-1 rounded border border-border px-2 text-sm"
-                      value={taskLabel}
-                      onChange={(e) => setTaskLabel(e.target.value)}
-                      placeholder="Task label"
-                    />
-                    <label className="inline-flex items-center gap-1 text-xs text-muted">
-                      <input type="checkbox" checked={taskRequired} onChange={(e) => setTaskRequired(e.target.checked)} />
-                      Required
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => void addTask()}
-                      disabled={taskSaving}
-                      className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+                    <Pencil className="size-4 opacity-70" aria-hidden />
+                    Edit template
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          {templates.length === 0 ? (
+            <p className="mt-4 text-sm text-muted">{loading ? 'Loading…' : 'No templates yet. Create one to get started.'}</p>
           ) : null}
         </section>
-
-        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">Scheduling</h2>
+      ) : (
+        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold tracking-tight">Recurring schedules</h2>
+              <p className="mt-1 max-w-xl text-xs text-muted">
+                Link a published template version to shifts and recurrence. Plan 24 fills the grid from active schedules.
+              </p>
+            </div>
             <button
               type="button"
               onClick={openNewSchedule}
-              className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white"
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white"
             >
-              <Plus className="size-3.5" aria-hidden />
+              <Plus className="size-4" aria-hidden />
               New schedule
             </button>
           </div>
 
-          <p className="mb-2 text-xs text-muted">Future scheduling is unlimited. Plan 24 materializes and shows the near-term window.</p>
-
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase text-muted">Active</p>
+          <div className="mt-4 space-y-2">
             {activeSchedules.map((s) => (
-              <div key={s.id} className="rounded-lg border border-border px-3 py-2 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <button type="button" className="text-left font-medium hover:underline" onClick={() => openEditSchedule(s)}>
-                    {s.name}
-                  </button>
-                  <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
-                    active
-                  </span>
+              <div
+                key={s.id}
+                className="rounded-xl border border-border bg-surface-raised/25 px-3 py-2.5 sm:flex sm:items-center sm:justify-between sm:gap-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="text-left text-sm font-semibold text-fg hover:underline"
+                      onClick={() => openEditSchedule(s)}
+                    >
+                      {s.name}
+                    </button>
+                    <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-800 dark:text-emerald-200">
+                      Active
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted">
+                    {templateLabel.get(s.template_id) ?? 'Template'} · {versionLabel.get(s.template_version_id) ?? 'Version'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted/90">{summaryForSchedule(s)}</p>
+                  <p className="mt-0.5 text-[11px] text-muted">
+                    {s.shift_kind} · from {s.starts_on}
+                    {s.ends_on ? ` · until ${s.ends_on}` : ''}
+                  </p>
                 </div>
-                <div className="mt-1 text-xs text-muted">
-                  {templateLabel.get(s.template_id) ?? 'Template'} · {versionLabel.get(s.template_version_id) ?? 'Version'} · {summaryForSchedule(s)}
-                </div>
-                <div className="mt-1 text-xs text-muted">
-                  {s.shift_kind} · starts {s.starts_on}
-                  {s.ends_on ? ` · ends ${s.ends_on}` : ' · no end date'}
-                </div>
-                <div className="mt-2 flex gap-2">
+                <div className="mt-2 flex shrink-0 flex-wrap gap-2 sm:mt-0">
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-raised/70"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-surface"
+                    onClick={() => openEditSchedule(s)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-surface"
                     onClick={() => void setScheduleState(s, 'paused')}
                   >
                     <Pause className="size-3.5" aria-hidden />
@@ -729,7 +699,7 @@ export function Plan24AdminChecksTab() {
                   </button>
                   <button
                     type="button"
-                    className="rounded-md border border-danger/40 px-2 py-1 text-xs text-danger hover:bg-danger/10"
+                    className="rounded-lg border border-danger/35 px-2.5 py-1.5 text-xs font-semibold text-danger hover:bg-danger/10"
                     onClick={() => void setScheduleState(s, 'archived')}
                   >
                     Archive
@@ -740,38 +710,72 @@ export function Plan24AdminChecksTab() {
             {activeSchedules.length === 0 ? <p className="text-sm text-muted">No active schedules.</p> : null}
           </div>
 
-          <div className="mt-4 space-y-2">
-            <p className="text-xs font-semibold uppercase text-muted">Inactive</p>
-            {inactiveSchedules.map((s) => (
-              <div key={s.id} className="rounded-lg border border-border px-3 py-2 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <button type="button" className="text-left font-medium hover:underline" onClick={() => openEditSchedule(s)}>
-                    {s.name}
-                  </button>
-                  <span className="rounded bg-surface-raised px-1.5 py-0.5 text-[10px] font-semibold uppercase">{s.state}</span>
+          <details className="group mt-5 rounded-xl border border-dashed border-border/80 bg-surface-raised/20">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-sm font-semibold text-fg marker:hidden [&::-webkit-details-marker]:hidden">
+              <span className="text-muted group-open:text-fg">Paused & archived</span>
+              <span className="inline-flex items-center gap-2">
+                <span className="rounded-md bg-surface px-2 py-0.5 text-xs font-medium text-muted">{inactiveSchedules.length}</span>
+                <ChevronDown className="size-4 text-muted transition-transform group-open:rotate-180" aria-hidden />
+              </span>
+            </summary>
+            <div className="space-y-2 border-t border-border/60 px-3 pb-3 pt-2">
+              {inactiveSchedules.map((s) => (
+                <div
+                  key={s.id}
+                  className="rounded-lg border border-border bg-surface px-3 py-2 sm:flex sm:items-center sm:justify-between sm:gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button type="button" className="text-left text-sm font-medium hover:underline" onClick={() => openEditSchedule(s)}>
+                        {s.name}
+                      </button>
+                      <span className="rounded bg-surface-raised px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted">
+                        {s.state}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted">{summaryForSchedule(s)}</p>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2 sm:mt-0">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-surface-raised/70"
+                      onClick={() => openEditSchedule(s)}
+                    >
+                      Edit
+                    </button>
+                    {s.state === 'paused' ? (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-surface-raised/70"
+                        onClick={() => void setScheduleState(s, 'active')}
+                      >
+                        <Play className="size-3.5" aria-hidden />
+                        Resume
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="mt-1 text-xs text-muted">{summaryForSchedule(s)}</div>
-                {s.state === 'paused' ? (
-                  <button
-                    type="button"
-                    className="mt-2 inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-raised/70"
-                    onClick={() => void setScheduleState(s, 'active')}
-                  >
-                    <Play className="size-3.5" aria-hidden />
-                    Resume
-                  </button>
-                ) : null}
-              </div>
-            ))}
-            {inactiveSchedules.length === 0 ? <p className="text-sm text-muted">No paused or archived schedules.</p> : null}
-          </div>
+              ))}
+              {inactiveSchedules.length === 0 ? <p className="text-sm text-muted">None.</p> : null}
+            </div>
+          </details>
         </section>
-      </div>
+      )}
 
       {templateDialogOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="new-template-title"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setTemplateDialogOpen(false)
+          }}
+        >
           <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-xl">
-            <h3 className="text-lg font-semibold">New template</h3>
+            <h3 id="new-template-title" className="text-lg font-semibold">
+              New template
+            </h3>
             <label className="mt-3 block text-xs text-muted">
               Name
               <input className={inputClass} value={templateName} onChange={(e) => setTemplateName(e.target.value)} />
@@ -797,10 +801,183 @@ export function Plan24AdminChecksTab() {
         </div>
       ) : null}
 
+      {templateEditorOpen && selectedTemplate ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="template-editor-title"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setTemplateEditorOpen(false)
+          }}
+        >
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-surface shadow-xl">
+            <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-border bg-surface px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h3 id="template-editor-title" className="text-lg font-semibold leading-tight">
+                  {selectedTemplate.name}
+                </h3>
+                {selectedTemplate.description ? (
+                  <p className="mt-1 text-xs text-muted">{selectedTemplate.description}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-muted/80">No description</p>
+                )}
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void copyTemplate(selectedTemplate)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-surface-raised/70"
+                >
+                  <Copy className="size-3.5" aria-hidden />
+                  Duplicate
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-surface-raised/70"
+                  onClick={() => setTemplateEditorOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-5 p-5">
+              <section>
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">Versions</h4>
+                <p className="mt-1 text-xs text-muted">Publish a version before it can run on a schedule. Drafts can be edited.</p>
+                <div className="mt-2 space-y-2">
+                  {selectedTemplateVersions.map((v) => (
+                    <div
+                      key={v.id}
+                      className={`rounded-lg border px-3 py-2 text-sm ${
+                        selectedVersionId === v.id ? 'border-accent/40 bg-accent-dim/30' : 'border-border'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          className="text-left font-medium hover:underline"
+                          onClick={() => setSelectedVersionId(v.id)}
+                        >
+                          v{v.version_no} · {v.title}
+                        </button>
+                        <span className="rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-surface-raised/80 text-muted ring-1 ring-border">
+                          {v.state}
+                        </span>
+                      </div>
+                      {v.state !== 'published' ? (
+                        <button
+                          type="button"
+                          onClick={() => void publishVersion(v.id)}
+                          className="mt-2 text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300"
+                        >
+                          Publish version
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <label className="text-xs text-muted">
+                    New version title
+                    <input className={inputClass} value={versionTitle} onChange={(e) => setVersionTitle(e.target.value)} />
+                  </label>
+                  <label className="text-xs text-muted">
+                    Notes
+                    <input className={inputClass} value={versionNotes} onChange={(e) => setVersionNotes(e.target.value)} />
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void createVersion()}
+                  disabled={versionSaving || !selectedTemplateId}
+                  className="mt-2 rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-surface-raised/60 disabled:opacity-50"
+                >
+                  {versionSaving ? 'Creating…' : 'Create next version'}
+                </button>
+              </section>
+
+              {selectedVersion ? (
+                <section className="rounded-xl border border-border bg-surface-raised/25 p-4">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">Sub-tasks</h4>
+                  <p className="mt-1 text-xs text-muted">
+                    <span className="font-medium text-fg">{selectedVersion.title}</span> — checklist items on the Plan grid.
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {selectedVersionTasks.map((t) => (
+                      <div key={t.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5">
+                        <input
+                          className="h-8 min-w-0 flex-1 rounded border border-border px-2 text-sm"
+                          value={t.label}
+                          onChange={(e) => void updateTask(t, { label: e.target.value })}
+                        />
+                        <label className="inline-flex items-center gap-1 text-xs text-muted">
+                          <input
+                            type="checkbox"
+                            checked={t.required}
+                            onChange={(e) => void updateTask(t, { required: e.target.checked })}
+                          />
+                          Required
+                        </label>
+                        <button
+                          type="button"
+                          className="rounded p-1 text-danger hover:bg-danger/10"
+                          onClick={() => void removeTask(t.id)}
+                          aria-label={`Remove task ${t.label}`}
+                        >
+                          <Trash2 className="size-4" aria-hidden />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <input
+                      className="h-9 min-w-0 flex-1 rounded-lg border border-border px-2 text-sm"
+                      value={taskLabel}
+                      onChange={(e) => setTaskLabel(e.target.value)}
+                      placeholder="New task label"
+                    />
+                    <div className="flex items-center gap-2 sm:shrink-0">
+                      <label className="inline-flex items-center gap-1 text-xs text-muted">
+                        <input type="checkbox" checked={taskRequired} onChange={(e) => setTaskRequired(e.target.checked)} />
+                        Required
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void addTask()}
+                        disabled={taskSaving}
+                        className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                      >
+                        Add task
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {scheduleDialog ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setScheduleDialog(null)
+          }}
+        >
           <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-surface p-5 shadow-xl">
             <h3 className="text-lg font-semibold">{scheduleDialog.id ? 'Edit schedule' : 'New schedule'}</h3>
+            <p className="mt-1 text-xs text-muted">
+              {scheduleDialog.id ? 'Update when the check runs and which template version is used.' : 'Choose template version, shift, and recurrence.'}
+            </p>
+
+            <div className="mt-5 border-t border-border pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Basics</p>
+            </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="text-xs text-muted">
                 Schedule name
@@ -866,6 +1043,10 @@ export function Plan24AdminChecksTab() {
                     ))}
                 </select>
               </label>
+
+              <div className="sm:col-span-2 mt-1 border-t border-border pt-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">Timing & recurrence</p>
+              </div>
 
               <label className="text-xs text-muted">
                 Recurrence
@@ -996,9 +1177,10 @@ export function Plan24AdminChecksTab() {
               </div>
             ) : null}
 
-            <div className="mt-3">
-              <p className="text-xs font-semibold text-muted">Assigned roles (leave empty for unassigned panel)</p>
-              <div className="mt-1 flex flex-wrap gap-2">
+            <div className="mt-5 border-t border-border pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Roles on the plan</p>
+              <p className="mt-1 text-xs text-muted">Leave empty to place checks in the Unassigned panel only.</p>
+              <div className="mt-2 flex flex-wrap gap-2">
                 {rosterRoles
                   .filter((r) => r.is_active)
                   .sort((a, b) => a.sort_order - b.sort_order)

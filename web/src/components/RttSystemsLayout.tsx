@@ -18,7 +18,12 @@ import { Plan24ScopeBar } from '../features/plan24/Plan24ScopeBar'
 export function RttSystemsLayout() {
   const { isAdmin, profileReady } = useAuth()
   const { pathname } = useLocation()
-  const showPlan24Scope = pathname.includes('/rtt-systems/plan-24') || pathname.includes('/rtt-systems/admin')
+  const showPlan24Scope =
+    pathname.includes('/rtt-systems/plan-24') ||
+    pathname.includes('/rtt-systems/admin') ||
+    pathname.includes('/rtt-systems/defect-handling') ||
+    pathname.includes('/rtt-systems/deviations') ||
+    pathname.includes('/rtt-systems/quality-fails')
 
   return (
     <Plan24WorkspaceProvider>

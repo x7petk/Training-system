@@ -334,6 +334,7 @@ This section is **engineering-facing**: it describes the current repo/DB shape s
 | **DB — materialise** | `public.plan24_materialize_check_schedules(master_cell_id, from_date, to_date)` upserts scheduled rows; skips suppressed triples; **`ON CONFLICT DO UPDATE`** only updates rows that are still **`source = 'scheduled'`** so manually moved rows are not overwritten. |
 | **Migrations (representative)** | `20260421153000_plan24_checks_templates_schedules.sql` (templates/schedules/events columns); `20260421174500_plan24_events_time_order_guard.sql` (materialiser + `end_at > start_at`); `20260421175500_plan24_manual_move_no_copy.sql` (conflict update guard); `20260422120000_plan24_cross_role_move_no_duplicate_slot.sql` (suppressions table + materialiser skip); `20260422140000_drop_plan24_move_check_event.sql` (removes unused RPC if present). |
 | **Apply migrations** | From **repo root**: configure **`.env.supabase`** (see `.env.supabase.example`), then **`npm run supabase:push`** (see root `README.md`). |
+| **Defect Handling (DH)** | **v1 shipped:** `dh_defect_types`, `dh_defects` + RTT **Defect Handling** page and super-admin **DH defect types** tab. Plan 24 surfacing later. See [`rtt_dh_deviations_quality_fails_plan.md`](./rtt_dh_deviations_quality_fails_plan.md). |
 
 ---
 
