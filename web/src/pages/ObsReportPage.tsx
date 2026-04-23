@@ -292,7 +292,7 @@ function ObsReportPage({ kind, hidePageHeader }: { kind: ObsKind; hidePageHeader
         }),
       )
 
-      let compQ = scopedSelect(`completed_by_user_id, completed_by_name`).in('master_cell_id', slice).limit(800)
+      const compQ = scopedSelect(`completed_by_user_id, completed_by_name`).in('master_cell_id', slice).limit(800)
       const compRes = await compQ
       if (!compRes.error && compRes.data) {
         for (const r of compRes.data as unknown as { completed_by_user_id: string; completed_by_name: string }[]) {

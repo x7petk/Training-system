@@ -2,6 +2,33 @@
 
 Workforce **Skill Matrix** spec lives in [`skill_matrix.md`](./skill_matrix.md). Delivery plan: [`plan.md`](./plan.md).
 
+## Product docs map
+
+Use this section as the source of truth for where to update docs when behaviour changes.
+
+### Skill Matrix
+
+- Product/spec reference: [`skill_matrix.md`](./skill_matrix.md)
+- In-app user guide source: [`web/src/pages/UserGuidePage.tsx`](./web/src/pages/UserGuidePage.tsx) (`/user-guide`)
+
+### RTT systems
+
+- Plan 24 spec + implementation notes: [`plan_24_rtt_planning.md`](./plan_24_rtt_planning.md)
+- DH/Deviations/Quality plan: [`rtt_dh_deviations_quality_fails_plan.md`](./rtt_dh_deviations_quality_fails_plan.md)
+- CL/CIL/Quality checks requirements: [`CL_CIL_Quality_checks.md`](./CL_CIL_Quality_checks.md)
+- In-app user guide source: [`web/src/pages/RttSystemsUserGuidePage.tsx`](./web/src/pages/RttSystemsUserGuidePage.tsx) (`/rtt-systems/user-guide`)
+
+### LDR tools
+
+- Roster/Calendar/Checks spec: [`ldr_tools_roster_calendar_spec.md`](./ldr_tools_roster_calendar_spec.md)
+- In-app user guide source: [`web/src/pages/LdrToolsUserGuidePage.tsx`](./web/src/pages/LdrToolsUserGuidePage.tsx) (`/ldr-tools/user-guide`)
+
+### Doc maintenance rule
+
+When behaviour changes in a module, update both:
+- the module spec (`*.md`)
+- the corresponding in-app user guide page (`web/src/pages/*UserGuidePage.tsx`)
+
 ## Web app (`web/`)
 
 Stack: Vite, React, TypeScript, Tailwind v4, Supabase Auth.
@@ -68,9 +95,17 @@ Open [http://localhost:5173](http://localhost:5173). After migration + admin pro
 
 Build: `cd web && npm run build`. Deploy the `web/dist` output (e.g. Vercel/Netlify) and set the same `VITE_*` env vars there; update Supabase redirect URLs for the live domain.
 
-### LDR tools smoke checks
+### Web CI (lint, test, build)
 
-From `web/`:
+GitHub Actions runs **`web/`** `lint`, `test`, and `build` on every push and pull request to `main` (see [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)).
+
+From the **repo root** (same commands CI uses, without `cd web`):
+
+```bash
+npm run web:ci
+```
+
+Or from `web/`:
 
 ```bash
 npm run test
@@ -78,4 +113,4 @@ npm run lint
 npm run build
 ```
 
-These are the baseline gates used after LDR tools changes (roster/calendar/checks/reports/admin/user guide).
+These are the baseline gates used after web changes (Skill Matrix, LDR tools, RTT systems, user guides).

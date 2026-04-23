@@ -177,7 +177,7 @@ function LdrAdminPeoplePanel() {
   }, [workspaceId, masterCellJoinById])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async load() updates people list after fetch
+     
     void load()
   }, [load])
 
@@ -553,7 +553,7 @@ function LdrAdminActivitiesPanel() {
   }, [workspaceId, scopeLevel, siteId])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async load() updates activities after fetch
+     
     void load()
   }, [load])
 

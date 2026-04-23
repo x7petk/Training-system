@@ -286,4 +286,12 @@ Admin is split into sections:
 
 ## User Guide
 
-There is an admin-only “User Guide” page at **`/user-guide`**. It’s intended to be the “how to use this day-to-day” reference for end users and admins.
+There is an admin-only **User Guide** page at **`/user-guide`**. It is the day-to-day operating reference for admins, assessors, and team leads.
+
+Current guide coverage is aligned to implemented behaviour:
+
+- Role access expectations (operator vs assessor vs admin)
+- Matrix usage patterns and filter workflow
+- My skills workflow (required vs extra skills and target-date priorities)
+- Training and assessor flow (including L1→2 training gating and progression-event reporting dependencies)
+- Dashboard / Matrix / Report usage guidance for operational vs leadership review

@@ -22,7 +22,8 @@ import { localYMD } from '../lib/dueDateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { Plan24Grid, PLAN24_DRAG_MIME } from '../features/plan24/Plan24Grid'
 import { Plan24CilRoutePanel } from '../features/plan24/Plan24CilRoutePanel'
-import { Plan24ClQualityRoutePanel, plan24ClQualitySubTaskComplete } from '../features/plan24/Plan24ClQualityRoutePanel'
+import { Plan24ClQualityRoutePanel } from '../features/plan24/Plan24ClQualityRoutePanel'
+import { plan24ClQualitySubTaskComplete } from '../features/plan24/plan24ClQualityRouteUtils'
 import { patternDayIndex, shiftWindowBounds, type ShiftRow } from '../features/plan24/plan24ShiftUtils'
 import type {
   Plan24EventRow,
@@ -683,6 +684,7 @@ export function Plan24Page() {
     setDetailDurationMin(String(dur))
   }, [])
 
+  /* Narrow deps: re-fetch template id when schedule / row identity changes, not on every detailEv field update. */
   useEffect(() => {
     if (!detailEv || detailEv.event_type !== 'cil_check' || detailEv.cil_template_id || !detailEv.schedule_id) return
     let cancelled = false
@@ -702,6 +704,7 @@ export function Plan24Page() {
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above effect
   }, [detailEv?.id, detailEv?.event_type, detailEv?.schedule_id, detailEv?.cil_template_id])
 
   const saveDetail = useCallback(async () => {
@@ -737,6 +740,7 @@ export function Plan24Page() {
   }, [detailEv, detailSubs, detailDurationMin, refresh, windowBounds.end])
 
   /** CIL / CL / Quality route: title edits persist without a separate Save button. */
+  /* Narrow deps: debounce title persist on id/title/type only. */
   useEffect(() => {
     if (!detailEv || !['cil_check', 'cl_check', 'quality_check'].includes(detailEv.event_type)) return
     const eid = detailEv.id
@@ -748,6 +752,7 @@ export function Plan24Page() {
       })()
     }, 550)
     return () => window.clearTimeout(tmr)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above effect
   }, [detailEv?.id, detailEv?.title, detailEv?.event_type])
 
   const markComplete = useCallback(async () => {

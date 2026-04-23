@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect -- intentional workspace resolution + roster auto-select */
+ 
 /* eslint-disable react-refresh/only-export-components -- colocated provider + useLdrWorkspace hook */
 import {
   createContext,

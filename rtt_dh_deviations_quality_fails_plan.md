@@ -203,3 +203,17 @@ External DH doc lists roles (Super Admin, Admin, Assessor, User, Read-only). Thi
 - **Apply migration:** `npm run supabase:push` (repo root) for `20260423100000_dh_defect_handling.sql`.
 - **Fine-tune DH:** UX, permissions matrix (**§9**), comments/attachments, reporting — iterate before cloning to Deviations / Quality Fails.
 - Product: answer **§9 (still open)** when ready.
+
+---
+
+## 11. User Guide alignment
+
+The RTT in-app guide (`/rtt-systems/user-guide`) and this plan should be updated together whenever scope changes.
+
+Current wording should stay aligned on these points:
+
+- **Delivery status:** Defect Handling is live; Deviations and Quality Fails are roadmap tracks not yet at DH parity.
+- **Creation flow:** issue creation is manual in current runtime; check-linked raise flows are planned for later Plan 24 phases.
+- **Admin control:** DH defect type catalogue is super-admin controlled; RTT users only consume active types.
+- **Scope language:** describe location context as site/plant/cell aligned with RTT scope bar and optional free-text location summary in DH.
+- **Future CL/CIL/Quality links:** describe as planned integration with Plan 24 check families, not active automatic behaviour.

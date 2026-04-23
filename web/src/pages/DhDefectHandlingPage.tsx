@@ -135,6 +135,21 @@ export function DhDefectHandlingPage({
     return () => window.removeEventListener('click', closeInlineMenu)
   }, [])
 
+  const openEdit = useCallback((row: DhDefectRow) => {
+    setEditing(row)
+    setFormTypeId(row.defect_type_id)
+    setFormTitle(row.title)
+    setFormDescription(row.description ?? '')
+    setFormPriority(row.priority)
+    setFormStatus(row.status)
+    setFormArea(row.area ?? '')
+    setFormEquipment(row.equipment ?? '')
+    setFormLocation(row.location_summary ?? '')
+    setFormOwnerId(row.owner_person_id ?? '')
+    setFormDue(row.due_at ? row.due_at.slice(0, 10) : '')
+    setDialogOpen(true)
+  }, [])
+
   useEffect(() => {
     if (!linkedIssueId || defects.length === 0) return
     const row = defects.find((d) => d.id === linkedIssueId)
@@ -143,7 +158,7 @@ export function DhDefectHandlingPage({
     const next = new URLSearchParams(searchParams)
     next.delete('linkedIssueId')
     setSearchParams(next, { replace: true })
-  }, [linkedIssueId, defects, searchParams, setSearchParams])
+  }, [linkedIssueId, defects, searchParams, setSearchParams, openEdit])
 
   const filteredDefects = useMemo(() => {
     return defects.filter((d) => {
@@ -166,21 +181,6 @@ export function DhDefectHandlingPage({
     setFormLocation('')
     setFormOwnerId('')
     setFormDue('')
-    setDialogOpen(true)
-  }
-
-  function openEdit(row: DhDefectRow) {
-    setEditing(row)
-    setFormTypeId(row.defect_type_id)
-    setFormTitle(row.title)
-    setFormDescription(row.description ?? '')
-    setFormPriority(row.priority)
-    setFormStatus(row.status)
-    setFormArea(row.area ?? '')
-    setFormEquipment(row.equipment ?? '')
-    setFormLocation(row.location_summary ?? '')
-    setFormOwnerId(row.owner_person_id ?? '')
-    setFormDue(row.due_at ? row.due_at.slice(0, 10) : '')
     setDialogOpen(true)
   }
 

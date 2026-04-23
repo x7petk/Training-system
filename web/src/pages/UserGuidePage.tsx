@@ -13,43 +13,66 @@ const quickSteps = [
   'Create or tidy up skill groups first so the matrix and My skills stay easy to scan.',
   'Add skills next, then add job roles, then connect skills to roles in Role skill requirements.',
   'Add people after that, link their login if needed, give them a team, and assign one or more job roles.',
-  'Use training packs for operator self-training from level 1 to level 2, and use assessor sign-off for higher steps or yes/no qualifications.',
+  'Use training packs for operator self-training from level 1 to level 2, and use assessor sign-off for higher steps or certification skills.',
 ] as const
 
-const rules = [
+const accessGuide = [
+  {
+    title: 'Operator access',
+    body: 'Operators are redirected to My skills and use it in read-only mode for their linked person record.',
+  },
+  {
+    title: 'Assessor access',
+    body: 'Assessors can use Matrix, Dashboard, and Report, and can edit skill records for people.',
+  },
+  {
+    title: 'Admin access',
+    body: 'Admins have assessor permissions plus Admin setup and this User Guide page.',
+  },
+] as const
+
+const coreRules = [
   {
     title: 'When you add a skill to a role',
     body:
-      'A new role requirement starts at required level 3 by default. People who already have that role are seeded with actual level 1 for that skill, and a target date is set three months ahead when the new requirement creates a gap.',
+      'Required level is determined per person by taking the highest requirement across all their assigned roles for each skill.',
   },
   {
     title: 'When you add a new person and assign a role',
     body:
-      'The system creates their required skills automatically. Their starting actual level is 1 for those required skills, and target dates are added where the person still needs to close a gap.',
+      'Role requirements become visible for that person in Matrix and My skills. Actual levels are then tracked per person and can be updated by permitted users.',
   },
   {
     title: 'When you track an extra skill',
     body:
-      'Extra skills sit outside the person’s role requirements. They still appear in My skills and can still show training or assessor actions when relevant.',
+      'Extra skills are tracked outside role requirements. They appear with the Extra skill status and stay separate from required skills.',
   },
   {
     title: 'When you change levels manually',
     body:
-      'The matrix and My skills always reflect the latest saved level. Dashboard and reports then use those levels, due dates, training passes, and assessor-driven progress to show status and movement.',
+      'Matrix and My skills update immediately. Dashboard and Report then reflect those saved levels, due dates, passed training attempts, and progression events.',
   },
 ] as const
 
+const matrixTips = [
+  'Use person and skill search to narrow large grids quickly.',
+  'Use role, team, and skill-group chips together to focus the matrix on one work area.',
+  'Use colour status to prioritise critical and minor gaps before reviewing meets/exceeds.',
+  'Remember certification skills are binary: required yes/no vs actual yes/no.',
+] as const
+
 const mySkillsTips = [
-  'Use the filter row to narrow by person, team, role, gap, or group.',
+  'Use the filter row to narrow by person, team, role, gap, or skill group.',
   'Use the compact target tiles to focus on overdue work, near-term due work, or missing target dates.',
-  'Collapse skill groups when you want a quick summary of levels, certifications, and gaps without opening every row.',
-  'Open Training when a self-training pack is available for a level 1 skill. Open Show assessors when a skill needs assessor support or sign-off.',
+  'Use Required for your roles and Extra skills tracked sections to keep required and optional skills clear.',
+  'Open Training when a pack exists for a numeric skill at level 1. Use assessor workflow for higher progression and certifications.',
 ] as const
 
 const trainingFlow = [
-  'Level 1 to 2 can be managed with training material plus quiz where a training pack exists.',
-  'Level 2 to 3 and higher practical progression is supported by assessor involvement.',
-  'Yes/No qualification skills can also show assessors when the person still needs to be signed off.',
+  'Training is available only when the skill is numeric, actual level is 1, and both a training pack and quiz questions exist.',
+  'A submit always records a training attempt. Passed attempts can move actual level from 1 to 2 when the saved level is still 1.',
+  'Level 2 to 3 progression appears in Report from progression events (where the migration/table exists).',
+  'Certification skills are assessed as yes/no and do not use numeric progression steps.',
   'Training standards can include page layouts, images, links, and supporting documents to guide learners step by step.',
 ] as const
 
@@ -63,8 +86,8 @@ export function UserGuidePage() {
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">User Guide</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted">
-            This guide explains how to run the skill matrix day to day. It is written for admins and team leads so the
-            system can be maintained consistently as the process grows.
+            Operational reference for Skill Matrix users. This page reflects current behaviour and is intended for
+            admins, assessors, and team leads running day-to-day capability tracking.
           </p>
         </div>
       </header>
@@ -102,10 +125,25 @@ export function UserGuidePage() {
       <section className="rounded-2xl border border-border bg-surface-raised/40 p-4 backdrop-blur-sm">
         <div className="flex items-center gap-2">
           <ShieldCheck className="size-5 text-accent" aria-hidden />
-          <h2 className="font-display text-lg font-semibold tracking-tight">Core rules already built into the system</h2>
+          <h2 className="font-display text-lg font-semibold tracking-tight">Who can access what</h2>
         </div>
         <div className="mt-3 space-y-2">
-          {rules.map((rule) => (
+          {accessGuide.map((item) => (
+            <div key={item.title} className="rounded-xl border border-border bg-surface px-3 py-3">
+              <p className="text-sm font-semibold text-fg">{item.title}</p>
+              <p className="mt-1 text-sm text-muted">{item.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-surface-raised/40 p-4 backdrop-blur-sm">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="size-5 text-accent" aria-hidden />
+          <h2 className="font-display text-lg font-semibold tracking-tight">Core rules built into the system</h2>
+        </div>
+        <div className="mt-3 space-y-2">
+          {coreRules.map((rule) => (
             <div key={rule.title} className="rounded-xl border border-border bg-surface px-3 py-3">
               <p className="text-sm font-semibold text-fg">{rule.title}</p>
               <p className="mt-1 text-sm text-muted">{rule.body}</p>
@@ -114,7 +152,19 @@ export function UserGuidePage() {
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
+      <section className="grid gap-4 xl:grid-cols-3">
+        <div className="rounded-2xl border border-border bg-surface-raised/40 p-4 backdrop-blur-sm">
+          <h2 className="font-display text-lg font-semibold tracking-tight">Using Matrix</h2>
+          <ul className="mt-3 space-y-2 text-sm text-fg">
+            {matrixTips.map((item) => (
+              <li key={item} className="flex items-start gap-2">
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
         <div className="rounded-2xl border border-border bg-surface-raised/40 p-4 backdrop-blur-sm">
           <h2 className="font-display text-lg font-semibold tracking-tight">Using My skills</h2>
           <ul className="mt-3 space-y-2 text-sm text-fg">
@@ -146,7 +196,7 @@ export function UserGuidePage() {
           <div className="rounded-xl border border-border bg-surface px-3 py-3">
             <p className="text-sm font-semibold text-fg">Dashboard</p>
             <p className="mt-1 text-sm text-muted">
-              Best for quick management checks: overdue work, work due soon, missing target dates, and trend views.
+              Best for due-date management: overdue work, next 7 days, next 30 days, and no target date gaps.
             </p>
           </div>
           <div className="rounded-xl border border-border bg-surface px-3 py-3">
@@ -158,17 +208,17 @@ export function UserGuidePage() {
           <div className="rounded-xl border border-border bg-surface px-3 py-3">
             <p className="text-sm font-semibold text-fg">Report</p>
             <p className="mt-1 text-sm text-muted">
-              Best for leadership review: training completions, assessor-driven progression, and current role gap views.
+              Best for leadership review: passed training completions, progression events, and current role gap views.
             </p>
           </div>
         </div>
       </section>
 
       <section className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
-        <h2 className="font-display text-lg font-semibold tracking-tight text-sky-950">How to keep this guide useful</h2>
+        <h2 className="font-display text-lg font-semibold tracking-tight text-sky-950">Guide maintenance note</h2>
         <p className="mt-2 text-sm text-sky-900/90">
-          Update this page whenever a workflow changes, a new rule is introduced, or the meaning of a status colour or
-          action button changes. Treat it like training material for future admins, not just release notes.
+          Update this guide whenever workflow, permission, status colour, or action behaviour changes. Keep it aligned
+          with `skill_matrix.md` in the same change set.
         </p>
       </section>
     </div>

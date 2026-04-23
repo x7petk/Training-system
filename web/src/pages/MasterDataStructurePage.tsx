@@ -63,7 +63,7 @@ function EditableName(props: {
 
   useEffect(() => {
     if (!editing) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset draft when server name changes while not editing
+       
       setDraft(props.name)
     }
   }, [props.name, editing])
@@ -184,7 +184,7 @@ export function MasterDataStructurePage() {
   }, [])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async load() updates master data after fetch
+     
     void load()
   }, [load])
 

@@ -169,6 +169,20 @@ New LDR guide page:
   - execute in roster
   - maintain in admin
 - Includes current nav grouping notes (LDR checks + Reports) and sticky action bar behaviour on record pages.
+- Clarifies report-page behaviour (no scope bar; RLS-wide accessible records) and roster-to-record feedback loops (RAG/comment sync + duplicate-submit guard).
+
+### 8.1 User Guide alignment rule
+
+Keep this spec and `/ldr-tools/user-guide` aligned in the same change set whenever LDR behaviour changes.
+
+Minimum alignment topics:
+
+- Scope model language (Site vs Cell and persisted scope context).
+- Roster behaviour (assignment modal flow, one-tap RAG/cell, conflict warnings non-blocking).
+- Roster shortcuts into HC/SOS/QOS/PPO and return-scope continuity.
+- Record submit behaviour (linked assignment feedback sync, duplicate-submit protection, sticky action dock).
+- Report behaviour (no scope bar and RLS-wide visibility across accessible records).
+- Admin responsibilities (people, activities/ordering, per-cell site-activity visibility, types/templates).
 
 ---
 

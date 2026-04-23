@@ -7,7 +7,7 @@ const quickStart = [
   'Use the left panel groups: LDR checks (Health Checks, SOS, QOS, PPO) and Reports (HC/SOS/QOS/PPO reports).',
   'Use Health Checks to start or resume checks at cell level; HC Report for trends and history (no scope bar on that page — all accessible locations).',
   'Use SOS, QOS, and PPO the same way (each has its own list, new flow, record screen, and report). SOS/QOS/PPO reports also hide the scope bar.',
-  'Use User Guide and Admin links in the footer (Admin appears below User Guide for admin/super-admin users).',
+  'Use User Guide and Admin links in the footer (Admin appears below User Guide for admin and super-admin users).',
 ] as const
 
 const runFlow = [
@@ -25,7 +25,7 @@ const runFlow = [
   },
   {
     title: '4) Maintain in Admin',
-    body: 'Keep people and activities up to date so roster assignment lists remain accurate and fast to use.',
+    body: 'Keep people, activities, and template settings up to date so roster and record flows stay accurate and fast to use.',
   },
 ] as const
 
@@ -39,7 +39,7 @@ const designProcessBlocks = [
       'HC Report — submitted checks only: compact filters (date range, type, completer). No site/cell scope bar on this page; the report includes all HC records you can access under LDR (RLS). Summary cards, RAG distribution, weekly volume/avg trend, by-type and by-completer tables, and a record list.',
       'SOS / QOS / PPO — observation apps tied to their own LDR activities: roster shortcuts (Complete SOS / QOS / PPO) when an active template exists; duplicate guard and roster RAG/comment sync like HC. SOS uses one Full/Partly/Not outcome plus reference checklist with optional good/bad images. QOS and PPO use Pass/Fail/N/A per question (N/A excluded from score), optional per-question operator text, comments, and optional reference images.',
       'SOS / QOS / PPO Reports — charts for volume by day/week/month, counts by type and by completer, filters, and a record list (no scope bar; RLS-wide).',
-      'Record screens (HC/SOS/QOS/PPO) keep submit/delete controls in a sticky bottom action bar, so you can submit or delete without scrolling back to the top.',
+      'Record screens (HC/SOS/QOS/PPO) keep submit/delete controls in a sticky bottom action bar with autosave status, so you can submit or delete without scrolling back to the top.',
       'Admin — lists you maintain so Roster stays usable: LDR people, activity names/order, (in cell scope) site-activity visibility for the cell roster, plus HC and SOS/QOS/PPO types and templates (including question images uploaded to secure storage). Admin link lives below User Guide in the footer.',
       'User Guide — this page; it does not change data. Use Calendar, Roster, Health Checks, and Admin after you finish reading.',
     ],
@@ -120,7 +120,7 @@ const feedbackLoopBlocks = [
     body: [
       'When a linked assignment is present, submitting HC/observations updates roster feedback fields.',
       'RAG can be synced to the assignment and comment history is appended for traceability.',
-      'Duplicate-submit protection prevents accidental repeat submits for the same user/type/cell/day.',
+      'Duplicate-submit protection prevents accidental repeat submits for the same user/type/cell/day and assignment context.',
     ],
   },
   {
@@ -160,7 +160,7 @@ const troubleshooting = [
   'Plant/Cell shows dash on new record: verify assignment has a valid cell mapping (or choose cell manually).',
   'Cannot submit: check unanswered questions and FAIL comments.',
   'Missing expected activities in cell scope: review Admin > Activities visibility for that cell.',
-  'Unexpected data visibility: confirm current scope and page type (report pages intentionally run without scope bar).',
+  'Unexpected data visibility: confirm current scope and page type (report pages intentionally run without scope bar and show all accessible records).',
 ] as const
 
 export function LdrToolsUserGuidePage() {
@@ -170,7 +170,13 @@ export function LdrToolsUserGuidePage() {
         <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-700 dark:text-violet-300">
           <BookOpenText className="size-6" aria-hidden />
         </span>
-        <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">LDR User Guide</h1>
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">LDR User Guide</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted">
+            Operational reference for LDR users, aligned with current calendar, roster, checks, observations, reports,
+            and admin behaviour.
+          </p>
+        </div>
       </header>
 
       <section className="rounded-2xl border border-border bg-surface-raised/50 p-4 backdrop-blur-sm md:p-6">
@@ -297,6 +303,14 @@ export function LdrToolsUserGuidePage() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4 md:p-6">
+        <h2 className="font-display text-lg font-semibold tracking-tight text-sky-950">Guide maintenance note</h2>
+        <p className="mt-2 text-sm text-sky-900/90">
+          Update this guide whenever LDR scope behaviour, roster/check flows, report behaviour, or admin controls
+          change. Keep it aligned with `ldr_tools_roster_calendar_spec.md` in the same change set.
+        </p>
       </section>
     </div>
   )

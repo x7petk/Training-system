@@ -338,6 +338,21 @@ This section is **engineering-facing**: it describes the current repo/DB shape s
 
 ---
 
+## 10b. RTT User Guide alignment
+
+The in-app RTT user guide at **`/rtt-systems/user-guide`** should stay aligned to implemented behaviour and confirmed decisions:
+
+- **Plan 24 usage scope:** one cell + one date + one shift window (day/night), with shift bounds driven by roster configuration.
+- **Permissions model (v1):** normal users can run day-to-day Plan 24 operations; roster editing and schedule/template editing remain admin-only.
+- **Checks runtime:** checks are the active Plan 24 event type in v1; scheduled materialisation, ad-hoc events, drag/drop moves, and suppression handling are part of current expected behaviour.
+- **Delete model:** soft delete with mandatory comment for audit and reporting continuity.
+- **Issue systems status:** Defect Handling is live; Deviations and Quality Fails remain planned tracks and should be described as roadmap, not complete runtime parity.
+- **Admin guidance:** DH type management is super-admin controlled; Plan 24 roster and schedule management are admin-controlled.
+
+When either Plan 24 behaviour or RTT issue-system scope changes, update this section and the in-app user guide together in the same change set.
+
+---
+
 ## 11. Reference material & screenshots
 
 | # | File (Cursor workspace assets) | What it shows |

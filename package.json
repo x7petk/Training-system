@@ -5,7 +5,12 @@
   "scripts": {
     "supabase:bootstrap": "node scripts/supabase-bootstrap.mjs",
     "supabase:bootstrap:promote": "node scripts/supabase-bootstrap.mjs --promote-admin",
-    "supabase:push": "node scripts/supabase-db-push.mjs"
+    "supabase:push": "node scripts/supabase-db-push.mjs",
+    "web:install": "npm install --prefix web",
+    "web:lint": "npm run lint --prefix web",
+    "web:test": "npm run test --prefix web",
+    "web:build": "npm run build --prefix web",
+    "web:ci": "npm run web:lint && npm run web:test && npm run web:build"
   },
   "devDependencies": {
     "supabase": "^2.83.0"

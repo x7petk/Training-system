@@ -280,7 +280,7 @@ export function LdrCalendarPage() {
   }, [workspaceId, loadEnd, weekStartYmd])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async load() updates list state after fetch
+     
     void load()
   }, [load])
 
