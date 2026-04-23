@@ -94,21 +94,35 @@ function buildTaskInsertRow(t: Plan24CheckTemplateTaskRow, versionId: string, ta
     required: t.required,
     sort_order: t.sort_order,
   }
-  if (tasksTable !== 'plan24_cil_check_template_tasks') return base
-  base.standard_description = t.standard_description ?? null
-  base.photo_path = t.photo_path ?? null
-  base.recurrence_kind = t.recurrence_kind ?? 'daily'
-  base.interval_n = t.interval_n ?? 1
-  base.weekdays = Array.isArray(t.weekdays) ? t.weekdays : []
-  base.month_day = t.month_day ?? null
-  base.check_types = Array.isArray(t.check_types) && t.check_types.length ? t.check_types : []
-  base.when_condition = t.when_condition ?? null
+  if (tasksTable === 'plan24_cil_check_template_tasks') {
+    base.standard_description = t.standard_description ?? null
+    base.photo_path = t.photo_path ?? null
+    base.recurrence_kind = t.recurrence_kind ?? 'daily'
+    base.interval_n = t.interval_n ?? 1
+    base.weekdays = Array.isArray(t.weekdays) ? t.weekdays : []
+    base.month_day = t.month_day ?? null
+    base.check_types = Array.isArray(t.check_types) && t.check_types.length ? t.check_types : []
+    base.when_condition = t.when_condition ?? null
+    return base
+  }
+  if (tasksTable === 'plan24_cl_check_template_tasks' || tasksTable === 'plan24_quality_check_template_tasks') {
+    base.input_kind = t.input_kind ?? 'pass_fail'
+    base.min_value = t.min_value ?? null
+    base.max_value = t.max_value ?? null
+    base.target_value = t.target_value ?? null
+    base.standard_description = t.standard_description ?? null
+    base.photo_path = t.photo_path ?? null
+    return base
+  }
   return base
 }
 
 export function Plan24AdminChecksTab({ config = DEFAULT_CHECKS_CONFIG }: { config?: ChecksAdminConfig }) {
   const { cellId, status } = usePlan24Workspace()
   const isCilRouteTasks = config.tasksTable === 'plan24_cil_check_template_tasks'
+  const isMeasuredFamilyTasks =
+    config.tasksTable === 'plan24_cl_check_template_tasks' ||
+    config.tasksTable === 'plan24_quality_check_template_tasks'
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -409,6 +423,12 @@ export function Plan24AdminChecksTab({ config = DEFAULT_CHECKS_CONFIG }: { confi
       insertRow.weekdays = []
       insertRow.check_types = []
     }
+    if (isMeasuredFamilyTasks) {
+      insertRow.input_kind = 'pass_fail'
+      insertRow.min_value = null
+      insertRow.max_value = null
+      insertRow.target_value = null
+    }
     const res = await supabase.from(config.tasksTable).insert(insertRow)
     setTaskSaving(false)
     if (res.error) setError(res.error.message)
@@ -434,6 +454,10 @@ export function Plan24AdminChecksTab({ config = DEFAULT_CHECKS_CONFIG }: { confi
         | 'month_day'
         | 'check_types'
         | 'when_condition'
+        | 'input_kind'
+        | 'min_value'
+        | 'max_value'
+        | 'target_value'
       >
     >,
   ) {
@@ -1219,6 +1243,141 @@ export function Plan24AdminChecksTab({ config = DEFAULT_CHECKS_CONFIG }: { confi
                               <option value="other">Other</option>
                             </select>
                           </label>
+                        </div>
+                      ) : isMeasuredFamilyTasks ? (
+                        <div key={t.id} className="space-y-3 rounded-xl border border-border bg-surface-raised/30 p-3">
+                          <div className="flex flex-wrap items-start gap-2">
+                            <input
+                              className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-surface px-2 text-sm"
+                              value={t.label}
+                              onChange={(e) => void updateTask(t, { label: e.target.value })}
+                            />
+                            <label className="inline-flex shrink-0 items-center gap-1 text-xs text-muted">
+                              <input
+                                type="checkbox"
+                                checked={t.required}
+                                onChange={(e) => void updateTask(t, { required: e.target.checked })}
+                              />
+                              Required
+                            </label>
+                            <button
+                              type="button"
+                              className="rounded p-1 text-danger hover:bg-danger/10"
+                              onClick={() => void removeTask(t.id)}
+                              aria-label={`Remove task ${t.label}`}
+                            >
+                              <Trash2 className="size-4" aria-hidden />
+                            </button>
+                          </div>
+                          <label className="block text-xs text-muted">
+                            Standard (operator)
+                            <textarea
+                              key={`${t.id}-std`}
+                              className={textareaClass}
+                              rows={3}
+                              defaultValue={t.standard_description ?? ''}
+                              onBlur={(e) => void updateTask(t, { standard_description: e.target.value.trim() || null })}
+                            />
+                          </label>
+                          <div className="flex flex-wrap items-end gap-3">
+                            <div className="space-y-1">
+                              <p className="text-[11px] font-medium text-muted">Reference photo</p>
+                              {cilTaskPhotoPublicUrl(t.photo_path) ? (
+                                <img
+                                  src={cilTaskPhotoPublicUrl(t.photo_path) ?? ''}
+                                  alt=""
+                                  className="size-20 rounded-lg border border-border object-cover"
+                                />
+                              ) : (
+                                <div className="flex size-20 items-center justify-center rounded-lg border border-dashed border-border text-[10px] text-muted">
+                                  None
+                                </div>
+                              )}
+                            </div>
+                            <label className="text-xs text-muted">
+                              Upload
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className={inputClass}
+                                disabled={cilPhotoTaskId === t.id}
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0]
+                                  e.target.value = ''
+                                  if (f) void uploadCilTaskPhoto(t, f)
+                                }}
+                              />
+                            </label>
+                            {t.photo_path ? (
+                              <button
+                                type="button"
+                                className="text-xs font-semibold text-muted hover:text-fg"
+                                onClick={() => void updateTask(t, { photo_path: null })}
+                              >
+                                Clear photo
+                              </button>
+                            ) : null}
+                          </div>
+                          <label className="block text-xs text-muted">
+                            Input type
+                            <select
+                              className={inputClass}
+                              value={t.input_kind ?? 'pass_fail'}
+                              onChange={(e) =>
+                                void updateTask(t, {
+                                  input_kind: e.target.value as Plan24CheckTemplateTaskRow['input_kind'],
+                                })
+                              }
+                            >
+                              <option value="pass_fail">Pass / fail</option>
+                              <option value="number">Number (limits)</option>
+                              <option value="range">Range (same as number)</option>
+                              <option value="text">Text</option>
+                            </select>
+                          </label>
+                          {(t.input_kind ?? 'pass_fail') !== 'pass_fail' ? (
+                            <div className="grid gap-3 sm:grid-cols-3">
+                              <label className="text-xs text-muted">
+                                Target (nominal)
+                                <input
+                                  type="number"
+                                  step="any"
+                                  className={inputClass}
+                                  value={t.target_value == null ? '' : String(t.target_value)}
+                                  onChange={(e) => {
+                                    const raw = e.target.value
+                                    void updateTask(t, { target_value: raw === '' ? null : Number(raw) })
+                                  }}
+                                />
+                              </label>
+                              <label className="text-xs text-muted">
+                                Min
+                                <input
+                                  type="number"
+                                  step="any"
+                                  className={inputClass}
+                                  value={t.min_value == null ? '' : String(t.min_value)}
+                                  onChange={(e) => {
+                                    const raw = e.target.value
+                                    void updateTask(t, { min_value: raw === '' ? null : Number(raw) })
+                                  }}
+                                />
+                              </label>
+                              <label className="text-xs text-muted">
+                                Max
+                                <input
+                                  type="number"
+                                  step="any"
+                                  className={inputClass}
+                                  value={t.max_value == null ? '' : String(t.max_value)}
+                                  onChange={(e) => {
+                                    const raw = e.target.value
+                                    void updateTask(t, { max_value: raw === '' ? null : Number(raw) })
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          ) : null}
                         </div>
                       ) : (
                         <div key={t.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5">

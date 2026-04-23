@@ -53,10 +53,23 @@ begin
   returning id into cl_v1;
 
   delete from public.plan24_cl_check_template_tasks where version_id = cl_v1;
-  insert into public.plan24_cl_check_template_tasks (version_id, label, required, input_kind, sort_order)
+  insert into public.plan24_cl_check_template_tasks (
+    version_id, label, required, input_kind, sort_order,
+    min_value, max_value, target_value, standard_description, photo_path
+  )
   values
-    (cl_v1, 'Walk path clear of debris', true, 'pass_fail', 0),
-    (cl_v1, 'Sanitizer concentration logged', true, 'pass_fail', 1);
+    (
+      cl_v1, 'Walk path clear of debris', true, 'pass_fail', 0,
+      null, null, null,
+      E'Standard\n• Aisles and infeed/outfeed clear; no slip/trip hazards.\n• Document any blocked drains or spills before Pass.',
+      'https://placehold.co/360x240/166534/ffffff/png?text=Walk+path'
+    ),
+    (
+      cl_v1, 'Sanitizer concentration logged', true, 'number', 1,
+      150, 250, 200,
+      E'Standard\n• Target ~200 ppm (adjust to plant spec).\n• Values outside min/max are deviations — re-sample once, then Raise deviation.',
+      'https://placehold.co/360x240/15803d/ffffff/png?text=Sanitizer'
+    );
 
   update public.plan24_cl_check_template_versions
   set state = 'archived'
@@ -105,10 +118,23 @@ begin
   returning id into cl_v2;
 
   delete from public.plan24_cl_check_template_tasks where version_id = cl_v2;
-  insert into public.plan24_cl_check_template_tasks (version_id, label, required, input_kind, sort_order)
+  insert into public.plan24_cl_check_template_tasks (
+    version_id, label, required, input_kind, sort_order,
+    min_value, max_value, target_value, standard_description, photo_path
+  )
   values
-    (cl_v2, 'Guards seated and latched', true, 'pass_fail', 0),
-    (cl_v2, 'No fluid weeps at seal points', true, 'pass_fail', 1);
+    (
+      cl_v2, 'Guards seated and latched', true, 'pass_fail', 0,
+      null, null, null,
+      E'Standard\n• All guards seated, latched, and interlocks functional.\n• No bypassed interlocks.',
+      'https://placehold.co/360x240/14532d/ffffff/png?text=Guards'
+    ),
+    (
+      cl_v2, 'No fluid weeps at seal points', true, 'pass_fail', 1,
+      null, null, null,
+      E'Standard\n• Seals dry to touch after normal run; no active drips.\n• Wipe test shows no continuous weep.',
+      'https://placehold.co/360x240/166534/ffffff/png?text=Seals'
+    );
 
   update public.plan24_cl_check_template_versions
   set state = 'archived'
@@ -285,10 +311,23 @@ begin
   returning id into q_v1;
 
   delete from public.plan24_quality_check_template_tasks where version_id = q_v1;
-  insert into public.plan24_quality_check_template_tasks (version_id, label, required, input_kind, sort_order)
+  insert into public.plan24_quality_check_template_tasks (
+    version_id, label, required, input_kind, sort_order,
+    min_value, max_value, target_value, standard_description, photo_path
+  )
   values
-    (q_v1, 'Critical dimensions within spec', true, 'pass_fail', 0),
-    (q_v1, 'Label match to BOM', true, 'pass_fail', 1);
+    (
+      q_v1, 'Critical dimensions within spec', true, 'pass_fail', 0,
+      null, null, null,
+      E'Standard\n• First-piece critical dimensions recorded on inspection sheet.\n• Use Pass only when all callouts are within print tolerance.',
+      'https://placehold.co/360x240/5b21b6/ffffff/png?text=Dimensions'
+    ),
+    (
+      q_v1, 'Label match to BOM', true, 'pass_fail', 1,
+      null, null, null,
+      E'Standard\n• SKU, revision, and quantity match active BOM line.\n• Any mismatch is Fail — Record quality fail.',
+      'https://placehold.co/360x240/6d28d9/ffffff/png?text=Label'
+    );
 
   update public.plan24_quality_check_template_versions
   set state = 'archived'
@@ -336,10 +375,23 @@ begin
   returning id into q_v2;
 
   delete from public.plan24_quality_check_template_tasks where version_id = q_v2;
-  insert into public.plan24_quality_check_template_tasks (version_id, label, required, input_kind, sort_order)
+  insert into public.plan24_quality_check_template_tasks (
+    version_id, label, required, input_kind, sort_order,
+    min_value, max_value, target_value, standard_description, photo_path
+  )
   values
-    (q_v2, 'Sampling points honored', true, 'pass_fail', 0),
-    (q_v2, 'Hold tags none active', true, 'pass_fail', 1);
+    (
+      q_v2, 'Sampling points honored', true, 'pass_fail', 0,
+      null, null, null,
+      E'Standard\n• Samples taken only at approved points; no ad-hoc grabs.\n• Chain-of-custody labels applied.',
+      'https://placehold.co/360x240/6d28d9/ffffff/png?text=Sampling'
+    ),
+    (
+      q_v2, 'Line speed vs setpoint', true, 'number', 1,
+      48, 52, 50,
+      E'Standard\n• Log actual line speed; target 50 (demo band 48–52).\n• Outside band → Fail and Record quality fail.',
+      'https://placehold.co/360x240/4c1d95/ffffff/png?text=Speed'
+    );
 
   update public.plan24_quality_check_template_versions
   set state = 'archived'

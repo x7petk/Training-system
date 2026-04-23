@@ -44,10 +44,17 @@ export type Plan24SubTask = {
   input_kind?: string
   min_value?: number | null
   max_value?: number | null
+  /** Nominal target (CL / Quality numeric display), optional. */
+  target_value?: number | null
   standard_description?: string
   photo_path?: string
   check_types?: string[]
   when_condition?: 'running' | 'down' | 'other' | null
+  /** Operator reading for number / range tasks. */
+  entered_value?: number | null
+  /** pass_fail / quality: explicit outcome. */
+  result?: 'pass' | 'fail' | null
+  text_value?: string | null
 }
 
 export type Plan24RosterRoleRow = {
@@ -152,7 +159,9 @@ export type Plan24CheckTemplateTaskRow = {
   input_kind?: string
   min_value?: number | null
   max_value?: number | null
-  /** CIL route template only */
+  /** CL / Quality optional nominal (e.g. label print target). */
+  target_value?: number | null
+  /** CL / Quality / CIL: long-form standard shown to operators. */
   standard_description?: string | null
   photo_path?: string | null
   recurrence_kind?: 'hourly' | 'daily' | 'weekly' | 'monthly'

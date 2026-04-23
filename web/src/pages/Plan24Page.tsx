@@ -22,6 +22,7 @@ import { localYMD } from '../lib/dueDateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { Plan24Grid, PLAN24_DRAG_MIME } from '../features/plan24/Plan24Grid'
 import { Plan24CilRoutePanel } from '../features/plan24/Plan24CilRoutePanel'
+import { Plan24ClQualityRoutePanel, plan24ClQualitySubTaskComplete } from '../features/plan24/Plan24ClQualityRoutePanel'
 import { patternDayIndex, shiftWindowBounds, type ShiftRow } from '../features/plan24/plan24ShiftUtils'
 import type {
   Plan24EventRow,
@@ -154,6 +155,18 @@ function parseSubTasks(raw: unknown): Plan24SubTask[] {
       if (Array.isArray(o.check_types)) {
         checkTypes = o.check_types.map((t) => String(t))
       }
+      const res = o.result
+      const resultOk = res === 'pass' || res === 'fail' ? res : null
+      const evNum = o.entered_value
+      let enteredVal: number | null | undefined
+      if (evNum === null) enteredVal = null
+      else if (typeof evNum === 'number' && Number.isFinite(evNum)) enteredVal = evNum
+      else if (typeof evNum === 'string' && evNum.trim() !== '' && Number.isFinite(Number(evNum))) enteredVal = Number(evNum)
+      const tv = o.target_value
+      let targetVal: number | null | undefined
+      if (tv === null) targetVal = null
+      else if (typeof tv === 'number' && Number.isFinite(tv)) targetVal = tv
+      else if (typeof tv === 'string' && tv.trim() !== '' && Number.isFinite(Number(tv))) targetVal = Number(tv)
       out.push({
         id: String(o.id),
         label: String(o.label),
@@ -162,10 +175,14 @@ function parseSubTasks(raw: unknown): Plan24SubTask[] {
         input_kind: typeof o.input_kind === 'string' ? o.input_kind : undefined,
         min_value: typeof o.min_value === 'number' ? o.min_value : o.min_value === null ? null : undefined,
         max_value: typeof o.max_value === 'number' ? o.max_value : o.max_value === null ? null : undefined,
+        target_value: targetVal,
         standard_description: typeof o.standard_description === 'string' ? o.standard_description : undefined,
         photo_path: typeof o.photo_path === 'string' ? o.photo_path : undefined,
         check_types: checkTypes,
         when_condition: whenOk,
+        entered_value: enteredVal,
+        result: resultOk,
+        text_value: typeof o.text_value === 'string' ? o.text_value : o.text_value === null ? null : undefined,
       })
     }
   }
@@ -719,9 +736,9 @@ export function Plan24Page() {
     }
   }, [detailEv, detailSubs, detailDurationMin, refresh, windowBounds.end])
 
-  /** CIL route: title edits persist without a separate Save button. */
+  /** CIL / CL / Quality route: title edits persist without a separate Save button. */
   useEffect(() => {
-    if (!detailEv || detailEv.event_type !== 'cil_check') return
+    if (!detailEv || !['cil_check', 'cl_check', 'quality_check'].includes(detailEv.event_type)) return
     const eid = detailEv.id
     const title = detailEv.title
     const tmr = window.setTimeout(() => {
@@ -735,9 +752,18 @@ export function Plan24Page() {
 
   const markComplete = useCallback(async () => {
     if (!detailEv || !user?.id) return
-    const subsOk = detailSubs.length === 0 || detailSubs.every((s) => s.done)
+    const measured = detailEv.event_type === 'cl_check' || detailEv.event_type === 'quality_check'
+    const subsOk =
+      detailSubs.length === 0 ||
+      (measured
+        ? detailSubs.every((s) => !s.required || plan24ClQualitySubTaskComplete(s))
+        : detailSubs.every((s) => s.done))
     if (!subsOk && !(isAdmin && detailOverride)) {
-      setLoadErr('Complete all sub-tasks, or use admin override.')
+      setLoadErr(
+        measured
+          ? 'Complete every required step (readings within limits, pass/fail chosen, text filled). Or use admin override.'
+          : 'Complete all sub-tasks, or use admin override.',
+      )
       return
     }
     setLoadErr(null)
@@ -764,23 +790,26 @@ export function Plan24Page() {
     }
   }, [detailEv, detailSubs, detailOverride, isAdmin, user?.id, refresh])
 
-  const openRaiseIssue = useCallback(() => {
-    if (!detailEv) return
-    const kind = String(detailEv.event_type || 'check')
-    const prefix = kind === 'cl_check' ? 'Deviation' : kind === 'cil_check' ? 'Defect' : kind === 'quality_check' ? 'Quality fail' : 'Issue'
-    setIssueTitle(`${prefix}: ${detailEv.title}`)
-    setIssueDescription('')
-    setIssueAreaId(detailEv.area_id ?? '')
-    setIssueEquipmentId(detailEv.equipment_id ?? '')
-    setIssuePriority('medium')
-    setIssueForTaskId(null)
-    setRaiseIssueOpen(true)
-  }, [detailEv])
-
   const openRaiseIssueForCilTask = useCallback(
     (task: Plan24SubTask) => {
       if (!detailEv) return
       setIssueTitle(`Defect: ${detailEv.title} — ${task.label}`)
+      setIssueDescription('')
+      setIssueAreaId(detailEv.area_id ?? '')
+      setIssueEquipmentId(detailEv.equipment_id ?? '')
+      setIssuePriority('medium')
+      setIssueForTaskId(task.id)
+      setRaiseIssueOpen(true)
+    },
+    [detailEv],
+  )
+
+  const openRaiseIssueForMeasuredTask = useCallback(
+    (task: Plan24SubTask) => {
+      if (!detailEv) return
+      const kind = detailEv.event_type
+      const prefix = kind === 'cl_check' ? 'Deviation' : kind === 'quality_check' ? 'Quality fail' : 'Issue'
+      setIssueTitle(`${prefix}: ${detailEv.title} — ${task.label}`)
       setIssueDescription('')
       setIssueAreaId(detailEv.area_id ?? '')
       setIssueEquipmentId(detailEv.equipment_id ?? '')
@@ -825,6 +854,13 @@ export function Plan24Page() {
         setLoadErr(error?.message ?? 'Could not create deviation.')
         return
       }
+      if (issueForTaskId) {
+        setSuccessMsg('Deviation recorded.')
+        setRaiseIssueOpen(false)
+        setIssueForTaskId(null)
+        void refresh()
+        return
+      }
       linkedIssueKind = 'deviation'
       linkedIssueId = data.id as string
     } else if (eventKind === 'cil_check') {
@@ -858,6 +894,13 @@ export function Plan24Page() {
         setLoadErr(error?.message ?? 'Could not create defect.')
         return
       }
+      if (issueForTaskId) {
+        setSuccessMsg('Defect created.')
+        setRaiseIssueOpen(false)
+        setIssueForTaskId(null)
+        void refresh()
+        return
+      }
       linkedIssueKind = 'dh_defect'
       linkedIssueId = data.id as string
     } else if (eventKind === 'quality_check') {
@@ -886,19 +929,17 @@ export function Plan24Page() {
         setLoadErr(error?.message ?? 'Could not create quality fail.')
         return
       }
+      if (issueForTaskId) {
+        setSuccessMsg('Quality fail recorded.')
+        setRaiseIssueOpen(false)
+        setIssueForTaskId(null)
+        void refresh()
+        return
+      }
       linkedIssueKind = 'quality_fail'
       linkedIssueId = data.id as string
     } else {
       setLoadErr('Raise issue is only available for CL, CIL, and Quality checks.')
-      return
-    }
-
-    // Per-task CIL defect: record only; do not complete the route or overwrite event linked_issue.
-    if (eventKind === 'cil_check' && issueForTaskId) {
-      setSuccessMsg('Defect created.')
-      setRaiseIssueOpen(false)
-      setIssueForTaskId(null)
-      void refresh()
       return
     }
 
@@ -1582,6 +1623,16 @@ export function Plan24Page() {
                 routeSubmitting={detailCompleting}
                 onOpenDefectForTask={openRaiseIssueForCilTask}
               />
+            ) : (detailEv.event_type === 'cl_check' || detailEv.event_type === 'quality_check') && cellId ? (
+              <Plan24ClQualityRoutePanel
+                variant={detailEv.event_type === 'cl_check' ? 'cl' : 'quality'}
+                event={detailEv}
+                subs={detailSubs}
+                onSubsChange={setDetailSubs}
+                onMarkFullComplete={() => void markComplete()}
+                routeSubmitting={detailCompleting}
+                onOpenIssueForTask={openRaiseIssueForMeasuredTask}
+              />
             ) : (
               <div className="space-y-2">
                 <span className="text-xs font-semibold text-fg/80">Sub-tasks</span>
@@ -1625,7 +1676,9 @@ export function Plan24Page() {
               </label>
             ) : null}
             <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-              {detailEv.event_type !== 'cil_check' ? (
+              {detailEv.event_type !== 'cil_check' &&
+              detailEv.event_type !== 'cl_check' &&
+              detailEv.event_type !== 'quality_check' ? (
                 <>
                   <button type="button" className={detailSaveButtonClass} onClick={() => void saveDetail()}>
                     Save
@@ -1638,15 +1691,6 @@ export function Plan24Page() {
                     Mark complete
                   </button>
                 </>
-              ) : null}
-              {detailEv.event_type === 'cl_check' || detailEv.event_type === 'quality_check' ? (
-                <button
-                  type="button"
-                  className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-500"
-                  onClick={openRaiseIssue}
-                >
-                  {detailEv.event_type === 'cl_check' ? 'Raise deviation' : 'Record quality fail'}
-                </button>
               ) : null}
               {detailEv.linked_issue_id ? (
                 <button
