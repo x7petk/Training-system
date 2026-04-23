@@ -62,11 +62,13 @@ The UI reads/writes these main records (Supabase tables):
 - **`person_roles`** (join table: person ↔ role)
 - **`skill_groups`**
 - **`skills`**
-  - `kind`: `numeric` or `certification`
+  - `kind`: `numeric`, `certification`, or `plan` (staged plan root)
 - **`role_skill_requirements`**
   - `role_id`, `skill_id`, `required_level`
 - **`person_skills`**
   - `person_id`, `skill_id`, `actual_level`, `is_extra`, `due_date`
+- **`person_skill_plans`** / **`person_skill_plan_stages`**
+  - Plan enrollment and per-stage progress for `kind = plan` skills. My Skills plan sections read this (via views). Enrollment is **synced to current roles**: a person is enrolled in a plan only if some assigned role has `role_skill_requirements` for that plan skill with `required_level >= 1` (triggers keep this aligned when roles or requirements change).
 
 Training / reporting tables used by current functionality:
 
