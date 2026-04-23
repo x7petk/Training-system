@@ -244,16 +244,14 @@ export function Plan24ClQualityRoutePanel(props: {
                       {out ? (
                         <div className="flex flex-wrap items-center gap-2 text-xs text-rose-700 dark:text-rose-300">
                           <span>Outside limits.</span>
-                          {variant === 'cl' ? (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => onOpenIssueForTask(t)}
-                              className="font-semibold underline"
-                            >
-                              Raise deviation
-                            </button>
-                          ) : null}
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => onOpenIssueForTask(t)}
+                            className="font-semibold underline"
+                          >
+                            {variant === 'cl' ? 'Raise deviation' : 'Record quality fail'}
+                          </button>
                         </div>
                       ) : null}
                     </div>
