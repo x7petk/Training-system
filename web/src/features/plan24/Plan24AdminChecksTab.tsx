@@ -87,6 +87,15 @@ const DEFAULT_CHECKS_CONFIG: ChecksAdminConfig = {
   enableLocationTargets: false,
 }
 
+type ClDataEntryKind = 'number' | 'range' | 'text'
+
+function normalizeClTemplateInputKind(k: string | undefined | null): ClDataEntryKind {
+  const x = String(k ?? 'number').toLowerCase()
+  if (x === 'text') return 'text'
+  if (x === 'range') return 'range'
+  return 'number'
+}
+
 function buildTaskInsertRow(t: Plan24CheckTemplateTaskRow, versionId: string, tasksTable: string) {
   const base: Record<string, unknown> = {
     version_id: versionId,
@@ -105,11 +114,20 @@ function buildTaskInsertRow(t: Plan24CheckTemplateTaskRow, versionId: string, ta
     base.when_condition = t.when_condition ?? null
     return base
   }
-  if (tasksTable === 'plan24_cl_check_template_tasks' || tasksTable === 'plan24_quality_check_template_tasks') {
-    base.input_kind = t.input_kind ?? 'pass_fail'
+  if (tasksTable === 'plan24_cl_check_template_tasks') {
+    base.input_kind = normalizeClTemplateInputKind(t.input_kind)
     base.min_value = t.min_value ?? null
     base.max_value = t.max_value ?? null
     base.target_value = t.target_value ?? null
+    base.standard_description = t.standard_description ?? null
+    base.photo_path = t.photo_path ?? null
+    return base
+  }
+  if (tasksTable === 'plan24_quality_check_template_tasks') {
+    base.input_kind = 'pass_fail'
+    base.min_value = null
+    base.max_value = null
+    base.target_value = null
     base.standard_description = t.standard_description ?? null
     base.photo_path = t.photo_path ?? null
     return base
@@ -120,9 +138,9 @@ function buildTaskInsertRow(t: Plan24CheckTemplateTaskRow, versionId: string, ta
 export function Plan24AdminChecksTab({ config = DEFAULT_CHECKS_CONFIG }: { config?: ChecksAdminConfig }) {
   const { cellId, status } = usePlan24Workspace()
   const isCilRouteTasks = config.tasksTable === 'plan24_cil_check_template_tasks'
-  const isMeasuredFamilyTasks =
-    config.tasksTable === 'plan24_cl_check_template_tasks' ||
-    config.tasksTable === 'plan24_quality_check_template_tasks'
+  const isClTasks = config.tasksTable === 'plan24_cl_check_template_tasks'
+  const isQualityTasks = config.tasksTable === 'plan24_quality_check_template_tasks'
+  const isMeasuredFamilyTasks = isClTasks || isQualityTasks
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -423,7 +441,13 @@ export function Plan24AdminChecksTab({ config = DEFAULT_CHECKS_CONFIG }: { confi
       insertRow.weekdays = []
       insertRow.check_types = []
     }
-    if (isMeasuredFamilyTasks) {
+    if (isClTasks) {
+      insertRow.input_kind = 'number'
+      insertRow.min_value = null
+      insertRow.max_value = null
+      insertRow.target_value = null
+    }
+    if (isQualityTasks) {
       insertRow.input_kind = 'pass_fail'
       insertRow.min_value = null
       insertRow.max_value = null
@@ -1318,66 +1342,74 @@ export function Plan24AdminChecksTab({ config = DEFAULT_CHECKS_CONFIG }: { confi
                               </button>
                             ) : null}
                           </div>
-                          <label className="block text-xs text-muted">
-                            Input type
-                            <select
-                              className={inputClass}
-                              value={t.input_kind ?? 'pass_fail'}
-                              onChange={(e) =>
-                                void updateTask(t, {
-                                  input_kind: e.target.value as Plan24CheckTemplateTaskRow['input_kind'],
-                                })
-                              }
-                            >
-                              <option value="pass_fail">Pass / fail</option>
-                              <option value="number">Number (limits)</option>
-                              <option value="range">Range (same as number)</option>
-                              <option value="text">Text</option>
-                            </select>
-                          </label>
-                          {(t.input_kind ?? 'pass_fail') !== 'pass_fail' ? (
-                            <div className="grid gap-3 sm:grid-cols-3">
-                              <label className="text-xs text-muted">
-                                Target (nominal)
-                                <input
-                                  type="number"
-                                  step="any"
+                          {isQualityTasks ? (
+                            <p className="text-xs text-muted">
+                              Input is <span className="font-medium text-fg/80">Pass / Fail</span> only. Operators
+                              record an outcome per step; there are no numeric limits on quality templates.
+                            </p>
+                          ) : (
+                            <>
+                              <label className="block text-xs text-muted">
+                                Data entry type (CL)
+                                <select
                                   className={inputClass}
-                                  value={t.target_value == null ? '' : String(t.target_value)}
-                                  onChange={(e) => {
-                                    const raw = e.target.value
-                                    void updateTask(t, { target_value: raw === '' ? null : Number(raw) })
-                                  }}
-                                />
+                                  value={normalizeClTemplateInputKind(t.input_kind)}
+                                  onChange={(e) =>
+                                    void updateTask(t, {
+                                      input_kind: e.target.value as ClDataEntryKind,
+                                    })
+                                  }
+                                >
+                                  <option value="number">Number (limits)</option>
+                                  <option value="range">Range (same as number)</option>
+                                  <option value="text">Text</option>
+                                </select>
                               </label>
-                              <label className="text-xs text-muted">
-                                Min
-                                <input
-                                  type="number"
-                                  step="any"
-                                  className={inputClass}
-                                  value={t.min_value == null ? '' : String(t.min_value)}
-                                  onChange={(e) => {
-                                    const raw = e.target.value
-                                    void updateTask(t, { min_value: raw === '' ? null : Number(raw) })
-                                  }}
-                                />
-                              </label>
-                              <label className="text-xs text-muted">
-                                Max
-                                <input
-                                  type="number"
-                                  step="any"
-                                  className={inputClass}
-                                  value={t.max_value == null ? '' : String(t.max_value)}
-                                  onChange={(e) => {
-                                    const raw = e.target.value
-                                    void updateTask(t, { max_value: raw === '' ? null : Number(raw) })
-                                  }}
-                                />
-                              </label>
-                            </div>
-                          ) : null}
+                              {normalizeClTemplateInputKind(t.input_kind) !== 'text' ? (
+                                <div className="grid gap-3 sm:grid-cols-3">
+                                  <label className="text-xs text-muted">
+                                    Target (nominal)
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      className={inputClass}
+                                      value={t.target_value == null ? '' : String(t.target_value)}
+                                      onChange={(e) => {
+                                        const raw = e.target.value
+                                        void updateTask(t, { target_value: raw === '' ? null : Number(raw) })
+                                      }}
+                                    />
+                                  </label>
+                                  <label className="text-xs text-muted">
+                                    Min
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      className={inputClass}
+                                      value={t.min_value == null ? '' : String(t.min_value)}
+                                      onChange={(e) => {
+                                        const raw = e.target.value
+                                        void updateTask(t, { min_value: raw === '' ? null : Number(raw) })
+                                      }}
+                                    />
+                                  </label>
+                                  <label className="text-xs text-muted">
+                                    Max
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      className={inputClass}
+                                      value={t.max_value == null ? '' : String(t.max_value)}
+                                      onChange={(e) => {
+                                        const raw = e.target.value
+                                        void updateTask(t, { max_value: raw === '' ? null : Number(raw) })
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                              ) : null}
+                            </>
+                          )}
                         </div>
                       ) : (
                         <div key={t.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5">

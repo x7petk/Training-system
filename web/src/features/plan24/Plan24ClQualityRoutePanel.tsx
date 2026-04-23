@@ -4,6 +4,8 @@ import { supabase } from '../../lib/supabase'
 import { cilTaskPhotoPublicUrl } from '../../lib/cilTaskPhotos'
 import type { Plan24EventRow, Plan24SubTask } from './plan24Types'
 
+export type Plan24ClQualityVariant = 'cl' | 'quality'
+
 export function valueOutsideLimits(
   value: number,
   min: number | null | undefined,
@@ -14,9 +16,23 @@ export function valueOutsideLimits(
   return false
 }
 
-/** True when operator has satisfied this sub-task for route completion (non-admin). */
-export function plan24ClQualitySubTaskComplete(s: Plan24SubTask): boolean {
-  const ik = (s.input_kind ?? 'pass_fail').toLowerCase()
+type RouteStepKind = 'pass_fail' | 'number' | 'range' | 'text'
+
+/** Effective step kind for UI and completion (Quality is always pass/fail; CL never uses pass_fail). */
+export function plan24ClQualityEffectiveStepKind(
+  variant: Plan24ClQualityVariant,
+  input_kind?: string | null,
+): RouteStepKind {
+  if (variant === 'quality') return 'pass_fail'
+  const raw = String(input_kind ?? 'number').toLowerCase()
+  if (raw === 'text') return 'text'
+  if (raw === 'range') return 'range'
+  if (raw === 'number') return 'number'
+  return 'number'
+}
+
+function clSubTaskDataEntryComplete(s: Plan24SubTask): boolean {
+  const ik = plan24ClQualityEffectiveStepKind('cl', s.input_kind)
   if (ik === 'number' || ik === 'range') {
     if (s.entered_value == null || Number.isNaN(Number(s.entered_value))) return false
     return !valueOutsideLimits(Number(s.entered_value), s.min_value, s.max_value)
@@ -24,13 +40,19 @@ export function plan24ClQualitySubTaskComplete(s: Plan24SubTask): boolean {
   if (ik === 'text') {
     return Boolean((s.text_value ?? '').trim())
   }
-  return s.result === 'pass' || s.result === 'fail'
+  return false
 }
 
-type Variant = 'cl' | 'quality'
+/** True when operator has satisfied this sub-task for route completion (non-admin). */
+export function plan24ClQualitySubTaskComplete(s: Plan24SubTask, variant: Plan24ClQualityVariant): boolean {
+  if (variant === 'quality') {
+    return s.result === 'pass' || s.result === 'fail'
+  }
+  return clSubTaskDataEntryComplete(s)
+}
 
 export function Plan24ClQualityRoutePanel(props: {
-  variant: Variant
+  variant: Plan24ClQualityVariant
   event: Plan24EventRow
   subs: Plan24SubTask[]
   onSubsChange: (subs: Plan24SubTask[]) => void
@@ -59,7 +81,7 @@ export function Plan24ClQualityRoutePanel(props: {
 
   const allAnswered =
     subs.length > 0 &&
-    subs.every((t) => (!t.required || plan24ClQualitySubTaskComplete(t)) && (t.required || true))
+    subs.every((t) => (!t.required || plan24ClQualitySubTaskComplete(t, variant)) && (t.required || true))
 
   const accent =
     variant === 'cl'
@@ -74,7 +96,7 @@ export function Plan24ClQualityRoutePanel(props: {
         </p>
         <p className="mt-1 text-muted">
           {variant === 'cl'
-            ? 'Enter readings where required. Values outside min/max are deviations — use Raise deviation.'
+            ? 'Enter numeric readings or text per step. Values outside min/max are deviations — use Raise deviation.'
             : 'Record Pass or Fail per step. Use Record quality fail if any step fails.'}
         </p>
       </div>
@@ -85,7 +107,7 @@ export function Plan24ClQualityRoutePanel(props: {
           const photo = cilTaskPhotoPublicUrl(t.photo_path)
           const descOpen = expanded[t.id] ?? false
           const desc = (t.standard_description ?? '').trim()
-          const ik = (t.input_kind ?? 'pass_fail').toLowerCase()
+          const ik = plan24ClQualityEffectiveStepKind(variant, t.input_kind)
           const tgt = t.target_value
           const hasLimits = t.min_value != null || t.max_value != null
           const ev = t.entered_value
@@ -289,7 +311,13 @@ export function Plan24ClQualityRoutePanel(props: {
           type="button"
           className="rounded-xl bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-40 dark:bg-emerald-600"
           disabled={busy || !allAnswered}
-          title={allAnswered ? 'Submit completed checklist' : 'Complete every required step within limits'}
+          title={
+            allAnswered
+              ? 'Submit completed checklist'
+              : variant === 'quality'
+                ? 'Pass or Fail every required step'
+                : 'Complete every required step (readings within limits or text)'
+          }
           onClick={() => void onMarkFullComplete()}
         >
           Submit

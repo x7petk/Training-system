@@ -59,9 +59,9 @@ begin
   )
   values
     (
-      cl_v1, 'Walk path clear of debris', true, 'pass_fail', 0,
+      cl_v1, 'Walk path clear of debris', true, 'text', 0,
       null, null, null,
-      E'Standard\n• Aisles and infeed/outfeed clear; no slip/trip hazards.\n• Document any blocked drains or spills before Pass.',
+      E'Standard\n• Aisles and infeed/outfeed clear; no slip/trip hazards.\n• Enter a short condition note (e.g. clear / issue at bay 3).',
       'https://placehold.co/360x240/166534/ffffff/png?text=Walk+path'
     ),
     (
@@ -124,15 +124,15 @@ begin
   )
   values
     (
-      cl_v2, 'Guards seated and latched', true, 'pass_fail', 0,
+      cl_v2, 'Guards seated and latched', true, 'text', 0,
       null, null, null,
-      E'Standard\n• All guards seated, latched, and interlocks functional.\n• No bypassed interlocks.',
+      E'Standard\n• All guards seated, latched, and interlocks functional.\n• Enter verification note (e.g. all latched / exception logged).',
       'https://placehold.co/360x240/14532d/ffffff/png?text=Guards'
     ),
     (
-      cl_v2, 'No fluid weeps at seal points', true, 'pass_fail', 1,
+      cl_v2, 'No fluid weeps at seal points', true, 'text', 1,
       null, null, null,
-      E'Standard\n• Seals dry to touch after normal run; no active drips.\n• Wipe test shows no continuous weep.',
+      E'Standard\n• Seals dry to touch after normal run; no active drips.\n• Enter wipe-test or observation note.',
       'https://placehold.co/360x240/166534/ffffff/png?text=Seals'
     );
 
@@ -387,9 +387,9 @@ begin
       'https://placehold.co/360x240/6d28d9/ffffff/png?text=Sampling'
     ),
     (
-      q_v2, 'Line speed vs setpoint', true, 'number', 1,
-      48, 52, 50,
-      E'Standard\n• Log actual line speed; target 50 (demo band 48–52).\n• Outside band → Fail and Record quality fail.',
+      q_v2, 'Line speed vs setpoint', true, 'pass_fail', 1,
+      null, null, null,
+      E'Standard\n• Confirm actual line speed matches approved setpoint and change control.\n• Pass only when speed is correct for the SKU; otherwise Fail and Record quality fail.',
       'https://placehold.co/360x240/4c1d95/ffffff/png?text=Speed'
     );
 

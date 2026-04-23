@@ -753,15 +753,18 @@ export function Plan24Page() {
   const markComplete = useCallback(async () => {
     if (!detailEv || !user?.id) return
     const measured = detailEv.event_type === 'cl_check' || detailEv.event_type === 'quality_check'
+    const measuredVariant = detailEv.event_type === 'quality_check' ? ('quality' as const) : ('cl' as const)
     const subsOk =
       detailSubs.length === 0 ||
       (measured
-        ? detailSubs.every((s) => !s.required || plan24ClQualitySubTaskComplete(s))
+        ? detailSubs.every((s) => !s.required || plan24ClQualitySubTaskComplete(s, measuredVariant))
         : detailSubs.every((s) => s.done))
     if (!subsOk && !(isAdmin && detailOverride)) {
       setLoadErr(
         measured
-          ? 'Complete every required step (readings within limits, pass/fail chosen, text filled). Or use admin override.'
+          ? detailEv.event_type === 'quality_check'
+            ? 'Complete every required step (Pass or Fail for each). Or use admin override.'
+            : 'Complete every required step (readings within limits or text filled). Or use admin override.'
           : 'Complete all sub-tasks, or use admin override.',
       )
       return

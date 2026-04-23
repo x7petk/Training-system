@@ -41,10 +41,11 @@ export type Plan24SubTask = {
   label: string
   done: boolean
   required?: boolean
+  /** Mirrors template: CL = number|range|text; Quality = pass_fail. */
   input_kind?: string
   min_value?: number | null
   max_value?: number | null
-  /** Nominal target (CL / Quality numeric display), optional. */
+  /** Nominal target for CL numeric steps, optional. */
   target_value?: number | null
   standard_description?: string
   photo_path?: string
@@ -52,7 +53,7 @@ export type Plan24SubTask = {
   when_condition?: 'running' | 'down' | 'other' | null
   /** Operator reading for number / range tasks. */
   entered_value?: number | null
-  /** pass_fail / quality: explicit outcome. */
+  /** Quality: pass/fail outcome. CL numeric steps may set result when raising issues. */
   result?: 'pass' | 'fail' | null
   text_value?: string | null
 }
@@ -156,10 +157,11 @@ export type Plan24CheckTemplateTaskRow = {
   label: string
   required: boolean
   sort_order: number
+  /** CL: number | range | text. Quality: pass_fail only. */
   input_kind?: string
   min_value?: number | null
   max_value?: number | null
-  /** CL / Quality optional nominal (e.g. label print target). */
+  /** CL optional nominal for numeric steps. */
   target_value?: number | null
   /** CL / Quality / CIL: long-form standard shown to operators. */
   standard_description?: string | null
