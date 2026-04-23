@@ -252,6 +252,11 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
     const sort = Number.parseInt(skillForm.sort_order, 10)
     const sort_order = Number.isFinite(sort) ? sort : 0
     const gid = skillForm.skill_group_id.trim() || null
+    if (skillForm.kind === 'plan' && gid == null) {
+      setSaving(false)
+      setError('Plan skills must belong to a skill group.')
+      return
+    }
     let err: { message: string } | null = null
     if (editingSkillId) {
       const r = await supabase
@@ -926,7 +931,9 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
                 onChange={(e) => setSkillForm((f) => ({ ...f, skill_group_id: e.target.value }))}
                 className={inputClass}
               >
-                <option value="">Ungrouped</option>
+                <option value="" disabled={skillForm.kind === 'plan'}>
+                  Ungrouped
+                </option>
                 {groups.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.name}
@@ -948,6 +955,11 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
                 <option value="certification">Certification (yes/no)</option>
                 <option value="plan">Plan (stage-based)</option>
               </select>
+              {skillForm.kind === 'plan' ? (
+                <p className="mt-1.5 text-xs text-muted">
+                  After creating this plan skill, add knowledges and stages in Skill plans.
+                </p>
+              ) : null}
             </div>
             <div>
               <label htmlFor="cs-sort" className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-muted">

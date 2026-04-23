@@ -89,11 +89,11 @@ export function MatrixGrid({ skills, rows, loading, emptyMessage, canEditPerson,
                   title={`${s.groupName} · ${s.name}`}
                   className="sticky top-0 z-20 w-9 min-w-9 max-w-9 border-b border-l border-border/70 bg-surface p-0 align-bottom backdrop-blur-md sm:w-10 sm:min-w-10 sm:max-w-10"
                 >
-                  <div className="flex flex-col items-center justify-end px-0.5 pb-1 pt-0">
+                  <div className="flex flex-col items-center justify-end px-1 pb-1.5 pt-1">
                     <span
                       className="w-max text-center text-[9px] font-semibold uppercase leading-[1.05] tracking-wide text-muted [text-orientation:mixed] [writing-mode:vertical-rl] rotate-180 sm:text-[10px]"
                     >
-                      {s.name}
+                      {'\u00A0'}{s.name}{'\u00A0'}
                     </span>
                   </div>
                 </th>

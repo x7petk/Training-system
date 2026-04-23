@@ -123,6 +123,7 @@ export function MatrixPage() {
       supabase
         .from('skills')
         .select('id, name, kind, sort_order, skill_groups(name)')
+        .neq('kind', 'plan')
         .order('sort_order', { ascending: true }),
       supabase
         .from('people')
@@ -213,9 +214,11 @@ export function MatrixPage() {
       { id: string; name: string; groupName: string; planId: string; stageNo: number }
     >()
     for (const row of planStages) {
+      const planTitle = (row.plan_name ?? 'Plan').trim()
+      const stageLabel = `${planTitle} Stage ${row.stage_no}`
       map.set(row.stage_id, {
         id: `plan-stage:${row.stage_id}`,
-        name: row.stage_name,
+        name: stageLabel,
         groupName: row.plan_name,
         planId: row.plan_skill_id,
         stageNo: row.stage_no,

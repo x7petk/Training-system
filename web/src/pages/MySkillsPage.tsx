@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BookOpenCheck, Check, ChevronDown, ChevronRight, Pencil, UserCircle, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -1609,6 +1609,26 @@ function PlanSkillsSection(props: {
 }) {
   const { plans, knowledgeByStage, readOnly, trainingEligibleIds, onSetKnowledgeLevel, onStartTraining, onShowAssessors } = props
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(() => new Set())
+  const didInitPlanCollapse = useRef(false)
+
+  useEffect(() => {
+    return () => {
+      didInitPlanCollapse.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (plans.length === 0) return
+    if (didInitPlanCollapse.current) return
+    const all = new Set<string>()
+    for (const p of plans) {
+      for (const st of p.stages) {
+        all.add(st.stage_id)
+      }
+    }
+    setCollapsedStages(all)
+    didInitPlanCollapse.current = true
+  }, [plans])
 
   if (plans.length === 0) return null
 
