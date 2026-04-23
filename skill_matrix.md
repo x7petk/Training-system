@@ -69,6 +69,7 @@ The UI reads/writes these main records (Supabase tables):
   - `person_id`, `skill_id`, `actual_level`, `is_extra`, `due_date`
 - **`person_skill_plans`** / **`person_skill_plan_stages`**
   - Plan enrollment and per-stage progress for `kind = plan` skills. My Skills plan sections read this (via views). Enrollment is **synced to current roles**: a person is enrolled in a plan only if some assigned role has `role_skill_requirements` for that plan skill with `required_level >= 1` (triggers keep this aligned when roles or requirements change).
+  - After enrollment changes, **`person_skills`** rows for plan-only knowledges that are no longer tied to any enrolled plan stage are **removed** (unless the row is `is_extra` or the skill is still required by a role). See migration `20260424230000_cleanup_orphan_plan_knowledge_person_skills.sql`.
 
 Training / reporting tables used by current functionality:
 

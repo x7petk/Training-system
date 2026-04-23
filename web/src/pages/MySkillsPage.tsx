@@ -295,6 +295,8 @@ export function MySkillsPage() {
   const [trainingQuestions, setTrainingQuestions] = useState<TrainingQuestionRaw[]>([])
   const [planProgress, setPlanProgress] = useState<PlanProgressRaw[]>([])
   const [planKnowledges, setPlanKnowledges] = useState<PlanKnowledgeRaw[]>([])
+  /** Any skill id linked as knowledge under some plan stage (catalog-wide). */
+  const [catalogPlanKnowledgeSkillIds, setCatalogPlanKnowledgeSkillIds] = useState<Set<string>>(() => new Set())
   const [trainingSkillId, setTrainingSkillId] = useState<string | null>(null)
   const [assessors, setAssessors] = useState<AssessorCard[]>([])
   const [assessorSkillInfo, setAssessorSkillInfo] = useState<{ skillName: string; required: number } | null>(null)
@@ -306,6 +308,20 @@ export function MySkillsPage() {
   const [jobRoleFilter, setJobRoleFilter] = useState('')
 
   const bumpData = useCallback(() => setDataVersion((v) => v + 1), [])
+
+  useEffect(() => {
+    let cancelled = false
+    void supabase
+      .from('skill_plan_stage_knowledges')
+      .select('knowledge_skill_id')
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return
+        setCatalogPlanKnowledgeSkillIds(new Set(data.map((r) => (r as { knowledge_skill_id: string }).knowledge_skill_id)))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!user?.id) {
@@ -575,15 +591,19 @@ export function MySkillsPage() {
   const { requiredRows, optionalRows, addableSkillOptions } = useMemo(() => {
     const required: SkillRowModel[] = []
     const optional: SkillRowModel[] = []
-    const knowledgeSkillIds = new Set(planKnowledges.map((x) => x.knowledge_skill_id))
+    const enrolledKnowledgeSkillIds = new Set(planKnowledges.map((x) => x.knowledge_skill_id))
 
     for (const s of sortedSkills) {
-      if (s.kind === 'plan' || knowledgeSkillIds.has(s.id)) continue
+      if (s.kind === 'plan' || enrolledKnowledgeSkillIds.has(s.id)) continue
       const req = maxRequiredForRoles(rsrMap, roleIds, s.id)
       const ps = psMap.get(s.id)
       const actual = ps?.actual ?? null
       const isExtra = ps?.isExtra ?? false
       const dueDate = ps?.dueDate ?? null
+      // Leftover person_skills from a dropped plan enrollment: hide from matrix lists unless role-required or explicit extra.
+      if (req == null && catalogPlanKnowledgeSkillIds.has(s.id) && !isExtra) {
+        continue
+      }
       const gap = classifyCell({ kind: s.kind, required: req, actual, isExtra })
       const groupLabel = groupName(s) || 'Skills'
 
@@ -607,7 +627,7 @@ export function MySkillsPage() {
     }
 
     const addable = sortedSkills.filter((s) => {
-      if (s.kind === 'plan' || knowledgeSkillIds.has(s.id)) return false
+      if (s.kind === 'plan' || enrolledKnowledgeSkillIds.has(s.id)) return false
       const req = maxRequiredForRoles(rsrMap, roleIds, s.id)
       if (req != null) return false
       const ps = psMap.get(s.id)
@@ -616,7 +636,7 @@ export function MySkillsPage() {
     })
 
     return { requiredRows: required, optionalRows: optional, addableSkillOptions: addable }
-  }, [sortedSkills, roleIds, rsrMap, psMap, planKnowledges])
+  }, [sortedSkills, roleIds, rsrMap, psMap, planKnowledges, catalogPlanKnowledgeSkillIds])
 
   const gapCounts = useMemo(() => {
     const c: Record<GapKind, number> = {
