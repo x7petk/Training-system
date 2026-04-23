@@ -23,7 +23,8 @@ export function RttSystemsLayout() {
     pathname.includes('/rtt-systems/admin') ||
     pathname.includes('/rtt-systems/defect-handling') ||
     pathname.includes('/rtt-systems/deviations') ||
-    pathname.includes('/rtt-systems/quality-fails')
+    pathname.includes('/rtt-systems/quality-fails') ||
+    pathname.includes('/rtt-systems/list-view')
 
   return (
     <Plan24WorkspaceProvider>

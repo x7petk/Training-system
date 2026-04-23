@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { addDays, compareYMD, localYMD } from '../lib/dueDateUtils'
@@ -35,6 +35,41 @@ function shiftKindNorm(s: string | null | undefined): string {
   return String(s ?? '').trim().toLowerCase()
 }
 
+/** Normalize DB `plan_date` (date or ISO string) to YYYY-MM-DD for comparisons. */
+function planDateYmd(pd: string | null | undefined): string {
+  if (pd == null) return ''
+  const s = String(pd).trim()
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (m) return m[1]!
+  const t = Date.parse(s)
+  if (!Number.isNaN(t)) return localYMD(new Date(t))
+  return ''
+}
+
+function FilterChip<V extends string>(props: {
+  name: string
+  value: V
+  current: V
+  onPick: (v: V) => void
+  children: ReactNode
+}) {
+  const { name, value, current, onPick, children } = props
+  const on = current === value
+  return (
+    <label
+      className={[
+        'inline-flex cursor-pointer select-none items-center rounded-full border px-3.5 py-1.5 text-xs font-semibold transition',
+        on
+          ? 'border-accent bg-accent/15 text-fg shadow-sm'
+          : 'border-border bg-surface text-muted hover:border-border-strong hover:bg-surface-raised/50 hover:text-fg',
+      ].join(' ')}
+    >
+      <input type="radio" name={name} value={value} checked={on} onChange={() => onPick(value)} className="sr-only" />
+      {children}
+    </label>
+  )
+}
+
 function formatStartLocal(iso: string | null | undefined): string {
   if (!iso) return '—'
   try {
@@ -60,12 +95,12 @@ function compareRows(a: Plan24EventRow, b: Plan24EventRow, key: SortKey, dir: 1 
   let c = 0
   switch (key) {
     case 'plan_date':
-      c = compareYMD(a.plan_date, b.plan_date)
+      c = compareYMD(planDateYmd(a.plan_date), planDateYmd(b.plan_date))
       if (c === 0) c = (a.start_at ?? '').localeCompare(b.start_at ?? '')
       break
     case 'shift_kind':
       c = shiftKindNorm(a.shift_kind).localeCompare(shiftKindNorm(b.shift_kind))
-      if (c === 0) c = compareYMD(a.plan_date, b.plan_date)
+      if (c === 0) c = compareYMD(planDateYmd(a.plan_date), planDateYmd(b.plan_date))
       break
     case 'start_at':
       c = (a.start_at ?? '').localeCompare(b.start_at ?? '')
@@ -121,7 +156,7 @@ function SortHeader(props: {
 }
 
 export function RttChecksListViewPage() {
-  const { cellId, status: scopeStatus } = usePlan24Workspace()
+  const { cellId, status: scopeStatus, error: workspaceError } = usePlan24Workspace()
   const [rows, setRows] = useState<Plan24EventRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -137,7 +172,7 @@ export function RttChecksListViewPage() {
   const [equipmentGroups, setEquipmentGroups] = useState<{ id: string; name: string }[]>([])
   const [equipmentGroupItems, setEquipmentGroupItems] = useState<{ equipment_group_id: string; equipment_id: string }[]>([])
 
-  const [dateScope, setDateScope] = useState<DateScope>('all')
+  const [dateScope, setDateScope] = useState<DateScope>('today')
   const [rangeFrom, setRangeFrom] = useState('')
   const [rangeTo, setRangeTo] = useState('')
   const [shiftFilter, setShiftFilter] = useState<ShiftFilter>('all')
@@ -147,7 +182,21 @@ export function RttChecksListViewPage() {
     if (!cellId) return
     setLoading(true)
     setError(null)
-    const [eventsRes, areasRes, equipmentRes, groupsRes, groupItemsRes] = await Promise.all([
+    const areasRes = await supabase
+      .from('master_areas')
+      .select('id, name')
+      .eq('cell_id', cellId)
+      .order('sort_order')
+      .order('name')
+    const areaRows = (areasRes.data ?? []) as { id: string; name: string }[]
+    const areaIds = areaRows.map((a) => a.id)
+
+    const equipmentReq =
+      areaIds.length > 0
+        ? supabase.from('master_equipment').select('id, area_id, name').in('area_id', areaIds).order('sort_order').order('name')
+        : Promise.resolve({ data: [] as { id: string; area_id: string; name: string }[], error: null })
+
+    const [eventsRes, equipmentRes, groupsRes, groupItemsRes] = await Promise.all([
       supabase
         .from('plan24_events')
         .select('*')
@@ -157,8 +206,7 @@ export function RttChecksListViewPage() {
         .order('plan_date', { ascending: false })
         .order('start_at', { ascending: false })
         .limit(500),
-      supabase.from('master_areas').select('id, name').eq('cell_id', cellId).order('sort_order').order('name'),
-      supabase.from('master_equipment').select('id, area_id, name').order('sort_order').order('name'),
+      equipmentReq,
       supabase.from('master_equipment_groups').select('id, name').eq('cell_id', cellId).order('sort_order').order('name'),
       supabase.from('master_equipment_group_items').select('equipment_group_id, equipment_id'),
     ])
@@ -167,7 +215,7 @@ export function RttChecksListViewPage() {
     if (firstErr) setError(firstErr.message)
     else {
       setRows((eventsRes.data ?? []) as Plan24EventRow[])
-      setAreas((areasRes.data ?? []) as { id: string; name: string }[])
+      setAreas(areaRows)
       setEquipment((equipmentRes.data ?? []) as { id: string; area_id: string; name: string }[])
       setEquipmentGroups((groupsRes.data ?? []) as { id: string; name: string }[])
       setEquipmentGroupItems((groupItemsRes.data ?? []) as { equipment_group_id: string; equipment_id: string }[])
@@ -177,6 +225,14 @@ export function RttChecksListViewPage() {
   useEffect(() => {
     if (scopeStatus === 'ready') void load()
   }, [scopeStatus, load])
+
+  useEffect(() => {
+    if (areaId !== 'all' && !areas.some((a) => a.id === areaId)) setAreaId('all')
+  }, [areas, areaId])
+
+  useEffect(() => {
+    if (equipmentId !== 'all' && !equipment.some((eq) => eq.id === equipmentId)) setEquipmentId('all')
+  }, [equipment, equipmentId])
 
   const onDateScopeChange = useCallback((next: DateScope) => {
     setDateScope(next)
@@ -212,13 +268,14 @@ export function RttChecksListViewPage() {
         groupEquipIds.some((id) => id === (r as unknown as { equipment_id?: string | null }).equipment_id || rowEquipIds.includes(id))
       const m = !q || r.title.toLowerCase().includes(q) || (r.role_name ?? '').toLowerCase().includes(q)
 
+      const rowPlan = planDateYmd(r.plan_date)
       let dateOk = true
-      if (dateScope === 'today') dateOk = r.plan_date === todayYmd
+      if (dateScope === 'today') dateOk = rowPlan === todayYmd
       else if (dateScope === 'range' && rangeFrom && rangeTo) {
-        dateOk = compareYMD(r.plan_date, rangeFrom) >= 0 && compareYMD(r.plan_date, rangeTo) <= 0
+        dateOk = compareYMD(rowPlan, rangeFrom) >= 0 && compareYMD(rowPlan, rangeTo) <= 0
       } else if (dateScope === 'range' && (rangeFrom || rangeTo)) {
-        if (rangeFrom) dateOk = compareYMD(r.plan_date, rangeFrom) >= 0
-        if (rangeTo) dateOk = dateOk && compareYMD(r.plan_date, rangeTo) <= 0
+        if (rangeFrom) dateOk = compareYMD(rowPlan, rangeFrom) >= 0
+        if (rangeTo) dateOk = dateOk && compareYMD(rowPlan, rangeTo) <= 0
       }
 
       const sk = shiftKindNorm(r.shift_kind)
@@ -269,77 +326,131 @@ export function RttChecksListViewPage() {
     else await load()
   }
 
-  if (scopeStatus !== 'ready') return <div className="text-sm text-muted">Loading scope...</div>
-  if (!cellId) return <div className="text-sm text-muted">Select a cell in scope bar to view checks list.</div>
+  if (scopeStatus === 'loading') {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted">
+        <span className="inline-block size-4 animate-spin rounded-full border-2 border-accent/30 border-t-accent" />
+        Loading workspace…
+      </div>
+    )
+  }
+  if (scopeStatus === 'error') {
+    return (
+      <div className="rounded-xl border border-danger/35 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
+        {workspaceError ?? 'Could not load site / plant / cell data.'}
+      </div>
+    )
+  }
+  if (!cellId) {
+    return (
+      <div className="max-w-lg space-y-2 text-sm text-muted">
+        <p>
+          Choose a <strong className="font-medium text-fg">site</strong>, <strong className="font-medium text-fg">plant</strong>, and{' '}
+          <strong className="font-medium text-fg">cell</strong> in the <span className="font-medium text-fg">Cell scope</span> bar above.
+          The list loads checks for the selected cell only.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
       <header>
         <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">List view</h1>
-        <p className="mt-2 text-sm text-muted">Combined list for Checks, CL, CIL, and Quality checks.</p>
+        <p className="mt-2 text-sm text-muted">
+          Combined list for Checks, CL, CIL, and Quality checks for the cell selected in the scope bar above. Default view is{' '}
+          <span className="font-medium text-fg/90">today</span>.
+        </p>
       </header>
 
       {error ? <div className="rounded-xl border border-danger/35 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div> : null}
 
-      <div className="grid gap-3 rounded-xl border border-border bg-surface p-3 sm:grid-cols-3 lg:grid-cols-6">
-        <label className="text-xs text-muted">
-          Type
-          <select className={inputClass} value={family} onChange={(e) => setFamily(e.target.value as 'all' | Family)}>
-            <option value="all">All</option>
-            <option value="check">Checks</option>
-            <option value="cl_check">CL</option>
-            <option value="cil_check">CIL</option>
-            <option value="quality_check">Quality</option>
-          </select>
-        </label>
-        <label className="text-xs text-muted">
-          Status
-          <select className={inputClass} value={eventStatus} onChange={(e) => setEventStatus(e.target.value as 'all' | Plan24EventRow['status'])}>
-            <option value="all">All</option>
-            <option value="scheduled">Scheduled</option>
-            <option value="in_progress">In progress</option>
-            <option value="complete">Complete</option>
-          </select>
-        </label>
-        <label className="text-xs text-muted">
-          Search
-          <input className={inputClass} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Title or role" />
-        </label>
-        <label className="text-xs text-muted">
-          Area
-          <select className={inputClass} value={areaId} onChange={(e) => setAreaId(e.target.value)}>
-            <option value="all">All areas</option>
-            {areas.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs text-muted">
-          Equipment
-          <select className={inputClass} value={equipmentId} onChange={(e) => setEquipmentId(e.target.value)}>
-            <option value="all">All equipment</option>
-            {equipment
-              .filter((eq) => areaId === 'all' || eq.area_id === areaId)
-              .map((eq) => (
-                <option key={eq.id} value={eq.id}>
-                  {eq.name}
+      <div className="space-y-4 rounded-xl border border-border bg-surface p-3">
+        <div className="flex flex-wrap gap-6">
+          <fieldset className="min-w-0 space-y-1.5">
+            <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Type</legend>
+            <div className="flex flex-wrap gap-2">
+              <FilterChip name="list-family" value="all" current={family} onPick={setFamily}>
+                All
+              </FilterChip>
+              <FilterChip name="list-family" value="check" current={family} onPick={setFamily}>
+                Checks
+              </FilterChip>
+              <FilterChip name="list-family" value="cl_check" current={family} onPick={setFamily}>
+                CL
+              </FilterChip>
+              <FilterChip name="list-family" value="cil_check" current={family} onPick={setFamily}>
+                CIL
+              </FilterChip>
+              <FilterChip name="list-family" value="quality_check" current={family} onPick={setFamily}>
+                Quality
+              </FilterChip>
+            </div>
+            <p className="text-[11px] text-muted">Click a label to filter by check family.</p>
+          </fieldset>
+          <fieldset className="min-w-0 space-y-1.5">
+            <legend className="text-xs font-semibold uppercase tracking-wide text-muted">Status</legend>
+            <div className="flex flex-wrap gap-2">
+              <FilterChip name="list-status" value="all" current={eventStatus} onPick={setEventStatus}>
+                All
+              </FilterChip>
+              <FilterChip name="list-status" value="scheduled" current={eventStatus} onPick={setEventStatus}>
+                Scheduled
+              </FilterChip>
+              <FilterChip name="list-status" value="in_progress" current={eventStatus} onPick={setEventStatus}>
+                In progress
+              </FilterChip>
+              <FilterChip name="list-status" value="complete" current={eventStatus} onPick={setEventStatus}>
+                Complete
+              </FilterChip>
+            </div>
+            <p className="text-[11px] text-muted">Click a label to filter by event status.</p>
+          </fieldset>
+        </div>
+        <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="text-xs text-muted">
+            Search
+            <input className={inputClass} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Title or role" />
+          </label>
+          <label className="text-xs text-muted">
+            Area
+            <span className="mt-0.5 block text-[10px] font-normal normal-case text-muted">In selected cell</span>
+            <select className={inputClass} value={areaId} onChange={(e) => setAreaId(e.target.value)}>
+              <option value="all">All areas</option>
+              {areas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
                 </option>
               ))}
-          </select>
-        </label>
-        <label className="text-xs text-muted">
-          Equipment set
-          <select className={inputClass} value={equipmentGroupId} onChange={(e) => setEquipmentGroupId(e.target.value)}>
-            <option value="all">All sets</option>
-            {equipmentGroups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            </select>
+          </label>
+          <label className="text-xs text-muted">
+            Equipment
+            <span className="mt-0.5 block text-[10px] font-normal normal-case text-muted">In cell areas</span>
+            <select className={inputClass} value={equipmentId} onChange={(e) => setEquipmentId(e.target.value)}>
+              <option value="all">All equipment</option>
+              {equipment
+                .filter((eq) => areaId === 'all' || eq.area_id === areaId)
+                .map((eq) => (
+                  <option key={eq.id} value={eq.id}>
+                    {eq.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label className="text-xs text-muted">
+            Equipment set
+            <span className="mt-0.5 block text-[10px] font-normal normal-case text-muted">Cell-specific groups</span>
+            <select className={inputClass} value={equipmentGroupId} onChange={(e) => setEquipmentGroupId(e.target.value)}>
+              <option value="all">All sets</option>
+              {equipmentGroups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="grid gap-3 rounded-xl border border-border bg-surface p-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -380,7 +491,17 @@ export function RttChecksListViewPage() {
       {loading ? (
         <p className="text-sm text-muted">Loading...</p>
       ) : sortedRows.length === 0 ? (
-        <p className="text-sm text-muted">No matching checks.</p>
+        <div className="space-y-2 rounded-xl border border-border bg-surface px-4 py-3 text-sm text-muted">
+          <p>No matching checks.</p>
+          {rows.length > 0 && dateScope === 'today' ? (
+            <p>
+              Nothing is scheduled for <strong className="font-medium text-fg">today</strong> ({localYMD(new Date())}) in this cell with
+              the current filters. Try <strong className="font-medium text-fg">All dates</strong> in Timeframe, or widen type / status.
+            </p>
+          ) : rows.length === 0 ? (
+            <p>No check events were returned for this cell (last 500 by date). Add schedules or pick another cell in the scope bar.</p>
+          ) : null}
+        </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border bg-surface">
           <table className="min-w-[1100px] w-full border-collapse text-sm">
@@ -445,7 +566,7 @@ export function RttChecksListViewPage() {
                 const shiftLabel = sk ? sk.charAt(0).toUpperCase() + sk.slice(1) : '—'
                 return (
                   <tr key={r.id} className="border-t border-border">
-                    <td className="px-3 py-2 text-xs text-muted">{r.plan_date}</td>
+                    <td className="px-3 py-2 text-xs text-muted">{planDateYmd(r.plan_date) || r.plan_date}</td>
                     <td className="px-3 py-2 text-xs text-muted">{shiftLabel}</td>
                     <td className="px-3 py-2 text-xs text-muted">{formatStartLocal(r.start_at)}</td>
                     <td className="px-3 py-2">
