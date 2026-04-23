@@ -156,10 +156,23 @@ begin
   returning id into cil_v1;
 
   delete from public.plan24_cil_check_template_tasks where version_id = cil_v1;
-  insert into public.plan24_cil_check_template_tasks (version_id, label, required, input_kind, sort_order)
+  insert into public.plan24_cil_check_template_tasks (
+    version_id, label, required, input_kind, sort_order,
+    standard_description, photo_path, recurrence_kind, interval_n, weekdays, check_types, when_condition
+  )
   values
-    (cil_v1, 'Product cleared from belt', true, 'pass_fail', 0),
-    (cil_v1, 'Drain ports opened', true, 'pass_fail', 1);
+    (
+      cil_v1, 'Product cleared from belt', true, 'pass_fail', 0,
+      E'Standard\n• Belt, guides, and catch pans are visibly free of product, film, and debris.\n• Scrap removed to waste stream; no rework material left on line.\n• Guards closed after clearance; photo shows clean run path.',
+      'https://placehold.co/360x240/0f7668/ffffff/png?text=Product+cleared',
+      'daily', 1, '{}'::int[], array['cleaning','inspection']::text[], 'running'
+    ),
+    (
+      cil_v1, 'Drain ports opened', true, 'pass_fail', 1,
+      E'Standard\n• Low-point drains opened per SOP sequence; verify flow to drain.\n• No standing fluid in dead legs after minimum drain time.\n• Caps tagged or staged for re-close after rinse.',
+      'https://placehold.co/360x240/0e7490/ffffff/png?text=Drain+ports',
+      'daily', 1, '{}'::int[], array['cleaning','inspection']::text[], 'down'
+    );
 
   update public.plan24_cil_check_template_versions
   set state = 'archived'
@@ -207,10 +220,23 @@ begin
   returning id into cil_v2;
 
   delete from public.plan24_cil_check_template_tasks where version_id = cil_v2;
-  insert into public.plan24_cil_check_template_tasks (version_id, label, required, input_kind, sort_order)
+  insert into public.plan24_cil_check_template_tasks (
+    version_id, label, required, input_kind, sort_order,
+    standard_description, photo_path, recurrence_kind, interval_n, weekdays, check_types, when_condition
+  )
   values
-    (cil_v2, 'Rinse flow rate in range', true, 'number', 0),
-    (cil_v2, 'Conductivity trend stable', true, 'pass_fail', 1);
+    (
+      cil_v2, 'Rinse flow rate in range', true, 'number', 0,
+      E'Standard\n• Flow within band on local indicator or SCADA tag for this step.\n• No cavitation noise at pump; strainer differential within limit if applicable.\n• Logged value matches shift target for rinse phase.',
+      'https://placehold.co/360x240/155e75/ffffff/png?text=Flow+rate',
+      'daily', 1, '{}'::int[], array['inspection']::text[], 'running'
+    ),
+    (
+      cil_v2, 'Conductivity trend stable', true, 'pass_fail', 1,
+      E'Standard\n• Conductivity curve flat or declining per SOP (no sudden spikes).\n• Sample point flushed before read if required.\n• Escalate if trend violates release criteria for end-of-rinse.',
+      'https://placehold.co/360x240/115e59/ffffff/png?text=Conductivity',
+      'daily', 1, '{}'::int[], array['inspection']::text[], 'running'
+    );
 
   update public.plan24_cil_check_template_versions
   set state = 'archived'
