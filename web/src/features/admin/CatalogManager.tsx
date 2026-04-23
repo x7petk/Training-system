@@ -16,6 +16,13 @@ type SkillRow = {
 }
 type RoleRow = { id: string; name: string; sort_order: number }
 type RsrRow = { role_id: string; skill_id: string; required_level: number }
+type PlanKnowledgeLinkRow = {
+  knowledge_skill_id: string
+  skill_plan_stages:
+    | { plan_skill_id: string; stage_no: number }
+    | { plan_skill_id: string; stage_no: number }[]
+    | null
+}
 type PersonRoleRow = { person_id: string }
 type PersonSkillSeedRow = {
   person_id: string
@@ -46,6 +53,7 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
   const [skills, setSkills] = useState<SkillRow[]>([])
   const [roles, setRoles] = useState<RoleRow[]>([])
   const [rsr, setRsr] = useState<RsrRow[]>([])
+  const [planKnowledgeLinks, setPlanKnowledgeLinks] = useState<PlanKnowledgeLinkRow[]>([])
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -71,9 +79,10 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
   const [selectedRoleId, setSelectedRoleId] = useState<string>('')
   const [newRsrSkillId, setNewRsrSkillId] = useState<string>('')
   const [newRsrLevel, setNewRsrLevel] = useState<string>('3')
+  const [collapsedPlanIds, setCollapsedPlanIds] = useState<Set<string>>(() => new Set())
 
   const fetchAll = useCallback(async () => {
-    const [gRes, sRes, rRes, xRes] = await Promise.all([
+    const [gRes, sRes, rRes, xRes, pkRes] = await Promise.all([
       supabase.from('skill_groups').select('id, name, sort_order').order('sort_order', { ascending: true }),
       supabase
         .from('skills')
@@ -81,6 +90,9 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
         .order('sort_order', { ascending: true }),
       supabase.from('roles').select('id, name, sort_order').order('sort_order', { ascending: true }),
       supabase.from('role_skill_requirements').select('role_id, skill_id, required_level'),
+      supabase
+        .from('skill_plan_stage_knowledges')
+        .select('knowledge_skill_id, skill_plan_stages(plan_skill_id, stage_no)'),
     ])
 
     if (gRes.error) {
@@ -102,6 +114,8 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
     }
     if (!xRes.error && xRes.data) setRsr(xRes.data as RsrRow[])
     else if (xRes.error) setRsr([])
+    if (!pkRes.error && pkRes.data) setPlanKnowledgeLinks(pkRes.data as PlanKnowledgeLinkRow[])
+    else setPlanKnowledgeLinks([])
 
     setLoading(false)
   }, [])
@@ -143,6 +157,71 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
     const taken = new Set(rsrForRole.map((x) => x.skill_id))
     return skills.filter((s) => !taken.has(s.id))
   }, [skills, rsrForRole])
+
+  const skillRowsByPlan = useMemo(() => {
+    const planNameById = new Map(skills.filter((s) => s.kind === 'plan').map((s) => [s.id, s.name]))
+    const stagesByKnowledge = new Map<string, { planId: string; stageNo: number }[]>()
+    for (const row of planKnowledgeLinks) {
+      const embed = row.skill_plan_stages
+      const stage = Array.isArray(embed) ? embed[0] : embed
+      if (!stage?.plan_skill_id) continue
+      const arr = stagesByKnowledge.get(row.knowledge_skill_id) ?? []
+      arr.push({ planId: stage.plan_skill_id, stageNo: stage.stage_no })
+      stagesByKnowledge.set(row.knowledge_skill_id, arr)
+    }
+
+    const planSkills = skills
+      .filter((s) => s.kind === 'plan')
+      .sort((a, b) => (a.sort_order === b.sort_order ? a.name.localeCompare(b.name) : a.sort_order - b.sort_order))
+
+    const childrenByPlan = new Map<string, Array<{ skill: SkillRow; stages: number[] }>>()
+    for (const s of skills) {
+      if (s.kind === 'plan') continue
+      const links = stagesByKnowledge.get(s.id) ?? []
+      if (links.length === 0) continue
+      const byPlan = new Map<string, number[]>()
+      for (const l of links) {
+        const arr = byPlan.get(l.planId) ?? []
+        arr.push(l.stageNo)
+        byPlan.set(l.planId, arr)
+      }
+      for (const [planId, stageNos] of byPlan.entries()) {
+        if (!planNameById.has(planId)) continue
+        const rows = childrenByPlan.get(planId) ?? []
+        const deduped = Array.from(new Set(stageNos)).sort((a, b) => a - b)
+        rows.push({ skill: s, stages: deduped })
+        childrenByPlan.set(planId, rows)
+      }
+    }
+
+    for (const [pid, rows] of childrenByPlan.entries()) {
+      rows.sort((a, b) =>
+        a.skill.sort_order === b.skill.sort_order
+          ? a.skill.name.localeCompare(b.skill.name)
+          : a.skill.sort_order - b.skill.sort_order,
+      )
+      childrenByPlan.set(pid, rows)
+    }
+
+    const knowledgeIds = new Set<string>()
+    for (const rows of childrenByPlan.values()) {
+      for (const row of rows) knowledgeIds.add(row.skill.id)
+    }
+    const ungroupedSkills = skills
+      .filter((s) => s.kind !== 'plan' && !knowledgeIds.has(s.id))
+      .sort((a, b) => (a.sort_order === b.sort_order ? a.name.localeCompare(b.name) : a.sort_order - b.sort_order))
+
+    return { planSkills, childrenByPlan, ungroupedSkills }
+  }, [skills, planKnowledgeLinks])
+
+  function togglePlanCollapse(planId: string) {
+    setCollapsedPlanIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(planId)) next.delete(planId)
+      else next.add(planId)
+      return next
+    })
+  }
 
   function closeGroupDialog() {
     groupDialogRef.current?.close()
@@ -568,51 +647,164 @@ export function CatalogManager({ activeSection }: { activeSection: CatalogManage
           ) : skills.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-muted">No skills yet.</p>
           ) : (
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="border-b border-border text-xs font-medium uppercase tracking-wider text-muted">
-                <tr>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Group</th>
-                  <th className="px-4 py-3">Kind</th>
-                  <th className="px-4 py-3 w-20">Sort</th>
-                  <th className="px-4 py-3 w-28 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {skills.map((row) => (
-                  <tr key={row.id} className="hover:bg-black/[0.04]">
-                    <td className="px-4 py-3 font-medium text-fg">{row.name}</td>
-                    <td className="px-4 py-3 text-muted">{row.skill_groups?.name ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-lg bg-accent-dim px-2 py-0.5 text-xs font-medium text-accent">
-                        {row.kind}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 tabular-nums text-muted">{row.sort_order}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openEditSkill(row)}
-                          className="rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg"
-                          aria-label={`Edit ${row.name}`}
-                        >
-                          <Pencil className="size-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void deleteSkill(row)}
-                          className="rounded-lg p-2 text-muted hover:bg-danger/10 hover:text-danger"
-                          aria-label={`Delete ${row.name}`}
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="space-y-4 p-4">
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Plan skills and knowledges</p>
+                <div className="space-y-2">
+                  {skillRowsByPlan.planSkills.map((plan) => {
+                    const rows = skillRowsByPlan.childrenByPlan.get(plan.id) ?? []
+                    const collapsed = collapsedPlanIds.has(plan.id)
+                    const rowsByStage = new Map<number, Array<{ skill: SkillRow; stages: number[] }>>()
+                    for (const row of rows) {
+                      for (const stageNo of row.stages) {
+                        const arr = rowsByStage.get(stageNo) ?? []
+                        arr.push(row)
+                        rowsByStage.set(stageNo, arr)
+                      }
+                    }
+                    const orderedStages = Array.from(rowsByStage.keys()).sort((a, b) => a - b)
+                    return (
+                      <article key={plan.id} className="rounded-xl border border-border bg-surface p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="truncate font-medium text-fg">{plan.name}</p>
+                              <button
+                                type="button"
+                                onClick={() => togglePlanCollapse(plan.id)}
+                                className="shrink-0 rounded-full border border-border bg-canvas/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted hover:bg-canvas"
+                                aria-expanded={!collapsed}
+                                aria-label={`${collapsed ? 'Show' : 'Hide'} knowledges for ${plan.name}`}
+                              >
+                                {rows.length} knowledges · {collapsed ? 'show' : 'hide'}
+                              </button>
+                            </div>
+                            <p className="text-xs text-muted">
+                              {plan.skill_groups?.name ?? '—'} · plan · sort {plan.sort_order}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditSkill(plan)}
+                              className="rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg"
+                              aria-label={`Edit ${plan.name}`}
+                            >
+                              <Pencil className="size-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteSkill(plan)}
+                              className="rounded-lg p-2 text-muted hover:bg-danger/10 hover:text-danger"
+                              aria-label={`Delete ${plan.name}`}
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
+                        </div>
+                        {collapsed ? null : (
+                          <div className="mt-3 space-y-1.5">
+                            {rows.length === 0 ? (
+                              <p className="text-xs text-muted">No knowledges linked yet.</p>
+                            ) : (
+                              orderedStages.map((stageNo) => {
+                                const stageRows = rowsByStage.get(stageNo) ?? []
+                                return (
+                                  <div key={`${plan.id}:stage:${stageNo}`} className="rounded-lg border border-border/70 bg-canvas/40 p-2">
+                                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Stage {stageNo}</p>
+                                    <div className="space-y-1.5">
+                                      {stageRows.map(({ skill, stages }) => (
+                                        <div key={`${plan.id}:${stageNo}:${skill.id}`} className="flex items-center justify-between gap-2 rounded-lg border border-border/80 bg-canvas/60 px-2.5 py-2">
+                                          <div className="min-w-0 pl-4">
+                                            <p className="truncate text-sm font-medium text-fg">{skill.name}</p>
+                                            <p className="text-xs text-muted">
+                                              knowledge · {skill.kind} · stages {stages.join(', ')} · sort {skill.sort_order}
+                                            </p>
+                                          </div>
+                                          <div className="flex items-center gap-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => openEditSkill(skill)}
+                                              className="rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg"
+                                              aria-label={`Edit ${skill.name}`}
+                                            >
+                                              <Pencil className="size-4" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => void deleteSkill(skill)}
+                                              className="rounded-lg p-2 text-muted hover:bg-danger/10 hover:text-danger"
+                                              aria-label={`Delete ${skill.name}`}
+                                            >
+                                              <Trash2 className="size-4" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )
+                              })
+                            )}
+                          </div>
+                        )}
+                      </article>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Other skills</p>
+                {skillRowsByPlan.ungroupedSkills.length === 0 ? (
+                  <p className="text-xs text-muted">All non-plan skills are linked as plan knowledges.</p>
+                ) : (
+                  <table className="w-full min-w-[640px] text-left text-sm">
+                    <thead className="border-b border-border text-xs font-medium uppercase tracking-wider text-muted">
+                      <tr>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Group</th>
+                        <th className="px-3 py-2">Kind</th>
+                        <th className="px-3 py-2 w-20">Sort</th>
+                        <th className="px-3 py-2 w-28 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {skillRowsByPlan.ungroupedSkills.map((row) => (
+                        <tr key={row.id} className="hover:bg-black/[0.04]">
+                          <td className="px-3 py-2 font-medium text-fg">{row.name}</td>
+                          <td className="px-3 py-2 text-muted">{row.skill_groups?.name ?? '—'}</td>
+                          <td className="px-3 py-2">
+                            <span className="rounded-lg bg-accent-dim px-2 py-0.5 text-xs font-medium text-accent">{row.kind}</span>
+                          </td>
+                          <td className="px-3 py-2 tabular-nums text-muted">{row.sort_order}</td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openEditSkill(row)}
+                                className="rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg"
+                                aria-label={`Edit ${row.name}`}
+                              >
+                                <Pencil className="size-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void deleteSkill(row)}
+                                className="rounded-lg p-2 text-muted hover:bg-danger/10 hover:text-danger"
+                                aria-label={`Delete ${row.name}`}
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
           )}
         </div>
       </section>
