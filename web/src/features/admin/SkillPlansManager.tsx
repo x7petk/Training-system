@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
-type PlanSkill = { id: string; name: string; skill_groups: { name: string } | { name: string }[] | null }
+type PlanSkill = {
+  id: string
+  name: string
+  skill_group_id: string | null
+  skill_groups: { id: string; name: string } | { id: string; name: string }[] | null
+}
 type Stage = {
   id: string
   plan_skill_id: string
@@ -12,11 +17,15 @@ type Stage = {
   sort_order: number
 }
 type StageKnowledge = { stage_id: string; knowledge_skill_id: string }
-type KnowledgeSkill = { id: string; name: string; kind: 'numeric' | 'certification' | 'plan' }
+type KnowledgeSkill = { id: string; name: string; kind: 'numeric' | 'certification' | 'plan'; skill_group_id: string | null }
 
 function groupName(v: PlanSkill['skill_groups']): string {
   if (!v) return 'Skills'
   return Array.isArray(v) ? (v[0]?.name ?? 'Skills') : v.name
+}
+
+function isGroupPlanSkillName(name: string): boolean {
+  return / plan$/i.test(name.trim())
 }
 
 export function SkillPlansManager() {
@@ -25,6 +34,7 @@ export function SkillPlansManager() {
   const [links, setLinks] = useState<StageKnowledge[]>([])
   const [knowledges, setKnowledges] = useState<KnowledgeSkill[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState('')
+  const [selectedGroupId, setSelectedGroupId] = useState('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [addKnowledgeByStage, setAddKnowledgeByStage] = useState<Record<string, string>>({})
@@ -33,7 +43,7 @@ export function SkillPlansManager() {
     const [pl, st, lk, kn] = await Promise.all([
       supabase
         .from('skills')
-        .select('id, name, skill_groups(name)')
+        .select('id, name, skill_group_id, skill_groups(id, name)')
         .eq('kind', 'plan')
         .order('sort_order', { ascending: true }),
       supabase
@@ -41,7 +51,7 @@ export function SkillPlansManager() {
         .select('id, plan_skill_id, stage_no, name, duration_months, sort_order')
         .order('sort_order', { ascending: true }),
       supabase.from('skill_plan_stage_knowledges').select('stage_id, knowledge_skill_id'),
-      supabase.from('skills').select('id, name, kind').eq('kind', 'numeric').order('sort_order', { ascending: true }),
+      supabase.from('skills').select('id, name, kind, skill_group_id').eq('kind', 'plan').order('sort_order', { ascending: true }),
     ])
 
     if (pl.error) {
@@ -76,10 +86,79 @@ export function SkillPlansManager() {
     }
   }, [plans, selectedPlanId])
 
+  const planGroups = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of plans) {
+      if (!p.skill_group_id) continue
+      m.set(p.skill_group_id, groupName(p.skill_groups))
+    }
+    return Array.from(m.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [plans])
+
+  useEffect(() => {
+    if (selectedGroupId === 'all') return
+    if (!planGroups.some((g) => g.id === selectedGroupId)) setSelectedGroupId('all')
+  }, [planGroups, selectedGroupId])
+
+  const visiblePlans = useMemo(() => {
+    const roots = plans.filter((p) => isGroupPlanSkillName(p.name))
+    if (selectedGroupId === 'all') return roots
+    return roots.filter((p) => p.skill_group_id === selectedGroupId)
+  }, [plans, selectedGroupId])
+
+  const selectedGroupName = useMemo(() => planGroups.find((g) => g.id === selectedGroupId)?.name ?? '', [planGroups, selectedGroupId])
+  const selectedGroupHasRootPlan = useMemo(() => {
+    if (selectedGroupId === 'all') return true
+    return visiblePlans.some((p) => p.skill_group_id === selectedGroupId)
+  }, [selectedGroupId, visiblePlans])
+
+  async function createGroupRootPlan() {
+    if (selectedGroupId === 'all' || !selectedGroupName) return
+    setError(null)
+    const planName = `${selectedGroupName} Plan`
+    const existing = plans.find(
+      (p) => p.skill_group_id === selectedGroupId && p.name.trim().toLowerCase() === planName.trim().toLowerCase(),
+    )
+    if (existing) {
+      setSelectedPlanId(existing.id)
+      return
+    }
+    const nextSort = plans.filter((p) => p.skill_group_id === selectedGroupId).length
+    const { data, error: insErr } = await supabase
+      .from('skills')
+      .insert({
+        name: planName,
+        kind: 'plan',
+        skill_group_id: selectedGroupId,
+        sort_order: nextSort + 1,
+      })
+      .select('id')
+      .single()
+    if (insErr) {
+      setError(insErr.message)
+      return
+    }
+    await fetchData()
+    if (data?.id) setSelectedPlanId(data.id)
+  }
+
+  useEffect(() => {
+    if (!visiblePlans.length) {
+      if (selectedPlanId !== '') queueMicrotask(() => setSelectedPlanId(''))
+      return
+    }
+    if (!selectedPlanId || !visiblePlans.some((p) => p.id === selectedPlanId)) {
+      queueMicrotask(() => setSelectedPlanId(visiblePlans[0].id))
+    }
+  }, [visiblePlans, selectedPlanId])
+
   const selectedStages = useMemo(
     () => stages.filter((s) => s.plan_skill_id === selectedPlanId).sort((a, b) => a.stage_no - b.stage_no),
     [stages, selectedPlanId],
   )
+  const selectedPlan = useMemo(() => plans.find((p) => p.id === selectedPlanId) ?? null, [plans, selectedPlanId])
 
   const knowledgeByStage = useMemo(() => {
     const m = new Map<string, string[]>()
@@ -199,13 +278,44 @@ export function SkillPlansManager() {
         ) : null}
 
         <label className="block">
+          <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-muted">Skill group</span>
+          <select
+            className="w-full rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none"
+            value={selectedGroupId}
+            onChange={(e) => setSelectedGroupId(e.target.value)}
+          >
+            <option value="all">All groups</option>
+            {planGroups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {selectedGroupId !== 'all' && !selectedGroupHasRootPlan ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+            <p className="text-amber-950 dark:text-amber-100">
+              No root plan found for this group yet. Create <strong>{selectedGroupName} Plan</strong> to start stage setup.
+            </p>
+            <button
+              type="button"
+              onClick={() => void createGroupRootPlan()}
+              className="mt-2 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white"
+            >
+              Create {selectedGroupName} Plan
+            </button>
+          </div>
+        ) : null}
+
+        <label className="block">
           <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-muted">Plan skill</span>
           <select
             className="w-full rounded-xl border border-border bg-canvas/60 px-3 py-2.5 text-sm outline-none"
             value={selectedPlanId}
             onChange={(e) => setSelectedPlanId(e.target.value)}
           >
-            {plans.map((p) => (
+            {visiblePlans.map((p) => (
               <option key={p.id} value={p.id}>
                 {groupName(p.skill_groups)} · {p.name}
               </option>
@@ -215,13 +325,19 @@ export function SkillPlansManager() {
 
         {loading ? (
           <p className="text-sm text-muted">Loading…</p>
+        ) : !selectedPlanId ? (
+          <p className="text-sm text-muted">No plan skills in this group yet. Create one in Catalog first.</p>
         ) : selectedStages.length === 0 ? (
           <p className="text-sm text-muted">No stages for this plan yet.</p>
         ) : (
           <div className="space-y-3">
             {selectedStages.map((stage) => {
               const linkedSkillIds = knowledgeByStage.get(stage.id) ?? []
-              const available = knowledges.filter((k) => !linkedKnowledgeIdsInPlan.has(k.id))
+              const available = knowledges.filter((k) => {
+                if (k.id === selectedPlanId) return false
+                if (selectedPlan?.skill_group_id && k.skill_group_id !== selectedPlan.skill_group_id) return false
+                return !linkedKnowledgeIdsInPlan.has(k.id)
+              })
               return (
                 <article key={stage.id} className="rounded-xl border border-border bg-surface p-3">
                   <div className="grid gap-2 sm:grid-cols-[1fr_8rem_auto] sm:items-end">
@@ -259,7 +375,7 @@ export function SkillPlansManager() {
                   </div>
 
                   <div className="mt-3 space-y-2">
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted">Knowledges</p>
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted">Stage skills (plan kind)</p>
                     {linkedSkillIds.length === 0 ? (
                       <p className="text-xs text-muted">No skills assigned to this stage.</p>
                     ) : (
@@ -283,7 +399,7 @@ export function SkillPlansManager() {
                         onChange={(e) => setAddKnowledgeByStage((prev) => ({ ...prev, [stage.id]: e.target.value }))}
                         className="min-w-0 flex-1 rounded-lg border border-border bg-canvas/70 px-2.5 py-2 text-sm outline-none"
                       >
-                        <option value="">Add knowledge…</option>
+                        <option value="">Add skill to stage…</option>
                         {available.map((k) => (
                           <option key={k.id} value={k.id}>
                             {k.name}
