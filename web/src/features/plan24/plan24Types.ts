@@ -7,8 +7,16 @@ export type Plan24EventRow = {
   roster_id: string | null
   schedule_id?: string | null
   template_version_id?: string | null
+  /** Denormalized for CIL defect history when schedule_id is cleared (ad hoc). */
+  cil_template_id?: string | null
   schedule_occurrence_at?: string | null
   schedule_role_name?: string
+  area_id?: string | null
+  equipment_id?: string | null
+  equipment_ids?: string[]
+  linked_issue_kind?: string | null
+  linked_issue_id?: string | null
+  linked_issue_created_at?: string | null
   plan_date: string
   shift_kind: string
   role_name: string | null
@@ -28,7 +36,19 @@ export type Plan24EventRow = {
   created_by: string | null
 }
 
-export type Plan24SubTask = { id: string; label: string; done: boolean }
+export type Plan24SubTask = {
+  id: string
+  label: string
+  done: boolean
+  required?: boolean
+  input_kind?: string
+  min_value?: number | null
+  max_value?: number | null
+  standard_description?: string
+  photo_path?: string
+  check_types?: string[]
+  when_condition?: 'running' | 'down' | 'other' | null
+}
 
 export type Plan24RosterRoleRow = {
   id: string
@@ -129,6 +149,19 @@ export type Plan24CheckTemplateTaskRow = {
   label: string
   required: boolean
   sort_order: number
+  input_kind?: string
+  min_value?: number | null
+  max_value?: number | null
+  /** CIL route template only */
+  standard_description?: string | null
+  photo_path?: string | null
+  recurrence_kind?: 'hourly' | 'daily' | 'weekly' | 'monthly'
+  interval_n?: number
+  weekdays?: number[] | null
+  month_day?: number | null
+  check_types?: string[] | null
+  /** CIL: shown read-only on operator route (Running / Down / Other). */
+  when_condition?: 'running' | 'down' | 'other' | null
 }
 
 export type Plan24CheckScheduleRow = {

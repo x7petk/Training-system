@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarClock, ChevronDown, Copy, LayoutList, Pause, Play, Plus, Pencil, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { CIL_TASK_PHOTOS_BUCKET, cilTaskPhotoPublicUrl } from '../../lib/cilTaskPhotos'
 import { localYMD } from '../../lib/dueDateUtils'
 import { usePlan24Workspace } from './Plan24WorkspaceContext'
 import type {
@@ -47,10 +48,67 @@ type ScheduleDraft = {
   timezone: string
   state: 'active' | 'paused' | 'archived'
   roleNames: string[]
+  areaId: string
+  equipmentId: string
+  equipmentIds: string[]
 }
 
-export function Plan24AdminChecksTab() {
+type ChecksAdminConfig = {
+  nounPlural: string
+  createTemplateLabel: string
+  createScheduleLabel: string
+  accentClass: string
+  scheduleAccentClass: string
+  templatesTable: string
+  versionsTable: string
+  tasksTable: string
+  schedulesTable: string
+  scheduleRolesTable: string
+  publishRpc: string
+  resetRpc: string
+  materializeRpc: string
+  enableLocationTargets: boolean
+}
+
+const DEFAULT_CHECKS_CONFIG: ChecksAdminConfig = {
+  nounPlural: 'Checks',
+  createTemplateLabel: 'New template',
+  createScheduleLabel: 'New schedule',
+  accentClass: 'bg-violet-600',
+  scheduleAccentClass: 'bg-teal-600',
+  templatesTable: 'plan24_check_templates',
+  versionsTable: 'plan24_check_template_versions',
+  tasksTable: 'plan24_check_template_tasks',
+  schedulesTable: 'plan24_check_schedules',
+  scheduleRolesTable: 'plan24_check_schedule_roles',
+  publishRpc: 'plan24_publish_template_version',
+  resetRpc: 'plan24_reset_schedule_future_events',
+  materializeRpc: 'plan24_materialize_check_schedules',
+  enableLocationTargets: false,
+}
+
+function buildTaskInsertRow(t: Plan24CheckTemplateTaskRow, versionId: string, tasksTable: string) {
+  const base: Record<string, unknown> = {
+    version_id: versionId,
+    label: t.label,
+    required: t.required,
+    sort_order: t.sort_order,
+  }
+  if (tasksTable !== 'plan24_cil_check_template_tasks') return base
+  base.standard_description = t.standard_description ?? null
+  base.photo_path = t.photo_path ?? null
+  base.recurrence_kind = t.recurrence_kind ?? 'daily'
+  base.interval_n = t.interval_n ?? 1
+  base.weekdays = Array.isArray(t.weekdays) ? t.weekdays : []
+  base.month_day = t.month_day ?? null
+  base.check_types = Array.isArray(t.check_types) && t.check_types.length ? t.check_types : []
+  base.when_condition = t.when_condition ?? null
+  return base
+}
+
+export function Plan24AdminChecksTab({ config = DEFAULT_CHECKS_CONFIG }: { config?: ChecksAdminConfig }) {
   const { cellId, status } = usePlan24Workspace()
+  const isCilRouteTasks = config.tasksTable === 'plan24_cil_check_template_tasks'
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -61,6 +119,8 @@ export function Plan24AdminChecksTab() {
   const [scheduleRoles, setScheduleRoles] = useState<Plan24CheckScheduleRoleRow[]>([])
   const [rosterRoles, setRosterRoles] = useState<Plan24RosterRoleRow[]>([])
   const [shifts, setShifts] = useState<Plan24ShiftRow[]>([])
+  const [areas, setAreas] = useState<{ id: string; name: string }[]>([])
+  const [equipment, setEquipment] = useState<{ id: string; area_id: string; name: string }[]>([])
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
@@ -77,6 +137,7 @@ export function Plan24AdminChecksTab() {
   const [taskLabel, setTaskLabel] = useState('')
   const [taskRequired, setTaskRequired] = useState(true)
   const [taskSaving, setTaskSaving] = useState(false)
+  const [cilPhotoTaskId, setCilPhotoTaskId] = useState<string | null>(null)
 
   const [scheduleDialog, setScheduleDialog] = useState<ScheduleDraft | null>(null)
   const [scheduleSaving, setScheduleSaving] = useState(false)
@@ -137,23 +198,25 @@ export function Plan24AdminChecksTab() {
       .maybeSingle()
     const rosterId = rosterRes.data?.id ?? null
 
-    const [tplRes, verRes, taskRes, schRes, srRes, rrRes, shRes] = await Promise.all([
-      supabase.from('plan24_check_templates').select('*').eq('master_cell_id', cellId).order('name'),
-      supabase.from('plan24_check_template_versions').select('*').order('created_at', { ascending: false }),
-      supabase.from('plan24_check_template_tasks').select('*'),
-      supabase.from('plan24_check_schedules').select('*').eq('master_cell_id', cellId).order('created_at', { ascending: false }),
-      supabase.from('plan24_check_schedule_roles').select('*'),
+    const [tplRes, verRes, taskRes, schRes, srRes, rrRes, shRes, areaRes, eqRes] = await Promise.all([
+      supabase.from(config.templatesTable).select('*').eq('master_cell_id', cellId).order('name'),
+      supabase.from(config.versionsTable).select('*').order('created_at', { ascending: false }),
+      supabase.from(config.tasksTable).select('*'),
+      supabase.from(config.schedulesTable).select('*').eq('master_cell_id', cellId).order('created_at', { ascending: false }),
+      supabase.from(config.scheduleRolesTable).select('*'),
       rosterId
         ? supabase.from('plan24_roster_roles').select('id, roster_id, name, sort_order, is_active').eq('roster_id', rosterId)
         : Promise.resolve({ data: [], error: null }),
       rosterId
         ? supabase.from('plan24_roster_shifts').select('id, roster_id, kind, display_name, start_local, end_local, sort_order').eq('roster_id', rosterId)
         : Promise.resolve({ data: [], error: null }),
+      supabase.from('master_areas').select('id, name').eq('cell_id', cellId).order('sort_order').order('name'),
+      supabase.from('master_equipment').select('id, area_id, name').order('sort_order').order('name'),
     ])
 
     setLoading(false)
     const firstErr =
-      tplRes.error ?? verRes.error ?? taskRes.error ?? schRes.error ?? srRes.error ?? rrRes.error ?? shRes.error ?? rosterRes.error
+      tplRes.error ?? verRes.error ?? taskRes.error ?? schRes.error ?? srRes.error ?? rrRes.error ?? shRes.error ?? areaRes.error ?? eqRes.error ?? rosterRes.error
     if (firstErr) {
       setError(firstErr.message)
       return
@@ -166,7 +229,9 @@ export function Plan24AdminChecksTab() {
     setScheduleRoles((srRes.data ?? []) as Plan24CheckScheduleRoleRow[])
     setRosterRoles(((rrRes as { data: unknown[] }).data ?? []) as Plan24RosterRoleRow[])
     setShifts(((shRes as { data: unknown[] }).data ?? []) as Plan24ShiftRow[])
-  }, [cellId, status])
+    setAreas((areaRes.data ?? []) as { id: string; name: string }[])
+    setEquipment((eqRes.data ?? []) as { id: string; area_id: string; name: string }[])
+  }, [cellId, status, config])
 
   useEffect(() => {
     void load()
@@ -191,7 +256,7 @@ export function Plan24AdminChecksTab() {
     setTemplateSaving(true)
     setError(null)
     const insTpl = await supabase
-      .from('plan24_check_templates')
+      .from(config.templatesTable)
       .insert({
         master_cell_id: cellId,
         name: templateName.trim(),
@@ -204,7 +269,7 @@ export function Plan24AdminChecksTab() {
       setError(insTpl.error?.message ?? 'Could not create template.')
       return
     }
-    const insV = await supabase.from('plan24_check_template_versions').insert({
+    const insV = await supabase.from(config.versionsTable).insert({
       template_id: insTpl.data.id,
       version_no: 1,
       title: insTpl.data.name,
@@ -237,7 +302,7 @@ export function Plan24AdminChecksTab() {
     const sourceTasks = tasks.filter((t) => t.version_id === source.id).sort((a, b) => a.sort_order - b.sort_order)
     const copyName = `${template.name} copy`
     const insTpl = await supabase
-      .from('plan24_check_templates')
+      .from(config.templatesTable)
       .insert({
         master_cell_id: cellId,
         name: copyName,
@@ -250,7 +315,7 @@ export function Plan24AdminChecksTab() {
       return
     }
     const insV = await supabase
-      .from('plan24_check_template_versions')
+      .from(config.versionsTable)
       .insert({
         template_id: insTpl.data.id,
         version_no: 1,
@@ -265,13 +330,8 @@ export function Plan24AdminChecksTab() {
       return
     }
     if (sourceTasks.length > 0) {
-      const insTasks = await supabase.from('plan24_check_template_tasks').insert(
-        sourceTasks.map((t) => ({
-          version_id: insV.data.id,
-          label: t.label,
-          required: t.required,
-          sort_order: t.sort_order,
-        })),
+      const insTasks = await supabase.from(config.tasksTable).insert(
+        sourceTasks.map((t) => buildTaskInsertRow(t, insV.data.id as string, config.tasksTable)),
       )
       if (insTasks.error) {
         setError(insTasks.error.message)
@@ -290,7 +350,7 @@ export function Plan24AdminChecksTab() {
     setError(null)
     const currentMax = selectedTemplateVersions[0]?.version_no ?? 0
     const ins = await supabase
-      .from('plan24_check_template_versions')
+      .from(config.versionsTable)
       .insert({
         template_id: selectedTemplateId,
         version_no: currentMax + 1,
@@ -308,13 +368,8 @@ export function Plan24AdminChecksTab() {
     if (selectedVersionId) {
       const baseTasks = tasks.filter((t) => t.version_id === selectedVersionId).sort((a, b) => a.sort_order - b.sort_order)
       if (baseTasks.length > 0) {
-        const copy = await supabase.from('plan24_check_template_tasks').insert(
-          baseTasks.map((t) => ({
-            version_id: ins.data.id,
-            label: t.label,
-            required: t.required,
-            sort_order: t.sort_order,
-          })),
+        const copy = await supabase.from(config.tasksTable).insert(
+          baseTasks.map((t) => buildTaskInsertRow(t, ins.data.id as string, config.tasksTable)),
         )
         if (copy.error) {
           setVersionSaving(false)
@@ -332,7 +387,7 @@ export function Plan24AdminChecksTab() {
 
   async function publishVersion(versionId: string) {
     setError(null)
-    const res = await supabase.rpc('plan24_publish_template_version', { p_version_id: versionId })
+    const res = await supabase.rpc(config.publishRpc, { p_version_id: versionId })
     if (res.error) setError(res.error.message)
     else await load()
   }
@@ -342,12 +397,19 @@ export function Plan24AdminChecksTab() {
     setTaskSaving(true)
     setError(null)
     const nextSort = selectedVersionTasks.length > 0 ? Math.max(...selectedVersionTasks.map((t) => t.sort_order)) + 1 : 0
-    const res = await supabase.from('plan24_check_template_tasks').insert({
+    const insertRow: Record<string, unknown> = {
       version_id: selectedVersionId,
       label: taskLabel.trim(),
       required: taskRequired,
       sort_order: nextSort,
-    })
+    }
+    if (isCilRouteTasks) {
+      insertRow.recurrence_kind = 'daily'
+      insertRow.interval_n = 1
+      insertRow.weekdays = []
+      insertRow.check_types = []
+    }
+    const res = await supabase.from(config.tasksTable).insert(insertRow)
     setTaskSaving(false)
     if (res.error) setError(res.error.message)
     else {
@@ -357,16 +419,69 @@ export function Plan24AdminChecksTab() {
     }
   }
 
-  async function updateTask(task: Plan24CheckTemplateTaskRow, patch: Partial<Pick<Plan24CheckTemplateTaskRow, 'label' | 'required'>>) {
-    const res = await supabase.from('plan24_check_template_tasks').update(patch).eq('id', task.id)
+  async function updateTask(
+    task: Plan24CheckTemplateTaskRow,
+    patch: Partial<
+      Pick<
+        Plan24CheckTemplateTaskRow,
+        | 'label'
+        | 'required'
+        | 'standard_description'
+        | 'photo_path'
+        | 'recurrence_kind'
+        | 'interval_n'
+        | 'weekdays'
+        | 'month_day'
+        | 'check_types'
+        | 'when_condition'
+      >
+    >,
+  ) {
+    const res = await supabase.from(config.tasksTable).update(patch).eq('id', task.id)
+    if (res.error) setError(res.error.message)
+    else await load()
+  }
+
+  async function uploadCilTaskPhoto(task: Plan24CheckTemplateTaskRow, file: File) {
+    if (!cellId) {
+      setError('Cell scope missing.')
+      return
+    }
+    setCilPhotoTaskId(task.id)
+    setError(null)
+    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const path = `${cellId}/${task.id}/${crypto.randomUUID()}-${safe}`
+    const { error: upErr } = await supabase.storage.from(CIL_TASK_PHOTOS_BUCKET).upload(path, file, {
+      cacheControl: '3600',
+      upsert: false,
+    })
+    if (upErr) {
+      setCilPhotoTaskId(null)
+      setError(upErr.message)
+      return
+    }
+    const res = await supabase.from(config.tasksTable).update({ photo_path: path }).eq('id', task.id)
+    setCilPhotoTaskId(null)
     if (res.error) setError(res.error.message)
     else await load()
   }
 
   async function removeTask(taskId: string) {
-    const res = await supabase.from('plan24_check_template_tasks').delete().eq('id', taskId)
+    const res = await supabase.from(config.tasksTable).delete().eq('id', taskId)
     if (res.error) setError(res.error.message)
     else await load()
+  }
+
+  function toggleCilWeekday(task: Plan24CheckTemplateTaskRow, day: number) {
+    const cur = task.weekdays ?? []
+    const next = cur.includes(day) ? cur.filter((d) => d !== day) : [...cur, day].sort((a, b) => a - b)
+    void updateTask(task, { weekdays: next })
+  }
+
+  function toggleCilCheckType(task: Plan24CheckTemplateTaskRow, tag: 'cleaning' | 'inspection' | 'lubrication') {
+    const cur = task.check_types ?? []
+    const next = cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag]
+    void updateTask(task, { check_types: next })
   }
 
   function openNewSchedule() {
@@ -391,6 +506,9 @@ export function Plan24AdminChecksTab() {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       state: 'active',
       roleNames: [],
+      areaId: '',
+      equipmentId: '',
+      equipmentIds: [],
     })
   }
 
@@ -415,6 +533,9 @@ export function Plan24AdminChecksTab() {
       timezone: row.timezone || 'UTC',
       state: row.state,
       roleNames,
+      areaId: (row as { area_id?: string | null }).area_id ?? '',
+      equipmentId: (row as { equipment_id?: string | null }).equipment_id ?? '',
+      equipmentIds: ((row as { equipment_ids?: string[] | null }).equipment_ids ?? []) as string[],
     })
   }
 
@@ -456,10 +577,13 @@ export function Plan24AdminChecksTab() {
       ends_on: scheduleDialog.endsOn || null,
       timezone: scheduleDialog.timezone || 'UTC',
       state: scheduleDialog.state,
+      area_id: config.enableLocationTargets ? scheduleDialog.areaId || null : null,
+      equipment_id: config.enableLocationTargets ? scheduleDialog.equipmentId || null : null,
+      equipment_ids: config.enableLocationTargets ? scheduleDialog.equipmentIds : [],
     }
     const q = scheduleDialog.id
-      ? supabase.from('plan24_check_schedules').update(payload).eq('id', scheduleDialog.id).select('id').single()
-      : supabase.from('plan24_check_schedules').insert(payload).select('id').single()
+      ? supabase.from(config.schedulesTable).update(payload).eq('id', scheduleDialog.id).select('id').single()
+      : supabase.from(config.schedulesTable).insert(payload).select('id').single()
     const saved = await q
     if (saved.error || !saved.data) {
       setScheduleSaving(false)
@@ -468,14 +592,14 @@ export function Plan24AdminChecksTab() {
     }
     const scheduleId = saved.data.id as string
 
-    const del = await supabase.from('plan24_check_schedule_roles').delete().eq('schedule_id', scheduleId)
+    const del = await supabase.from(config.scheduleRolesTable).delete().eq('schedule_id', scheduleId)
     if (del.error) {
       setScheduleSaving(false)
       setError(del.error.message)
       return
     }
     if (scheduleDialog.roleNames.length > 0) {
-      const insRoles = await supabase.from('plan24_check_schedule_roles').insert(
+      const insRoles = await supabase.from(config.scheduleRolesTable).insert(
         scheduleDialog.roleNames.map((roleName) => ({
           schedule_id: scheduleId,
           role_name: roleName,
@@ -489,7 +613,7 @@ export function Plan24AdminChecksTab() {
     }
 
     const today = localYMD(new Date())
-    const reset = await supabase.rpc('plan24_reset_schedule_future_events', { p_schedule_id: scheduleId, p_from_date: today })
+    const reset = await supabase.rpc(config.resetRpc, { p_schedule_id: scheduleId, p_from_date: today })
     if (reset.error) {
       setScheduleSaving(false)
       setError(reset.error.message)
@@ -497,7 +621,7 @@ export function Plan24AdminChecksTab() {
     }
     const to = new Date(today + 'T12:00:00')
     to.setDate(to.getDate() + 90)
-    const materialize = await supabase.rpc('plan24_materialize_check_schedules', {
+    const materialize = await supabase.rpc(config.materializeRpc, {
       p_master_cell_id: cellId,
       p_from_date: today,
       p_to_date: localYMD(to),
@@ -514,13 +638,13 @@ export function Plan24AdminChecksTab() {
   }
 
   async function setScheduleState(row: Plan24CheckScheduleRow, stateNext: 'active' | 'paused' | 'archived') {
-    const res = await supabase.from('plan24_check_schedules').update({ state: stateNext }).eq('id', row.id)
+    const res = await supabase.from(config.schedulesTable).update({ state: stateNext }).eq('id', row.id)
     if (res.error) {
       setError(res.error.message)
       return
     }
     if (stateNext !== 'active') {
-      const reset = await supabase.rpc('plan24_reset_schedule_future_events', {
+      const reset = await supabase.rpc(config.resetRpc, {
         p_schedule_id: row.id,
         p_from_date: localYMD(new Date()),
       })
@@ -566,7 +690,7 @@ export function Plan24AdminChecksTab() {
           onClick={() => setChecksNav('templates')}
         >
           <LayoutList className="size-4 shrink-0 opacity-70" aria-hidden />
-          Check templates
+          {config.nounPlural} templates
         </button>
         <button
           type="button"
@@ -586,7 +710,7 @@ export function Plan24AdminChecksTab() {
         <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="text-base font-semibold tracking-tight">Check templates</h2>
+              <h2 className="text-base font-semibold tracking-tight">{config.nounPlural} templates</h2>
               <p className="mt-1 max-w-xl text-xs text-muted">
                 Define reusable checks. Open a template to manage published/draft versions and sub-tasks.
               </p>
@@ -594,10 +718,10 @@ export function Plan24AdminChecksTab() {
             <button
               type="button"
               onClick={() => setTemplateDialogOpen(true)}
-              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold text-white"
+              className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white ${config.accentClass}`}
             >
               <Plus className="size-4" aria-hidden />
-              New template
+              {config.createTemplateLabel}
             </button>
           </div>
 
@@ -638,7 +762,7 @@ export function Plan24AdminChecksTab() {
         <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="text-base font-semibold tracking-tight">Recurring schedules</h2>
+              <h2 className="text-base font-semibold tracking-tight">{config.nounPlural} schedules</h2>
               <p className="mt-1 max-w-xl text-xs text-muted">
                 Link a published template version to shifts and recurrence. Plan 24 fills the grid from active schedules.
               </p>
@@ -646,10 +770,10 @@ export function Plan24AdminChecksTab() {
             <button
               type="button"
               onClick={openNewSchedule}
-              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white"
+              className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white ${config.scheduleAccentClass}`}
             >
               <Plus className="size-4" aria-hidden />
-              New schedule
+              {config.createScheduleLabel}
             </button>
           </div>
 
@@ -773,9 +897,7 @@ export function Plan24AdminChecksTab() {
           }}
         >
           <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-xl">
-            <h3 id="new-template-title" className="text-lg font-semibold">
-              New template
-            </h3>
+            <h3 id="new-template-title" className="text-lg font-semibold">{config.createTemplateLabel}</h3>
             <label className="mt-3 block text-xs text-muted">
               Name
               <input className={inputClass} value={templateName} onChange={(e) => setTemplateName(e.target.value)} />
@@ -792,7 +914,7 @@ export function Plan24AdminChecksTab() {
                 type="button"
                 onClick={() => void createTemplate()}
                 disabled={templateSaving}
-                className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                className={`rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 ${config.accentClass}`}
               >
                 {templateSaving ? 'Creating…' : 'Create'}
               </button>
@@ -904,32 +1026,226 @@ export function Plan24AdminChecksTab() {
                   <p className="mt-1 text-xs text-muted">
                     <span className="font-medium text-fg">{selectedVersion.title}</span> — checklist items on the Plan grid.
                   </p>
-                  <div className="mt-3 space-y-2">
-                    {selectedVersionTasks.map((t) => (
-                      <div key={t.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5">
-                        <input
-                          className="h-8 min-w-0 flex-1 rounded border border-border px-2 text-sm"
-                          value={t.label}
-                          onChange={(e) => void updateTask(t, { label: e.target.value })}
-                        />
-                        <label className="inline-flex items-center gap-1 text-xs text-muted">
+                  <div className="mt-3 space-y-3">
+                    {selectedVersionTasks.map((t) =>
+                      isCilRouteTasks ? (
+                        <div key={t.id} className="space-y-3 rounded-xl border border-teal-900/20 bg-teal-950/[0.03] p-3 dark:border-teal-800/25 dark:bg-teal-950/15">
+                          <div className="flex flex-wrap items-start gap-2">
+                            <input
+                              className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-surface px-2 text-sm"
+                              value={t.label}
+                              onChange={(e) => void updateTask(t, { label: e.target.value })}
+                            />
+                            <label className="inline-flex shrink-0 items-center gap-1 text-xs text-muted">
+                              <input
+                                type="checkbox"
+                                checked={t.required}
+                                onChange={(e) => void updateTask(t, { required: e.target.checked })}
+                              />
+                              Required
+                            </label>
+                            <button
+                              type="button"
+                              className="rounded p-1 text-danger hover:bg-danger/10"
+                              onClick={() => void removeTask(t.id)}
+                              aria-label={`Remove task ${t.label}`}
+                            >
+                              <Trash2 className="size-4" aria-hidden />
+                            </button>
+                          </div>
+                          <label className="block text-xs text-muted">
+                            Standard description
+                            <textarea
+                              key={`${t.id}-desc`}
+                              className={textareaClass}
+                              rows={4}
+                              defaultValue={t.standard_description ?? ''}
+                              onBlur={(e) => void updateTask(t, { standard_description: e.target.value.trim() || null })}
+                            />
+                          </label>
+                          <div className="flex flex-wrap items-end gap-3">
+                            <div className="space-y-1">
+                              <p className="text-[11px] font-medium text-muted">Reference photo</p>
+                              {cilTaskPhotoPublicUrl(t.photo_path) ? (
+                                <img
+                                  src={cilTaskPhotoPublicUrl(t.photo_path) ?? ''}
+                                  alt=""
+                                  className="size-20 rounded-lg border border-border object-cover"
+                                />
+                              ) : (
+                                <div className="flex size-20 items-center justify-center rounded-lg border border-dashed border-border text-[10px] text-muted">
+                                  None
+                                </div>
+                              )}
+                            </div>
+                            <label className="text-xs text-muted">
+                              Upload
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className={inputClass}
+                                disabled={cilPhotoTaskId === t.id}
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0]
+                                  e.target.value = ''
+                                  if (f) void uploadCilTaskPhoto(t, f)
+                                }}
+                              />
+                            </label>
+                            {t.photo_path ? (
+                              <button
+                                type="button"
+                                className="text-xs font-semibold text-muted hover:text-fg"
+                                onClick={() => void updateTask(t, { photo_path: null })}
+                              >
+                                Clear photo
+                              </button>
+                            ) : null}
+                          </div>
+                          <p className="text-[10px] leading-snug text-muted">
+                            Reference photo is shown on the operator route card (new or re-materialized occurrences pick up changes).
+                          </p>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <label className="text-xs text-muted">
+                              Task recurrence
+                              <select
+                                className={inputClass}
+                                value={t.recurrence_kind ?? 'daily'}
+                                onChange={(e) =>
+                                  void updateTask(t, {
+                                    recurrence_kind: e.target.value as Plan24CheckTemplateTaskRow['recurrence_kind'],
+                                  })
+                                }
+                              >
+                                <option value="hourly">Hourly</option>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                              </select>
+                            </label>
+                            <label className="text-xs text-muted">
+                              Interval (every N)
+                              <input
+                                type="number"
+                                min={1}
+                                className={inputClass}
+                                value={t.interval_n ?? 1}
+                                onChange={(e) =>
+                                  void updateTask(t, { interval_n: Math.max(1, Math.round(Number(e.target.value)) || 1) })
+                                }
+                              />
+                            </label>
+                          </div>
+                          {(t.recurrence_kind ?? 'daily') === 'weekly' ? (
+                            <div>
+                              <p className="text-[11px] font-medium text-muted">Weekdays</p>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {weekdayOptions.map((d) => (
+                                  <button
+                                    key={d.value}
+                                    type="button"
+                                    onClick={() => toggleCilWeekday(t, d.value)}
+                                    className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${
+                                      (t.weekdays ?? []).includes(d.value)
+                                        ? 'border-teal-600 bg-teal-600/15 text-teal-950 dark:text-teal-100'
+                                        : 'border-border text-muted hover:bg-surface-raised/60'
+                                    }`}
+                                  >
+                                    {d.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          {(t.recurrence_kind ?? 'daily') === 'monthly' ? (
+                            <label className="text-xs text-muted">
+                              Day of month (1–31)
+                              <input
+                                type="number"
+                                min={1}
+                                max={31}
+                                className={inputClass}
+                                value={t.month_day == null ? '' : String(t.month_day)}
+                                onChange={(e) => {
+                                  const raw = e.target.value
+                                  if (raw === '') {
+                                    void updateTask(t, { month_day: null })
+                                    return
+                                  }
+                                  const n = Math.min(31, Math.max(1, Math.round(Number(raw))))
+                                  if (!Number.isFinite(n)) return
+                                  void updateTask(t, { month_day: n })
+                                }}
+                              />
+                            </label>
+                          ) : null}
+                          <div>
+                            <p className="text-[11px] font-medium text-muted">Check types (per task)</p>
+                            <div className="mt-1 flex flex-wrap gap-3 text-xs">
+                              {(
+                                [
+                                  ['cleaning', 'Cleaning'],
+                                  ['inspection', 'Inspection'],
+                                  ['lubrication', 'Lubrication'],
+                                ] as const
+                              ).map(([key, lab]) => (
+                                <label key={key} className="inline-flex items-center gap-1.5 text-muted">
+                                  <input
+                                    type="checkbox"
+                                    checked={(t.check_types ?? []).includes(key)}
+                                    onChange={() => toggleCilCheckType(t, key)}
+                                  />
+                                  {lab}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          <label className="block text-xs text-muted">
+                            When (operator — read-only on route)
+                            <select
+                              className={inputClass}
+                              value={t.when_condition ?? ''}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                void updateTask(t, {
+                                  when_condition:
+                                    v === '' ? null : (v as NonNullable<Plan24CheckTemplateTaskRow['when_condition']>),
+                                })
+                              }}
+                            >
+                              <option value="">— Not set</option>
+                              <option value="running">Running</option>
+                              <option value="down">Down</option>
+                              <option value="other">Other</option>
+                            </select>
+                          </label>
+                        </div>
+                      ) : (
+                        <div key={t.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5">
                           <input
-                            type="checkbox"
-                            checked={t.required}
-                            onChange={(e) => void updateTask(t, { required: e.target.checked })}
+                            className="h-8 min-w-0 flex-1 rounded border border-border px-2 text-sm"
+                            value={t.label}
+                            onChange={(e) => void updateTask(t, { label: e.target.value })}
                           />
-                          Required
-                        </label>
-                        <button
-                          type="button"
-                          className="rounded p-1 text-danger hover:bg-danger/10"
-                          onClick={() => void removeTask(t.id)}
-                          aria-label={`Remove task ${t.label}`}
-                        >
-                          <Trash2 className="size-4" aria-hidden />
-                        </button>
-                      </div>
-                    ))}
+                          <label className="inline-flex items-center gap-1 text-xs text-muted">
+                            <input
+                              type="checkbox"
+                              checked={t.required}
+                              onChange={(e) => void updateTask(t, { required: e.target.checked })}
+                            />
+                            Required
+                          </label>
+                          <button
+                            type="button"
+                            className="rounded p-1 text-danger hover:bg-danger/10"
+                            onClick={() => void removeTask(t.id)}
+                            aria-label={`Remove task ${t.label}`}
+                          >
+                            <Trash2 className="size-4" aria-hidden />
+                          </button>
+                        </div>
+                      ),
+                    )}
                   </div>
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                     <input
@@ -947,7 +1263,7 @@ export function Plan24AdminChecksTab() {
                         type="button"
                         onClick={() => void addTask()}
                         disabled={taskSaving}
-                        className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50 ${config.scheduleAccentClass}`}
                       >
                         Add task
                       </button>
@@ -970,7 +1286,7 @@ export function Plan24AdminChecksTab() {
           }}
         >
           <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-surface p-5 shadow-xl">
-            <h3 className="text-lg font-semibold">{scheduleDialog.id ? 'Edit schedule' : 'New schedule'}</h3>
+            <h3 className="text-lg font-semibold">{scheduleDialog.id ? 'Edit schedule' : config.createScheduleLabel}</h3>
             <p className="mt-1 text-xs text-muted">
               {scheduleDialog.id ? 'Update when the check runs and which template version is used.' : 'Choose template version, shift, and recurrence.'}
             </p>
@@ -1043,6 +1359,79 @@ export function Plan24AdminChecksTab() {
                     ))}
                 </select>
               </label>
+
+              {config.enableLocationTargets ? (
+                <>
+                  <div className="sm:col-span-2 mt-1 border-t border-border pt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted">Target scope</p>
+                  </div>
+                  <label className="text-xs text-muted">
+                    Area
+                    <select
+                      className={inputClass}
+                      value={scheduleDialog.areaId}
+                      onChange={(e) =>
+                        setScheduleDialog({
+                          ...scheduleDialog,
+                          areaId: e.target.value,
+                          equipmentId:
+                            scheduleDialog.equipmentId &&
+                            equipment.find((eq) => eq.id === scheduleDialog.equipmentId && eq.area_id === e.target.value)
+                              ? scheduleDialog.equipmentId
+                              : '',
+                          equipmentIds: scheduleDialog.equipmentIds.filter((id) =>
+                            equipment.find((eq) => eq.id === id && eq.area_id === e.target.value),
+                          ),
+                        })
+                      }
+                    >
+                      <option value="">All areas</option>
+                      {areas.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs text-muted">
+                    Equipment
+                    <select
+                      className={inputClass}
+                      value={scheduleDialog.equipmentId}
+                      onChange={(e) => setScheduleDialog({ ...scheduleDialog, equipmentId: e.target.value })}
+                    >
+                      <option value="">All equipment</option>
+                      {equipment
+                        .filter((eq) => !scheduleDialog.areaId || eq.area_id === scheduleDialog.areaId)
+                        .map((eq) => (
+                          <option key={eq.id} value={eq.id}>
+                            {eq.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label className="text-xs text-muted sm:col-span-2">
+                    Equipment set (multi-select)
+                    <select
+                      className={`${inputClass} h-auto min-h-28`}
+                      multiple
+                      value={scheduleDialog.equipmentIds}
+                      onChange={(e) => {
+                        const next = Array.from(e.target.selectedOptions).map((o) => o.value)
+                        setScheduleDialog({ ...scheduleDialog, equipmentIds: next })
+                      }}
+                    >
+                      {equipment
+                        .filter((eq) => !scheduleDialog.areaId || eq.area_id === scheduleDialog.areaId)
+                        .map((eq) => (
+                          <option key={eq.id} value={eq.id}>
+                            {eq.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </>
+              ) : null}
 
               <div className="sm:col-span-2 mt-1 border-t border-border pt-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted">Timing & recurrence</p>
@@ -1211,7 +1600,7 @@ export function Plan24AdminChecksTab() {
               </button>
               <button
                 type="button"
-                className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                className={`rounded-lg px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 ${config.scheduleAccentClass}`}
                 onClick={() => void saveSchedule()}
                 disabled={scheduleSaving}
               >

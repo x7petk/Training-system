@@ -65,7 +65,40 @@ function formatClock(d: Date): string {
 
 function isPlan24EventCheck(ev: Plan24EventRow): boolean {
   if (!ev.event_type) return true
-  return String(ev.event_type).toLowerCase() === 'check'
+  return ['check', 'cl_check', 'cil_check', 'quality_check'].includes(String(ev.event_type).toLowerCase())
+}
+
+function familyScheduledClass(eventType: string | null | undefined): string {
+  const t = String(eventType ?? 'check').toLowerCase()
+  if (t === 'cl_check') return 'border-green-900/40 bg-green-700 text-green-50 dark:border-green-800/60 dark:bg-green-800 dark:text-green-50'
+  if (t === 'cil_check') return 'border-teal-900/40 bg-teal-700 text-teal-50 dark:border-teal-800/60 dark:bg-teal-800 dark:text-teal-50'
+  if (t === 'quality_check')
+    return 'border-violet-900/40 bg-violet-700 text-violet-50 dark:border-violet-800/60 dark:bg-violet-800 dark:text-violet-50'
+  return 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
+}
+
+function isClCilQualityFamily(eventType: string | null | undefined): boolean {
+  const t = String(eventType ?? '').toLowerCase()
+  return t === 'cl_check' || t === 'cil_check' || t === 'quality_check'
+}
+
+/** Completed CL / CIL / Quality: same hue as scheduled, ~50% fill opacity, strikethrough text. */
+function familyCompletedClass(eventType: string | null | undefined): string {
+  const t = String(eventType ?? 'check').toLowerCase()
+  if (t === 'cl_check')
+    return 'border-green-900/35 bg-green-700/50 text-green-50 dark:border-green-700/45 dark:bg-green-800/50 dark:text-green-50'
+  if (t === 'cil_check')
+    return 'border-teal-900/35 bg-teal-700/50 text-teal-50 dark:border-teal-700/45 dark:bg-teal-800/50 dark:text-teal-50'
+  if (t === 'quality_check')
+    return 'border-violet-900/35 bg-violet-700/50 text-violet-50 dark:border-violet-700/45 dark:bg-violet-800/50 dark:text-violet-50'
+  return familyScheduledClass(eventType)
+}
+
+function familyCompletedStripeStyle(): CSSProperties {
+  return {
+    backgroundImage:
+      'repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(0,0,0,0.2) 4px, rgba(0,0,0,0.2) 8px)',
+  }
 }
 
 type DragSession = {
@@ -564,10 +597,12 @@ export function Plan24Grid(props: {
                       const topPx = isDragging && sameColumn && previewMin !== null ? previewMin * pixelsPerMinute : top
                       const fadedCross = isDragging && !sameColumn
                       const statusClass = isDone
-                        ? 'border-sky-950/40 bg-sky-950 text-sky-50 line-through decoration-sky-300/60 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
+                        ? isClCilQualityFamily(ev.event_type)
+                          ? familyCompletedClass(ev.event_type)
+                          : 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
                         : inProgress
                           ? 'border-amber-400/60 bg-amber-500 text-amber-950 shadow-amber-900/20 dark:bg-amber-400 dark:text-amber-950'
-                          : 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
+                          : familyScheduledClass(ev.event_type)
                       const statusLabel = isDone ? 'Complete' : inProgress ? 'In progress' : 'Scheduled'
                       const resizingThis = resizeUi?.eventId === ev.id && resizeUi.roleName === r.name
                       const endMinVisual = resizingThis ? resizeUi.previewEndMin : minutesBetween(windowStart, end)
@@ -577,9 +612,11 @@ export function Plan24Grid(props: {
                       const canResizeEnd = isCheck && !!ev.role_name
                       const tip = `${ev.title}\n${formatClock(start)}–${formatClock(end)}\n${statusLabel}${isAdHoc ? ' · Ad hoc' : ''}`
                       const donePatternStyle: CSSProperties | undefined = isDone
-                        ? {
-                            backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,255,255,0.28) 5px, rgba(255,255,255,0.28) 9px)`,
-                          }
+                        ? isClCilQualityFamily(ev.event_type)
+                          ? familyCompletedStripeStyle()
+                          : {
+                              backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,255,255,0.28) 5px, rgba(255,255,255,0.28) 9px)`,
+                            }
                         : undefined
                       return (
                         <div
@@ -598,7 +635,9 @@ export function Plan24Grid(props: {
                           {isDone ? (
                             <span
                               aria-hidden
-                              className="pointer-events-none absolute inset-0 z-0 rounded-md opacity-[0.4]"
+                              className={`pointer-events-none absolute inset-0 z-0 rounded-md ${
+                                isClCilQualityFamily(ev.event_type) ? 'opacity-80 dark:opacity-70' : 'opacity-[0.4]'
+                              }`}
                               style={donePatternStyle}
                             />
                           ) : null}
@@ -630,7 +669,11 @@ export function Plan24Grid(props: {
                                 className="pointer-events-none absolute right-1 top-1 inline-flex size-1.5 rounded-full bg-amber-900/90"
                               />
                             ) : null}
-                            <span className="pointer-events-none relative z-[2] min-h-0 w-full min-w-0 flex-1 truncate text-left">
+                            <span
+                              className={`pointer-events-none relative z-[2] min-h-0 w-full min-w-0 flex-1 truncate text-left ${
+                                isDone ? 'line-through decoration-2 decoration-current/55' : ''
+                              }`}
+                            >
                               {ev.title}
                             </span>
                           </button>
@@ -705,11 +748,13 @@ function buildHourTicks(windowStart: Date, totalMin: number, pixelsPerMinute: nu
 function buildEventsByRole(roles: Plan24GridRoleCol[], events: Plan24EventRow[]) {
   const m = new Map<string, Plan24EventRow[]>()
   for (const r of roles) m.set(r.name, [])
+  const lowerToCanonical = new Map(roles.map((r) => [r.name.trim().toLowerCase(), r.name]))
   for (const ev of events) {
-    const rn = ev.role_name
+    const rn = (ev.role_name ?? '').trim()
     if (!rn) continue
-    if (!m.has(rn)) m.set(rn, [])
-    m.get(rn)!.push(ev)
+    const canon = lowerToCanonical.get(rn.toLowerCase())
+    if (!canon) continue
+    m.get(canon)!.push(ev)
   }
   return m
 }

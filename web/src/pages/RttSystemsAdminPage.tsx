@@ -3,11 +3,22 @@ import { LayoutDashboard } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { Plan24AdminRosterTab } from '../features/plan24/Plan24AdminRosterTab'
 import { Plan24AdminChecksTab } from '../features/plan24/Plan24AdminChecksTab'
+import { Plan24AdminClChecksTab } from '../features/plan24/Plan24AdminClChecksTab'
+import { Plan24AdminCilChecksTab } from '../features/plan24/Plan24AdminCilChecksTab'
+import { Plan24AdminQualityChecksTab } from '../features/plan24/Plan24AdminQualityChecksTab'
 import { DhDefectTypesAdminTab } from '../features/dh/DhDefectTypesAdminTab'
 import { DeviationTypesAdminTab } from '../features/deviations/DeviationTypesAdminTab'
 import { QualityFailTypesAdminTab } from '../features/qualityFails/QualityFailTypesAdminTab'
 
-type Tab = 'roster' | 'checks' | 'dh_types' | 'deviation_types' | 'quality_fail_types'
+type Tab =
+  | 'roster'
+  | 'checks'
+  | 'cl_checks'
+  | 'cil_checks'
+  | 'quality_checks'
+  | 'dh_types'
+  | 'deviation_types'
+  | 'quality_fail_types'
 
 export function RttSystemsAdminPage() {
   const { isSuperAdmin } = useAuth()
@@ -56,6 +67,39 @@ export function RttSystemsAdminPage() {
         >
           Checks
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'cl_checks'}
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+            tab === 'cl_checks' ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg'
+          }`}
+          onClick={() => setTab('cl_checks')}
+        >
+          CL checks
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'cil_checks'}
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+            tab === 'cil_checks' ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg'
+          }`}
+          onClick={() => setTab('cil_checks')}
+        >
+          CIL checks
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'quality_checks'}
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+            tab === 'quality_checks' ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg'
+          }`}
+          onClick={() => setTab('quality_checks')}
+        >
+          Quality checks
+        </button>
         {isSuperAdmin ? (
           <button
             type="button"
@@ -100,6 +144,9 @@ export function RttSystemsAdminPage() {
       {tab === 'roster' ? <Plan24AdminRosterTab /> : null}
 
       {tab === 'checks' ? <Plan24AdminChecksTab /> : null}
+      {tab === 'cl_checks' ? <Plan24AdminClChecksTab /> : null}
+      {tab === 'cil_checks' ? <Plan24AdminCilChecksTab /> : null}
+      {tab === 'quality_checks' ? <Plan24AdminQualityChecksTab /> : null}
 
       {tab === 'dh_types' && isSuperAdmin ? <DhDefectTypesAdminTab /> : null}
       {tab === 'deviation_types' && isSuperAdmin ? <DeviationTypesAdminTab /> : null}

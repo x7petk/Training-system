@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import type { DhDefectPriority, DhDefectRow, DhDefectStatus, DhDefectTypeRow } from '../features/dh/dhTypes'
@@ -65,6 +66,7 @@ export function DhDefectHandlingPage({
   config?: DhBoardConfig
 }) {
   const { cellId, status: scopeStatus } = usePlan24Workspace()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [types, setTypes] = useState<DhDefectTypeRow[]>([])
   const [defects, setDefects] = useState<DhDefectRow[]>([])
   const [people, setPeople] = useState<PersonMini[]>([])
@@ -88,6 +90,7 @@ export function DhDefectHandlingPage({
   const [formDue, setFormDue] = useState('')
   const [saving, setSaving] = useState(false)
   const [inlineMenu, setInlineMenu] = useState<InlineMenuState>(null)
+  const linkedIssueId = searchParams.get('linkedIssueId')
 
   const activeTypes = useMemo(() => types.filter((t) => t.is_active), [types])
   const areaOptions = useMemo(() => normalizeOptions(defects.map((d) => d.area)), [defects])
@@ -131,6 +134,16 @@ export function DhDefectHandlingPage({
     window.addEventListener('click', closeInlineMenu)
     return () => window.removeEventListener('click', closeInlineMenu)
   }, [])
+
+  useEffect(() => {
+    if (!linkedIssueId || defects.length === 0) return
+    const row = defects.find((d) => d.id === linkedIssueId)
+    if (!row) return
+    openEdit(row)
+    const next = new URLSearchParams(searchParams)
+    next.delete('linkedIssueId')
+    setSearchParams(next, { replace: true })
+  }, [linkedIssueId, defects, searchParams, setSearchParams])
 
   const filteredDefects = useMemo(() => {
     return defects.filter((d) => {
