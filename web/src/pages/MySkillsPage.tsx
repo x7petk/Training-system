@@ -12,6 +12,7 @@ import {
 import {
   classifyCell,
   formatLevel,
+  formatPlanKnowledgeCertStatus,
   gapKindClasses,
   gapKindLegendLabel,
   type GapKind,
@@ -1836,39 +1837,81 @@ function PlanSkillsSection(props: {
                     </button>
                     {collapsed ? null : knowledges.length > 0 ? (
                       <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-                        {knowledges.map((k) => (
+                        {knowledges.map((k) => {
+                          const kKind = skillKindById.get(k.knowledge_skill_id) ?? 'numeric'
+                          const isPlanCert = kKind === 'certification'
+                          return (
                           <div key={k.knowledge_skill_id} className="flex items-center justify-between gap-2 rounded border border-border bg-surface px-2 py-1.5">
                             <div className="min-w-0">
                               <p className="truncate text-xs font-medium text-fg">{k.knowledge_name}</p>
                               <p className="text-[10px] text-muted">
-                                {skillKindById.get(k.knowledge_skill_id) === 'numeric'
-                                  ? 'Training 1→2 · Assessor 2→3'
-                                  : trainingEligibleIds.has(k.knowledge_skill_id)
-                                    ? 'Training 1→2, Assessor 2→3'
-                                    : 'Assessor 1→3'}
+                                {isPlanCert
+                                  ? 'Certification · No / Yes'
+                                  : kKind === 'numeric'
+                                    ? 'Training 1→2 · Assessor 2→3'
+                                    : trainingEligibleIds.has(k.knowledge_skill_id)
+                                      ? 'Training 1→2, Assessor 2→3'
+                                      : 'Assessor 1→3'}
                               </p>
                             </div>
                             {!readOnly ? (
                               <div className="flex flex-wrap items-center justify-end gap-1">
-                                {([1, 2, 3] as const).map((lv) => {
-                                  const current = (k.actual_level ?? 1) === lv
-                                  return (
+                                {isPlanCert ? (
+                                  <span
+                                    className="mr-0.5 min-w-[2.25rem] text-right text-xs font-semibold tabular-nums text-fg"
+                                    title="Certification status for this plan knowledge"
+                                  >
+                                    {formatPlanKnowledgeCertStatus(k.actual_level)}
+                                  </span>
+                                ) : null}
+                                {isPlanCert ? (
+                                  <>
                                     <button
-                                      key={lv}
                                       type="button"
                                       disabled={!stage.is_unlocked}
-                                      onClick={() => onSetKnowledgeLevel(k, lv)}
+                                      onClick={() => onSetKnowledgeLevel(k, 1)}
                                       className={`rounded px-2 py-1 text-[11px] font-semibold ${
-                                        current
+                                        (k.actual_level ?? 1) <= 1
                                           ? 'bg-accent text-white'
                                           : 'border border-border text-fg'
                                       } disabled:cursor-not-allowed disabled:opacity-40`}
                                     >
-                                      {lv}
+                                      No
                                     </button>
-                                  )
-                                })}
-                                {skillKindById.get(k.knowledge_skill_id) === 'numeric' ? (
+                                    <button
+                                      type="button"
+                                      disabled={!stage.is_unlocked}
+                                      onClick={() => onSetKnowledgeLevel(k, 3)}
+                                      className={`rounded px-2 py-1 text-[11px] font-semibold ${
+                                        (k.actual_level ?? 1) >= 3
+                                          ? 'bg-accent text-white'
+                                          : 'border border-border text-fg'
+                                      } disabled:cursor-not-allowed disabled:opacity-40`}
+                                    >
+                                      Yes
+                                    </button>
+                                  </>
+                                ) : (
+                                  ([1, 2, 3] as const).map((lv) => {
+                                    const current = (k.actual_level ?? 1) === lv
+                                    return (
+                                      <button
+                                        key={lv}
+                                        type="button"
+                                        disabled={!stage.is_unlocked}
+                                        onClick={() => onSetKnowledgeLevel(k, lv)}
+                                        className={`rounded px-2 py-1 text-[11px] font-semibold ${
+                                          current
+                                            ? 'bg-accent text-white'
+                                            : 'border border-border text-fg'
+                                        } disabled:cursor-not-allowed disabled:opacity-40`}
+                                      >
+                                        {lv}
+                                      </button>
+                                    )
+                                  })
+                                )}
+                                {kKind === 'numeric' ? (
                                   (k.actual_level ?? 0) >= 3 ? (
                                     <button
                                       type="button"
@@ -1899,6 +1942,17 @@ function PlanSkillsSection(props: {
                                       Training
                                     </button>
                                   ) : null
+                                ) : isPlanCert ? (
+                                  (k.actual_level ?? 1) <= 1 ? (
+                                    <button
+                                      type="button"
+                                      disabled={!stage.is_unlocked}
+                                      onClick={() => onShowAssessors(k)}
+                                      className="rounded border border-violet-300/80 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-900 disabled:opacity-40"
+                                    >
+                                      Assessment
+                                    </button>
+                                  ) : null
                                 ) : (
                                   <>
                                     {(k.actual_level ?? 1) <= 1 && trainingEligibleIds.has(k.knowledge_skill_id) ? (
@@ -1926,11 +1980,12 @@ function PlanSkillsSection(props: {
                               </div>
                             ) : (
                               <span className="rounded border border-border bg-canvas/70 px-2 py-1 text-[11px] font-semibold text-fg">
-                                L{k.actual_level ?? 1}
+                                {isPlanCert ? formatPlanKnowledgeCertStatus(k.actual_level) : `L${k.actual_level ?? 1}`}
                               </span>
                             )}
                           </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     ) : (
                       <p className="mt-2 text-xs text-muted">No knowledges assigned yet.</p>

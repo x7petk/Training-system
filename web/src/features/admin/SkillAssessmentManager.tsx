@@ -51,7 +51,7 @@ export function SkillAssessmentManager() {
       supabase
         .from('skills')
         .select('id, name, kind, skill_groups(name)')
-        .eq('kind', 'numeric')
+        .in('kind', ['numeric', 'certification'])
         .order('sort_order', { ascending: true }),
       supabase.from('skill_assessment_settings').select('skill_id, assessment_instructions, updated_at'),
       supabase.from('skill_assessment_checklist_items').select('id, skill_id, item_text, sort_order'),
@@ -177,7 +177,7 @@ export function SkillAssessmentManager() {
           <div>
             <h2 className="font-display text-lg font-semibold tracking-tight">Skill assessment</h2>
             <p className="text-xs text-muted">
-              Admin-only: plain-text assessment instructions and an ordered assessor checklist per numeric skill.
+              Admin-only: plain-text assessment instructions and an ordered assessor checklist per numeric/certification skill.
             </p>
           </div>
         </div>
@@ -189,7 +189,7 @@ export function SkillAssessmentManager() {
       {loading ? (
         <p className="px-4 py-8 text-center text-sm text-muted">Loading…</p>
       ) : skills.length === 0 ? (
-        <p className="px-4 py-8 text-center text-sm text-muted">No numeric skills found. Add numeric skills first.</p>
+        <p className="px-4 py-8 text-center text-sm text-muted">No numeric/certification skills found. Add skills first.</p>
       ) : (
         <form onSubmit={(e) => void saveAssessment(e)} className="space-y-4 p-4">
           <div>

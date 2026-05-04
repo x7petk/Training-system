@@ -125,10 +125,15 @@ export function gapKindLegendLabel(kind: GapKind): string {
 export function formatLevel(kind: SkillKind, level: number | null): string {
   if (level == null) return '—'
   if (kind === 'certification') {
-    return level >= 1 ? 'Y' : 'N'
+    return level >= 1 ? 'Yes' : 'No'
   }
   if (kind === 'plan') {
     return `${Math.max(0, Math.round(level))}%`
   }
   return String(level)
+}
+
+/** Plan knowledge rows: level 3 marks the knowledge complete (same as stage progress). */
+export function formatPlanKnowledgeCertStatus(level: number | null): 'Yes' | 'No' {
+  return level != null && level >= 3 ? 'Yes' : 'No'
 }
