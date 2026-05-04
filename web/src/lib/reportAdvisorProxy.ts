@@ -1,15 +1,10 @@
 /**
- * Production sites call the advisor through a same-origin Vercel route (`/api/report-advisor`)
- * so the browser never blocks cross-origin requests to `*.supabase.co/functions/v1`.
+ * Calls the report advisor through same-origin `POST /api/report-advisor`:
+ * - **Vite dev / preview**: proxied in vite.config.ts → Supabase `functions/v1/matrix-report-advisor`
+ * - **Vercel production**: `api/report-advisor.ts` forwards to that URL with `apikey` + user JWT
+ *
+ * This avoids browser cross-origin `Failed to fetch` to `*.supabase.co/functions`.
  */
-
-export function shouldUseReportAdvisorProxy(): boolean {
-  if (import.meta.env.VITE_ADVISOR_PROXY === 'false') return false
-  if (import.meta.env.VITE_ADVISOR_PROXY === 'true') return true
-  if (typeof window === 'undefined') return false
-  const h = window.location.hostname
-  return h !== 'localhost' && h !== '127.0.0.1'
-}
 
 export async function invokeReportAdvisorViaProxy(
   accessToken: string,
@@ -34,7 +29,7 @@ export async function invokeReportAdvisorViaProxy(
     } catch {
       return {
         data: null,
-        errorMessage: `Advisor proxy returned non-JSON (HTTP ${res.status}): ${text.slice(0, 280)}`,
+        errorMessage: `Advisor returned non-JSON (HTTP ${res.status}): ${text.slice(0, 280)}`,
       }
     }
     if (!res.ok) {
