@@ -46,7 +46,7 @@ type Props = {
   onVerificationComplete: () => void
 }
 
-/** Staff (admin or assessor): instructions, subject-scoped checklist with attribution, verify L2→3. */
+/** Staff (admin or assessor): instructions, subject-scoped checklist with attribution, verify progression. */
 export function AssessorAssessmentSection(props: Props) {
   const { skillId, subjectPersonId, skillKind, actualLevel, isAdmin, onVerificationComplete } = props
   const [loading, setLoading] = useState(true)
@@ -182,6 +182,15 @@ export function AssessorAssessmentSection(props: Props) {
     allChecked &&
     !verifying
 
+  const canVerifyCertification =
+    skillKind === 'certification' &&
+    (actualLevel == null || actualLevel <= 1) &&
+    items.length > 0 &&
+    allChecked &&
+    !verifying
+
+  const canVerify = canVerifyNumeric || canVerifyCertification
+
   async function toggleItem(itemId: string, nextChecked: boolean) {
     setError(null)
     const { data: auth } = await supabase.auth.getUser()
@@ -239,8 +248,8 @@ export function AssessorAssessmentSection(props: Props) {
     }
   }
 
-  async function verifyL2To3() {
-    if (!canVerifyNumeric) return
+  async function verifyProgression() {
+    if (!canVerify) return
     setError(null)
     setVerifying(true)
     const { data: auth } = await supabase.auth.getUser()
@@ -251,20 +260,39 @@ export function AssessorAssessmentSection(props: Props) {
       return
     }
 
-    const { data: updated, error: upErr } = await supabase
-      .from('person_skills')
-      .update({ actual_level: 3 })
-      .eq('person_id', subjectPersonId)
-      .eq('skill_id', skillId)
-      .eq('actual_level', 2)
-      .select('person_id, skill_id')
+    const updateBase = supabase.from('person_skills').update({ actual_level: 3 }).eq('person_id', subjectPersonId).eq('skill_id', skillId)
+    const { data: updated, error: upErr } =
+      skillKind === 'numeric'
+        ? await updateBase.eq('actual_level', 2).select('person_id, skill_id')
+        : await updateBase.select('person_id, skill_id')
 
     if (upErr) {
       setError(upErr.message)
       setVerifying(false)
       return
     }
-    if (!updated?.length) {
+    if (!updated?.length && skillKind === 'certification') {
+      const { data: inserted, error: insErr } = await supabase
+        .from('person_skills')
+        .insert({
+          person_id: subjectPersonId,
+          skill_id: skillId,
+          actual_level: 3,
+          is_extra: false,
+          due_date: null,
+        })
+        .select('person_id, skill_id')
+      if (insErr) {
+        setError(insErr.message)
+        setVerifying(false)
+        return
+      }
+      if (!inserted?.length) {
+        setError('Could not move this certification to Yes. Refresh and try again.')
+        setVerifying(false)
+        return
+      }
+    } else if (!updated?.length) {
       setError(
         'Could not move this skill to level 3. Refresh the page — the person may not be at level 2 for this skill yet.',
       )
@@ -358,24 +386,34 @@ export function AssessorAssessmentSection(props: Props) {
             })}
           </ul>
 
-          {skillKind === 'numeric' ? (
+          {skillKind === 'numeric' || skillKind === 'certification' ? (
             <div className="mt-3 space-y-2 border-t border-border pt-3">
-              {actualLevel !== 2 ? (
+              {skillKind === 'numeric' && actualLevel !== 2 ? (
                 <p className="text-[11px] text-muted">
                   Verify is available when this skill is at <strong className="text-fg/90">level 2</strong> for this person
                   (current: {actualLevel ?? '—'}).
                 </p>
               ) : null}
+              {skillKind === 'certification' && !(actualLevel == null || actualLevel <= 1) ? (
+                <p className="text-[11px] text-muted">
+                  Verify is available when this certification is <strong className="text-fg/90">No</strong> for this person
+                  (current: Yes).
+                </p>
+              ) : null}
               <button
                 type="button"
-                disabled={!canVerifyNumeric}
-                onClick={() => void verifyL2To3()}
+                disabled={!canVerify}
+                onClick={() => void verifyProgression()}
                 className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {verifying ? 'Verifying…' : 'Verify (move skill to level 3)'}
+                {verifying
+                  ? 'Verifying…'
+                  : skillKind === 'certification'
+                    ? 'Verify (move certification to Yes)'
+                    : 'Verify (move skill to level 3)'}
               </button>
               <p className="text-[11px] text-muted">
-                Records who verified and when; updating the matrix triggers the usual L2→3 progression log.
+                Records who verified and when.
               </p>
             </div>
           ) : null}

@@ -1596,6 +1596,17 @@ function SkillSection(props: {
               ) : null
             ) : (
               <>
+                {row.kind === 'certification' && (row.actual ?? 0) >= 1 && onOpenQualificationRecord ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenQualificationRecord(row)}
+                    title="Qualification record"
+                    aria-label="Qualification record"
+                    className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-zinc-300/90 bg-zinc-100 text-zinc-800 hover:bg-zinc-200/80"
+                  >
+                    <FileText className="size-3.5" aria-hidden />
+                  </button>
+                ) : null}
                 {trainingEligibleIds && onStartTraining && trainingEligibleIds.has(row.skillId) ? (
                   <button
                     type="button"
@@ -1857,14 +1868,6 @@ function PlanSkillsSection(props: {
                             {!readOnly ? (
                               <div className="flex flex-wrap items-center justify-end gap-1">
                                 {isPlanCert ? (
-                                  <span
-                                    className="mr-0.5 min-w-[2.25rem] text-right text-xs font-semibold tabular-nums text-fg"
-                                    title="Certification status for this plan knowledge"
-                                  >
-                                    {formatPlanKnowledgeCertStatus(k.actual_level)}
-                                  </span>
-                                ) : null}
-                                {isPlanCert ? (
                                   <>
                                     <button
                                       type="button"
@@ -1943,7 +1946,18 @@ function PlanSkillsSection(props: {
                                     </button>
                                   ) : null
                                 ) : isPlanCert ? (
-                                  (k.actual_level ?? 1) <= 1 ? (
+                                  (k.actual_level ?? 1) >= 3 ? (
+                                    <button
+                                      type="button"
+                                      disabled={!stage.is_unlocked}
+                                      onClick={() => onOpenQualificationRecord(k)}
+                                      title="Qualification record"
+                                      aria-label="Qualification record"
+                                      className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-zinc-300/90 bg-zinc-100 text-zinc-800 disabled:opacity-40"
+                                    >
+                                      <FileText className="size-3.5" aria-hidden />
+                                    </button>
+                                  ) : (k.actual_level ?? 1) <= 1 ? (
                                     <button
                                       type="button"
                                       disabled={!stage.is_unlocked}

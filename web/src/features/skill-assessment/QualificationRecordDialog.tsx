@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { BookOpen, ClipboardCheck, FileText, ListChecks, UserRound } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import type { SkillKind } from '../matrix/gapLogic'
 
 type Props = {
   personId: string
@@ -97,6 +98,7 @@ export function QualificationRecordDialog(props: Props) {
   const { personId, personName, skillId, skillName, onDismiss } = props
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [skillKind, setSkillKind] = useState<SkillKind>('numeric')
   const [attempts, setAttempts] = useState<AttemptRow[]>([])
   const [firstPassedL12, setFirstPassedL12] = useState<AttemptRow | null>(null)
   const [progressions, setProgressions] = useState<ProgressionRow[]>([])
@@ -116,7 +118,8 @@ export function QualificationRecordDialog(props: Props) {
       setVerifications([])
       setChecklistLines([])
 
-      const [attRes, progRes, verRes, itemsRes] = await Promise.all([
+      const [skRes, attRes, progRes, verRes, itemsRes] = await Promise.all([
+        supabase.from('skills').select('kind').eq('id', skillId).maybeSingle(),
         supabase
           .from('skill_training_attempts')
           .select('created_at, passed, score_percent')
@@ -147,6 +150,12 @@ export function QualificationRecordDialog(props: Props) {
       if (cancelled) return
 
       let errMsg: string | null = null
+      if (skRes.error) errMsg = skRes.error.message
+      else {
+        const k = (skRes.data?.kind as SkillKind | undefined) ?? 'numeric'
+        setSkillKind(k)
+      }
+
       if (attRes.error) errMsg = attRes.error.message
       else {
         const rows = (attRes.data ?? []) as AttemptRow[]
@@ -205,7 +214,9 @@ export function QualificationRecordDialog(props: Props) {
     }
   }, [personId, skillId])
 
-  const l23Events = progressions.filter((e) => e.from_level === 2 && e.to_level === 3)
+  const isCertification = skillKind === 'certification'
+  const progressionEvents = isCertification ? progressions : progressions.filter((e) => e.from_level === 2 && e.to_level === 3)
+  const fmtLevel = (n: number) => (isCertification ? (n >= 1 ? 'Yes' : 'No') : String(n))
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-3 py-6">
@@ -258,10 +269,18 @@ export function QualificationRecordDialog(props: Props) {
               <RecordSection
                 step={1}
                 icon={<BookOpen aria-hidden />}
-                title="Level 1 → 2 (theory)"
-                subtitle="Training pack quiz — first passing attempt marks readiness for level 2."
+                title={isCertification ? 'Certification setup (No → Yes)' : 'Level 1 → 2 (theory)'}
+                subtitle={
+                  isCertification
+                    ? 'Certification skills use No/Yes. Assessment + verification moves this skill to Yes.'
+                    : 'Training pack quiz — first passing attempt marks readiness for level 2.'
+                }
               >
-                {firstPassedL12 ? (
+                {isCertification ? (
+                  <p className="rounded-lg border border-dashed border-border bg-canvas/50 px-3 py-2 text-sm text-muted">
+                    Training quiz attempts are not used for certification skills.
+                  </p>
+                ) : firstPassedL12 ? (
                   <dl className="space-y-0">
                     <DefRow label="First pass" value={formatTs(firstPassedL12.created_at)} />
                     <DefRow label="Score" value={`${firstPassedL12.score_percent}%`} />
@@ -313,12 +332,16 @@ export function QualificationRecordDialog(props: Props) {
               <RecordSection
                 step={2}
                 icon={<UserRound aria-hidden />}
-                title="Level 2 → 3 (practice)"
-                subtitle="Logged when the matrix moves this skill from 2 to 3 (assessor or admin)."
+                title={isCertification ? 'No → Yes progression' : 'Level 2 → 3 (practice)'}
+                subtitle={
+                  isCertification
+                    ? 'Logged when matrix assessment/verification marks this certification as Yes.'
+                    : 'Logged when the matrix moves this skill from 2 to 3 (assessor or admin).'
+                }
               >
-                {l23Events.length > 0 ? (
+                {progressionEvents.length > 0 ? (
                   <ol className="space-y-2">
-                    {l23Events.map((e, i) => (
+                    {progressionEvents.map((e, i) => (
                       <li
                         key={i}
                         className="rounded-lg border border-border/80 bg-canvas/40 px-3 py-2.5 text-sm text-fg"
@@ -326,7 +349,7 @@ export function QualificationRecordDialog(props: Props) {
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
                           <span className="font-medium tabular-nums">{formatTs(e.created_at)}</span>
                           <span className="text-[11px] text-muted">
-                            Level {e.from_level} → {e.to_level}
+                            {isCertification ? `${fmtLevel(e.from_level)} → ${fmtLevel(e.to_level)}` : `Level ${e.from_level} → ${e.to_level}`}
                           </span>
                         </div>
                         <p className="mt-1 text-xs text-muted">
@@ -337,7 +360,7 @@ export function QualificationRecordDialog(props: Props) {
                   </ol>
                 ) : (
                   <p className="rounded-lg border border-dashed border-border bg-canvas/50 px-3 py-2 text-sm text-muted">
-                    No L2→3 progression event logged yet.
+                    {isCertification ? 'No No→Yes progression event logged yet.' : 'No L2→3 progression event logged yet.'}
                   </p>
                 )}
               </RecordSection>
