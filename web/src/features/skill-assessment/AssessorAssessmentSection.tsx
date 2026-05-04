@@ -85,7 +85,24 @@ export function AssessorAssessmentSection(props: Props) {
     }
 
     setInstructions((setRes.data?.assessment_instructions as string | undefined) ?? '')
-    const rows = (itemsRes.data ?? []) as ChecklistItemRow[]
+    let rows = (itemsRes.data ?? []) as ChecklistItemRow[]
+
+    if (rows.length === 0 && skillKind === 'numeric') {
+      const { error: rpcErr } = await supabase.rpc('ensure_default_skill_assessment_checklist', {
+        p_skill_id: skillId,
+      })
+      if (!rpcErr) {
+        const { data: items2, error: items2Err } = await supabase
+          .from('skill_assessment_checklist_items')
+          .select('id, item_text, sort_order')
+          .eq('skill_id', skillId)
+          .order('sort_order', { ascending: true })
+        if (!items2Err && items2?.length) {
+          rows = items2 as ChecklistItemRow[]
+        }
+      }
+    }
+
     setItems(rows)
     const ids = rows.map((r) => r.id)
 
@@ -147,7 +164,7 @@ export function AssessorAssessmentSection(props: Props) {
     }
 
     setLoading(false)
-  }, [skillId, subjectPersonId])
+  }, [skillId, subjectPersonId, skillKind])
 
   useEffect(() => {
     void load()

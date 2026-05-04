@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BookOpen, BookOpenCheck, Check, ChevronDown, ChevronRight, Pencil, UserCircle, X } from 'lucide-react'
+import { BookOpen, BookOpenCheck, Check, ChevronDown, ChevronRight, FileText, Pencil, UserCircle, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { addDays, compareYMD, localYMD, startOfDay } from '../lib/dueDateUtils'
 import { useAuth } from '../hooks/useAuth'
@@ -29,6 +29,7 @@ import {
   removeAnchorsForCanvasPreview,
 } from '../features/training/trainingLinkUtils'
 import { AssessorAssessmentSection } from '../features/skill-assessment/AssessorAssessmentSection'
+import { QualificationRecordDialog } from '../features/skill-assessment/QualificationRecordDialog'
 
 type SkillRaw = {
   id: string
@@ -307,6 +308,7 @@ export function MySkillsPage() {
     actualLevel: number | null
     skillKind: SkillKind
   } | null>(null)
+  const [qualificationRecord, setQualificationRecord] = useState<{ skillId: string; skillName: string } | null>(null)
   const [editorCtx, setEditorCtx] = useState<CellEditorContext | null>(null)
   const [gapFilter, setGapFilter] = useState<GapFilterValue>('all')
   const [dueQuickFilter, setDueQuickFilter] = useState<MySkillsDueQuickFilter>({ kind: 'none' })
@@ -806,6 +808,12 @@ export function MySkillsPage() {
     return m
   }, [trainingQuestions])
 
+  const skillKindById = useMemo(() => {
+    const m = new Map<string, SkillKind>()
+    for (const x of skillsRaw) m.set(x.id, x.kind)
+    return m
+  }, [skillsRaw])
+
   const trainingEligibleSkillIds = useMemo(() => {
     const s = new Set<string>()
     for (const r of [...requiredRows, ...optionalRows]) {
@@ -1205,6 +1213,10 @@ export function MySkillsPage() {
             knowledgeByStage={knowledgeByStage}
             readOnly={readOnly}
             trainingEligibleIds={trainingEligibleSkillIds}
+            skillKindById={skillKindById}
+            onOpenQualificationRecord={(k) =>
+              setQualificationRecord({ skillId: k.knowledge_skill_id, skillName: k.knowledge_name })
+            }
             onSetKnowledgeLevel={(k, level) => {
               if (!person) return
               const previous = planKnowledges
@@ -1283,6 +1295,9 @@ export function MySkillsPage() {
             trainingEligibleIds={trainingEligibleSkillIds}
             onStartTraining={(row) => setTrainingSkillId(row.skillId)}
             assessorNeededIds={new Set(needsAssessorRows.map((r) => r.skillId))}
+            onOpenQualificationRecord={(row) =>
+              setQualificationRecord({ skillId: row.skillId, skillName: row.skillName })
+            }
             onShowAssessors={(row) =>
               setAssessorSkillInfo({
                 skillId: row.skillId,
@@ -1312,6 +1327,9 @@ export function MySkillsPage() {
             trainingEligibleIds={trainingEligibleSkillIds}
             onStartTraining={(row) => setTrainingSkillId(row.skillId)}
             assessorNeededIds={new Set(optionalAssessorRows.map((r) => r.skillId))}
+            onOpenQualificationRecord={(row) =>
+              setQualificationRecord({ skillId: row.skillId, skillName: row.skillName })
+            }
             onShowAssessors={(row) =>
               setAssessorSkillInfo({
                 skillId: row.skillId,
@@ -1381,6 +1399,15 @@ export function MySkillsPage() {
             setTrainingSkillId(null)
             bumpData()
           }}
+        />
+      ) : null}
+      {person && qualificationRecord ? (
+        <QualificationRecordDialog
+          personId={person.id}
+          personName={person.display_name}
+          skillId={qualificationRecord.skillId}
+          skillName={qualificationRecord.skillName}
+          onDismiss={() => setQualificationRecord(null)}
         />
       ) : null}
       {assessorSkillInfo ? (
@@ -1468,6 +1495,7 @@ function SkillSection(props: {
   trainingEligibleIds?: Set<string>
   onStartTraining?: (row: SkillRowModel) => void
   assessorNeededIds?: Set<string>
+  onOpenQualificationRecord?: (row: SkillRowModel) => void
   onShowAssessors?: (row: SkillRowModel) => void
 }) {
   const {
@@ -1480,6 +1508,7 @@ function SkillSection(props: {
     trainingEligibleIds,
     onStartTraining,
     assessorNeededIds,
+    onOpenQualificationRecord,
     onShowAssessors,
   } = props
 
@@ -1535,25 +1564,58 @@ function SkillSection(props: {
         </td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right align-middle sm:px-2.5">
           <div className="flex flex-wrap items-center justify-end gap-1">
-            {trainingEligibleIds && onStartTraining && trainingEligibleIds.has(row.skillId) ? (
-              <button
-                type="button"
-                onClick={() => onStartTraining(row)}
-                className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-300/80 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-950 hover:bg-sky-100/90"
-              >
-                <BookOpenCheck className="size-3 text-sky-700" aria-hidden />
-                Training
-              </button>
-            ) : null}
-            {assessorNeededIds && onShowAssessors && assessorNeededIds.has(row.skillId) ? (
-              <button
-                type="button"
-                onClick={() => onShowAssessors(row)}
-                className="inline-flex items-center justify-center gap-1 rounded-md border border-violet-300/80 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-950 hover:bg-violet-100/90"
-              >
-                Show assessors
-              </button>
-            ) : null}
+            {row.kind === 'numeric' ? (
+              (row.actual ?? 0) >= 3 && onOpenQualificationRecord ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenQualificationRecord(row)}
+                  title="Qualification record"
+                  aria-label="Qualification record"
+                  className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-zinc-300/90 bg-zinc-100 text-zinc-800 hover:bg-zinc-200/80"
+                >
+                  <FileText className="size-3.5" aria-hidden />
+                </button>
+              ) : row.actual === 2 && onShowAssessors ? (
+                <button
+                  type="button"
+                  onClick={() => onShowAssessors(row)}
+                  className="inline-flex items-center justify-center gap-1 rounded-md border border-violet-300/80 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-950 hover:bg-violet-100/90"
+                >
+                  Assessment
+                </button>
+              ) : onStartTraining && (row.actual ?? 1) < 2 ? (
+                <button
+                  type="button"
+                  onClick={() => onStartTraining(row)}
+                  className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-300/80 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-950 hover:bg-sky-100/90"
+                >
+                  <BookOpenCheck className="size-3 text-sky-700" aria-hidden />
+                  Training
+                </button>
+              ) : null
+            ) : (
+              <>
+                {trainingEligibleIds && onStartTraining && trainingEligibleIds.has(row.skillId) ? (
+                  <button
+                    type="button"
+                    onClick={() => onStartTraining(row)}
+                    className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-300/80 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-950 hover:bg-sky-100/90"
+                  >
+                    <BookOpenCheck className="size-3 text-sky-700" aria-hidden />
+                    Training
+                  </button>
+                ) : null}
+                {assessorNeededIds && onShowAssessors && assessorNeededIds.has(row.skillId) ? (
+                  <button
+                    type="button"
+                    onClick={() => onShowAssessors(row)}
+                    className="inline-flex items-center justify-center gap-1 rounded-md border border-violet-300/80 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-950 hover:bg-violet-100/90"
+                  >
+                    Assessment
+                  </button>
+                ) : null}
+              </>
+            )}
             {readOnly ? null : (
               <button
                 type="button"
@@ -1682,11 +1744,23 @@ function PlanSkillsSection(props: {
   knowledgeByStage: Map<string, PlanKnowledgeRaw[]>
   readOnly: boolean
   trainingEligibleIds: Set<string>
+  skillKindById: Map<string, SkillKind>
+  onOpenQualificationRecord: (k: PlanKnowledgeRaw) => void
   onSetKnowledgeLevel: (k: PlanKnowledgeRaw, level: 1 | 2 | 3) => void
   onStartTraining: (k: PlanKnowledgeRaw) => void
   onShowAssessors: (k: PlanKnowledgeRaw) => void
 }) {
-  const { plans, knowledgeByStage, readOnly, trainingEligibleIds, onSetKnowledgeLevel, onStartTraining, onShowAssessors } = props
+  const {
+    plans,
+    knowledgeByStage,
+    readOnly,
+    trainingEligibleIds,
+    skillKindById,
+    onOpenQualificationRecord,
+    onSetKnowledgeLevel,
+    onStartTraining,
+    onShowAssessors,
+  } = props
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(() => new Set())
   const didInitPlanCollapse = useRef(false)
 
@@ -1767,13 +1841,15 @@ function PlanSkillsSection(props: {
                             <div className="min-w-0">
                               <p className="truncate text-xs font-medium text-fg">{k.knowledge_name}</p>
                               <p className="text-[10px] text-muted">
-                                {trainingEligibleIds.has(k.knowledge_skill_id)
-                                  ? 'Training 1→2, Assessor 2→3'
-                                  : 'Assessor 1→3'}
+                                {skillKindById.get(k.knowledge_skill_id) === 'numeric'
+                                  ? 'Training 1→2 · Assessor 2→3'
+                                  : trainingEligibleIds.has(k.knowledge_skill_id)
+                                    ? 'Training 1→2, Assessor 2→3'
+                                    : 'Assessor 1→3'}
                               </p>
                             </div>
                             {!readOnly ? (
-                              <div className="flex items-center gap-1">
+                              <div className="flex flex-wrap items-center justify-end gap-1">
                                 {([1, 2, 3] as const).map((lv) => {
                                   const current = (k.actual_level ?? 1) === lv
                                   return (
@@ -1792,26 +1868,61 @@ function PlanSkillsSection(props: {
                                     </button>
                                   )
                                 })}
-                                {(k.actual_level ?? 1) <= 1 && trainingEligibleIds.has(k.knowledge_skill_id) ? (
-                                  <button
-                                    type="button"
-                                    disabled={!stage.is_unlocked}
-                                    onClick={() => onStartTraining(k)}
-                                    className="rounded border border-sky-300/80 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-900 disabled:opacity-40"
-                                  >
-                                    Training
-                                  </button>
-                                ) : null}
-                                {(k.actual_level ?? 1) >= 2 || !trainingEligibleIds.has(k.knowledge_skill_id) ? (
-                                  <button
-                                    type="button"
-                                    disabled={!stage.is_unlocked}
-                                    onClick={() => onShowAssessors(k)}
-                                    className="rounded border border-violet-300/80 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-900 disabled:opacity-40"
-                                  >
-                                    Assessor
-                                  </button>
-                                ) : null}
+                                {skillKindById.get(k.knowledge_skill_id) === 'numeric' ? (
+                                  (k.actual_level ?? 0) >= 3 ? (
+                                    <button
+                                      type="button"
+                                      disabled={!stage.is_unlocked}
+                                      onClick={() => onOpenQualificationRecord(k)}
+                                      title="Qualification record"
+                                      aria-label="Qualification record"
+                                      className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-zinc-300/90 bg-zinc-100 text-zinc-800 disabled:opacity-40"
+                                    >
+                                      <FileText className="size-3.5" aria-hidden />
+                                    </button>
+                                  ) : (k.actual_level ?? 1) === 2 ? (
+                                    <button
+                                      type="button"
+                                      disabled={!stage.is_unlocked}
+                                      onClick={() => onShowAssessors(k)}
+                                      className="rounded border border-violet-300/80 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-900 disabled:opacity-40"
+                                    >
+                                      Assessment
+                                    </button>
+                                  ) : (k.actual_level ?? 1) < 2 ? (
+                                    <button
+                                      type="button"
+                                      disabled={!stage.is_unlocked}
+                                      onClick={() => onStartTraining(k)}
+                                      className="rounded border border-sky-300/80 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-900 disabled:opacity-40"
+                                    >
+                                      Training
+                                    </button>
+                                  ) : null
+                                ) : (
+                                  <>
+                                    {(k.actual_level ?? 1) <= 1 && trainingEligibleIds.has(k.knowledge_skill_id) ? (
+                                      <button
+                                        type="button"
+                                        disabled={!stage.is_unlocked}
+                                        onClick={() => onStartTraining(k)}
+                                        className="rounded border border-sky-300/80 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-900 disabled:opacity-40"
+                                      >
+                                        Training
+                                      </button>
+                                    ) : null}
+                                    {(k.actual_level ?? 1) >= 2 || !trainingEligibleIds.has(k.knowledge_skill_id) ? (
+                                      <button
+                                        type="button"
+                                        disabled={!stage.is_unlocked}
+                                        onClick={() => onShowAssessors(k)}
+                                        className="rounded border border-violet-300/80 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-900 disabled:opacity-40"
+                                      >
+                                        Assessor
+                                      </button>
+                                    ) : null}
+                                  </>
+                                )}
                               </div>
                             ) : (
                               <span className="rounded border border-border bg-canvas/70 px-2 py-1 text-[11px] font-semibold text-fg">
@@ -1855,9 +1966,11 @@ function TrainingDialog(props: {
   onSaved: () => void
 }) {
   const { personId, personName, skillId, onDismiss, onSaved } = props
+  const { isAdmin } = useAuth()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [setupIncomplete, setSetupIncomplete] = useState(false)
   const [pack, setPack] = useState<TrainingPackRaw | null>(null)
   const [standard, setStandard] = useState<TrainingStandardRaw | null>(null)
   const [questions, setQuestions] = useState<TrainingQuestionRaw[]>([])
@@ -1886,6 +1999,7 @@ function TrainingDialog(props: {
     void (async () => {
       setLoading(true)
       setError(null)
+      setSetupIncomplete(false)
       setDocUrl(null)
       setPageImageUrls({})
       const [sk, p, st, q] = await Promise.all([
@@ -1911,6 +2025,7 @@ function TrainingDialog(props: {
       if (cancelled) return
       setLoading(false)
       if (sk.error || p.error || st.error || q.error) {
+        setSetupIncomplete(false)
         setError(sk.error?.message ?? p.error?.message ?? st.error?.message ?? q.error?.message ?? 'Failed to load training')
         return
       }
@@ -1922,8 +2037,9 @@ function TrainingDialog(props: {
       setStandard(stData)
       setQuestions(qData)
       if (!packData || qData.length === 0) {
-        setError('Training pack is not configured for this skill yet.')
+        setSetupIncomplete(true)
       } else {
+        setSetupIncomplete(false)
         if (packData.document_path) {
           const signed = await supabase.storage.from(TRAINING_DOC_BUCKET).createSignedUrl(packData.document_path, 60 * 15)
           if (signed.error) {
@@ -2044,6 +2160,27 @@ function TrainingDialog(props: {
           {loading ? <p className="text-sm text-muted">Loading training…</p> : null}
           {error ? (
             <p className="rounded-lg border border-amber-500/40 bg-amber-50 px-3 py-2 text-sm text-amber-950">{error}</p>
+          ) : null}
+
+          {!loading && !submitResult && setupIncomplete ? (
+            <div className="rounded-2xl border border-sky-200/80 bg-sky-50/70 px-4 py-5 text-center shadow-sm">
+              <p className="font-display text-base font-semibold text-sky-950">There is a training package to be set up.</p>
+              <p className="mt-2 text-sm text-sky-900/85">
+                An admin needs to add the training pack and at least one quiz question for this skill under{' '}
+                <strong className="text-fg/90">Admin → Skill training</strong> before operators can complete level 1→2
+                training here.
+              </p>
+              {isAdmin ? (
+                <Link
+                  to="/admin?tab=skill-training"
+                  className="mt-4 inline-flex rounded-xl border border-sky-400/60 bg-white px-4 py-2.5 text-sm font-semibold text-sky-950 shadow-sm hover:bg-sky-50"
+                >
+                  Open Skill training (admin)
+                </Link>
+              ) : (
+                <p className="mt-3 text-xs text-sky-900/75">If you are not an admin, ask your site admin to configure this skill.</p>
+              )}
+            </div>
           ) : null}
 
           {submitResult ? (

@@ -12,6 +12,8 @@ import {
   parseYMD,
   type ReportBucket,
 } from '../features/report/reportBucketUtils'
+import { buildReportAdvisorSnapshot } from '../features/report/reportAdvisorContext'
+import { MatrixReportAdvisor } from '../features/report/MatrixReportAdvisor'
 
 const CHART_BAR_AREA_PX = 180
 /** Role mini-chart: bar heights scale within this fixed track (keeps columns inside the card). */
@@ -631,10 +633,67 @@ export function ReportPage() {
       .slice(0, 25)
   }, [l23Events])
 
+  const advisorContext = useMemo(
+    () =>
+      buildReportAdvisorSnapshot({
+        rangeStart,
+        rangeEnd,
+        filterName,
+        filterRoleId,
+        filterTeamId,
+        filterGroupId,
+        peopleInView: peopleFiltered,
+        roles,
+        teams,
+        groups,
+        skillCatalog,
+        rsrRows,
+        psRows,
+        l12Buckets,
+        l12Values,
+        l23Buckets,
+        l23Values,
+        roleChartStats,
+        l12AttemptsCount: l12Attempts.length,
+        l23EventsCount: l23Events.length,
+        topTrainers: topTrainers.map((t) => ({ name: t.name, n: t.n })),
+        topL23Learners: topL23Learners.map((t) => ({ name: t.name, n: t.n })),
+        topL23Assessors: topL23Assessors.map((t) => ({ name: t.name, n: t.n })),
+        l23Note,
+      }),
+    [
+      rangeStart,
+      rangeEnd,
+      filterName,
+      filterRoleId,
+      filterTeamId,
+      filterGroupId,
+      peopleFiltered,
+      roles,
+      teams,
+      groups,
+      skillCatalog,
+      rsrRows,
+      psRows,
+      l12Buckets,
+      l12Values,
+      l23Buckets,
+      l23Values,
+      roleChartStats,
+      l12Attempts,
+      l23Events,
+      topTrainers,
+      topL23Learners,
+      topL23Assessors,
+      l23Note,
+    ],
+  )
+
   const selectCls =
     'max-w-[8rem] truncate rounded border border-border bg-surface px-1.5 py-1 text-[11px] text-fg md:max-w-[10rem]'
 
   return (
+    <>
     <div className="space-y-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
@@ -930,5 +989,7 @@ export function ReportPage() {
         </>
       )}
     </div>
+    <MatrixReportAdvisor context={advisorContext} allowSend={!loading && !error} />
+    </>
   )
 }

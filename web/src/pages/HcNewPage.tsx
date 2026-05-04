@@ -369,11 +369,12 @@ export function HcNewPage() {
       operator_name: null,
     }
 
+    const insertPayload = rosterAssignmentId
+      ? { ...baseRecord, ldr_assignment_id: rosterAssignmentId }
+      : baseRecord
     let recordRes = await supabase
       .from('hc_records')
-      .insert(
-        rosterAssignmentId ? { ...baseRecord, ldr_assignment_id: rosterAssignmentId } : baseRecord,
-      )
+      .insert(insertPayload as never)
       .select('id')
       .single()
 
