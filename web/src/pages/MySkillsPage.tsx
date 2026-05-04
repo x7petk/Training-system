@@ -304,6 +304,8 @@ export function MySkillsPage() {
     skillId: string
     skillName: string
     required: number
+    actualLevel: number | null
+    skillKind: SkillKind
   } | null>(null)
   const [editorCtx, setEditorCtx] = useState<CellEditorContext | null>(null)
   const [gapFilter, setGapFilter] = useState<GapFilterValue>('all')
@@ -1252,10 +1254,13 @@ export function MySkillsPage() {
               setTrainingSkillId(k.knowledge_skill_id)
             }}
             onShowAssessors={(k) => {
+              const sk = skillsRaw.find((s) => s.id === k.knowledge_skill_id)
               setAssessorSkillInfo({
                 skillId: k.knowledge_skill_id,
                 skillName: k.knowledge_name,
                 required: 3,
+                actualLevel: k.actual_level ?? 1,
+                skillKind: sk?.kind === 'certification' ? 'certification' : 'numeric',
               })
             }}
           />
@@ -1283,6 +1288,8 @@ export function MySkillsPage() {
                 skillId: row.skillId,
                 skillName: row.skillName,
                 required: row.required ?? 0,
+                actualLevel: row.actual,
+                skillKind: row.kind,
               })
             }
           />
@@ -1310,6 +1317,8 @@ export function MySkillsPage() {
                 skillId: row.skillId,
                 skillName: row.skillName,
                 required: row.required ?? Math.min(4, (row.actual ?? 2) + 1),
+                actualLevel: row.actual,
+                skillKind: row.kind,
               })
             }
           />
@@ -1409,9 +1418,19 @@ export function MySkillsPage() {
               </div>
             </div>
 
-            {isAdmin || isAssessor ? (
+            {person && (isAdmin || isAssessor) ? (
               <div className="mb-4 rounded-xl border border-border bg-surface/80 p-3">
-                <AssessorAssessmentSection skillId={assessorSkillInfo.skillId} />
+                <AssessorAssessmentSection
+                  skillId={assessorSkillInfo.skillId}
+                  subjectPersonId={person.id}
+                  skillKind={assessorSkillInfo.skillKind}
+                  actualLevel={assessorSkillInfo.actualLevel}
+                  isAdmin={isAdmin}
+                  onVerificationComplete={() => {
+                    bumpData()
+                    setAssessorSkillInfo((prev) => (prev ? { ...prev, actualLevel: 3 } : prev))
+                  }}
+                />
               </div>
             ) : null}
 
