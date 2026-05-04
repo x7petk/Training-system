@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BookOpenCheck, Check, ChevronDown, ChevronRight, Pencil, UserCircle, X } from 'lucide-react'
+import { BookOpen, BookOpenCheck, Check, ChevronDown, ChevronRight, Pencil, UserCircle, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { addDays, compareYMD, localYMD, startOfDay } from '../lib/dueDateUtils'
 import { useAuth } from '../hooks/useAuth'
@@ -28,6 +28,7 @@ import {
   extractStandardContentLinks,
   removeAnchorsForCanvasPreview,
 } from '../features/training/trainingLinkUtils'
+import { AssessorAssessmentSection } from '../features/skill-assessment/AssessorAssessmentSection'
 
 type SkillRaw = {
   id: string
@@ -299,7 +300,11 @@ export function MySkillsPage() {
   const [catalogPlanKnowledgeSkillIds, setCatalogPlanKnowledgeSkillIds] = useState<Set<string>>(() => new Set())
   const [trainingSkillId, setTrainingSkillId] = useState<string | null>(null)
   const [assessors, setAssessors] = useState<AssessorCard[]>([])
-  const [assessorSkillInfo, setAssessorSkillInfo] = useState<{ skillName: string; required: number } | null>(null)
+  const [assessorSkillInfo, setAssessorSkillInfo] = useState<{
+    skillId: string
+    skillName: string
+    required: number
+  } | null>(null)
   const [editorCtx, setEditorCtx] = useState<CellEditorContext | null>(null)
   const [gapFilter, setGapFilter] = useState<GapFilterValue>('all')
   const [dueQuickFilter, setDueQuickFilter] = useState<MySkillsDueQuickFilter>({ kind: 'none' })
@@ -817,6 +822,12 @@ export function MySkillsPage() {
     return s
   }, [requiredRows, optionalRows, planKnowledges, packBySkill, questionsBySkill])
 
+  const assessorModalTrainingAvailable = useMemo(() => {
+    if (!assessorSkillInfo?.skillId) return false
+    const sid = assessorSkillInfo.skillId
+    return packBySkill.has(sid) && (questionsBySkill.get(sid) ?? []).length > 0
+  }, [assessorSkillInfo, packBySkill, questionsBySkill])
+
   const needsAssessorRows = useMemo(
     () =>
       requiredRows.filter((r) => {
@@ -1242,6 +1253,7 @@ export function MySkillsPage() {
             }}
             onShowAssessors={(k) => {
               setAssessorSkillInfo({
+                skillId: k.knowledge_skill_id,
                 skillName: k.knowledge_name,
                 required: 3,
               })
@@ -1268,6 +1280,7 @@ export function MySkillsPage() {
             assessorNeededIds={new Set(needsAssessorRows.map((r) => r.skillId))}
             onShowAssessors={(row) =>
               setAssessorSkillInfo({
+                skillId: row.skillId,
                 skillName: row.skillName,
                 required: row.required ?? 0,
               })
@@ -1294,6 +1307,7 @@ export function MySkillsPage() {
             assessorNeededIds={new Set(optionalAssessorRows.map((r) => r.skillId))}
             onShowAssessors={(row) =>
               setAssessorSkillInfo({
+                skillId: row.skillId,
                 skillName: row.skillName,
                 required: row.required ?? Math.min(4, (row.actual ?? 2) + 1),
               })
@@ -1362,36 +1376,62 @@ export function MySkillsPage() {
       ) : null}
       {assessorSkillInfo ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-3 py-6">
-          <div className="w-[min(100%,34rem)] rounded-2xl border border-border bg-surface-raised p-4 shadow-glow sm:p-5">
+          <div className="max-h-[90vh] w-[min(100%,34rem)] overflow-auto rounded-2xl border border-border bg-surface-raised p-4 shadow-glow sm:p-5">
             <div className="mb-3 flex items-start justify-between gap-2">
-              <div>
+              <div className="min-w-0 flex-1">
                 <h3 className="font-display text-lg font-semibold tracking-tight">Assessors for qualification</h3>
                 <p className="text-xs text-muted">
                   {assessorSkillInfo.skillName} · required level {assessorSkillInfo.required}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setAssessorSkillInfo(null)}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-black/[0.06] hover:text-fg"
-              >
-                Close
-              </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {person && assessorModalTrainingAvailable ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrainingSkillId(assessorSkillInfo.skillId)
+                      setAssessorSkillInfo(null)
+                    }}
+                    className="rounded-lg border border-sky-300/80 bg-sky-50 p-2 text-sky-900 hover:bg-sky-100"
+                    title="Open training pack (level 1→2)"
+                    aria-label="Open training pack for level 1 to 2"
+                  >
+                    <BookOpen className="size-5" aria-hidden />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setAssessorSkillInfo(null)}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-black/[0.06] hover:text-fg"
+                >
+                  Close
+                </button>
+              </div>
             </div>
-            {assessors.length === 0 ? (
-              <p className="text-sm text-muted">No assessors found.</p>
-            ) : (
-              <ul className="max-h-[55vh] space-y-2 overflow-auto pr-1">
-                {assessors.map((a) => (
-                  <li key={a.profileId} className="rounded-lg border border-border bg-surface p-2.5">
-                    <p className="font-medium text-fg">{a.name}</p>
-                    <p className="mt-0.5 text-xs text-muted">
-                      Team: {a.team || '—'} · Role: {a.roles.length > 0 ? a.roles.join(', ') : 'Assessor'}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
+
+            {isAdmin || isAssessor ? (
+              <div className="mb-4 rounded-xl border border-border bg-surface/80 p-3">
+                <AssessorAssessmentSection skillId={assessorSkillInfo.skillId} />
+              </div>
+            ) : null}
+
+            <div className={isAdmin || isAssessor ? 'border-t border-border pt-3' : ''}>
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted">Who can assess</p>
+              {assessors.length === 0 ? (
+                <p className="text-sm text-muted">No assessors found.</p>
+              ) : (
+                <ul className="max-h-[40vh] space-y-2 overflow-auto pr-1">
+                  {assessors.map((a) => (
+                    <li key={a.profileId} className="rounded-lg border border-border bg-surface p-2.5">
+                      <p className="font-medium text-fg">{a.name}</p>
+                      <p className="mt-0.5 text-xs text-muted">
+                        Team: {a.team || '—'} · Role: {a.roles.length > 0 ? a.roles.join(', ') : 'Assessor'}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         </div>
       ) : null}

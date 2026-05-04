@@ -1,9 +1,15 @@
 import type { ComponentType } from 'react'
-import { BookOpen, Briefcase, Layers, ListChecks, Route, Tag, UserCircle, UsersRound } from 'lucide-react'
+import { BookOpen, Briefcase, ClipboardCheck, Layers, ListChecks, Route, Tag, UserCircle, UsersRound } from 'lucide-react'
 
 export type CatalogManagerSection = 'skill-groups' | 'skills' | 'job-roles' | 'role-requirements'
 
-export type AdminNavId = CatalogManagerSection | 'skill-plans' | 'skill-training' | 'teams' | 'people'
+export type AdminNavId =
+  | CatalogManagerSection
+  | 'skill-plans'
+  | 'skill-training'
+  | 'skill-assessment'
+  | 'teams'
+  | 'people'
 
 export type AdminNavItem = {
   id: AdminNavId
@@ -32,7 +38,15 @@ export const ADMIN_NAV_GROUPS: { heading: string; items: AdminNavItem[] }[] = [
   },
   {
     heading: 'Training',
-    items: [{ id: 'skill-training', label: 'Skill training', hint: 'Operator L1→2 packs', icon: BookOpen }],
+    items: [
+      { id: 'skill-training', label: 'Skill training', hint: 'Operator L1→2 packs', icon: BookOpen },
+      {
+        id: 'skill-assessment',
+        label: 'Skill assessment',
+        hint: 'Instructions & assessor checklist',
+        icon: ClipboardCheck,
+      },
+    ],
   },
   {
     heading: 'Organization',

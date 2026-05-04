@@ -12,6 +12,11 @@ const LazySkillTrainingManager = lazy(async () => {
   return { default: mod.SkillTrainingManager }
 })
 
+const LazySkillAssessmentManager = lazy(async () => {
+  const mod = await import('../features/admin/SkillAssessmentManager')
+  return { default: mod.SkillAssessmentManager }
+})
+
 export function AdminPage() {
   const [searchParams] = useSearchParams()
   const active = parseAdminTab(searchParams.get('tab'))
@@ -44,6 +49,12 @@ export function AdminPage() {
         {active === 'skill-training' ? (
           <Suspense fallback={<p className="text-sm text-muted">Loading training admin tools…</p>}>
             <LazySkillTrainingManager />
+          </Suspense>
+        ) : null}
+
+        {active === 'skill-assessment' ? (
+          <Suspense fallback={<p className="text-sm text-muted">Loading assessment admin tools…</p>}>
+            <LazySkillAssessmentManager />
           </Suspense>
         ) : null}
 

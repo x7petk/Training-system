@@ -24,33 +24,33 @@ function normalizeOptions(values: Array<string | null>) {
 }
 
 function statusPillClass(status: DhDefectStatus) {
-  if (status === 'open') return 'border-red-300 bg-red-100 text-red-800 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-200'
+  if (status === 'open') return 'border-red-400/80 bg-red-100 text-red-950 dark:border-red-800/60 dark:bg-red-950/55 dark:text-red-50'
   if (status === 'in_progress')
-    return 'border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200'
+    return 'border-amber-400/80 bg-amber-100 text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/55 dark:text-amber-50'
   if (status === 'resolved')
-    return 'border-emerald-300 bg-emerald-100 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-200'
-  return 'border-slate-300 bg-slate-100 text-slate-800 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-200'
+    return 'border-emerald-400/80 bg-emerald-100 text-emerald-950 dark:border-emerald-800/60 dark:bg-emerald-950/55 dark:text-emerald-50'
+  return 'border-slate-400/70 bg-slate-100 text-slate-950 dark:border-slate-600 dark:bg-slate-900/85 dark:text-slate-50'
 }
 
 function priorityPillClass(priority: DhDefectPriority) {
-  if (priority === 'critical') return 'border-red-300 bg-red-100 text-red-800 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-200'
+  if (priority === 'critical') return 'border-red-400/80 bg-red-100 text-red-950 dark:border-red-800/60 dark:bg-red-950/55 dark:text-red-50'
   if (priority === 'high')
-    return 'border-orange-300 bg-orange-100 text-orange-900 dark:border-orange-900/40 dark:bg-orange-950/40 dark:text-orange-200'
+    return 'border-orange-400/80 bg-orange-100 text-orange-950 dark:border-orange-800/60 dark:bg-orange-950/55 dark:text-orange-50'
   if (priority === 'medium')
-    return 'border-sky-300 bg-sky-100 text-sky-900 dark:border-sky-900/40 dark:bg-sky-950/40 dark:text-sky-200'
-  return 'border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-200'
+    return 'border-sky-400/80 bg-sky-100 text-sky-950 dark:border-sky-800/60 dark:bg-sky-950/55 dark:text-sky-50'
+  return 'border-zinc-400/70 bg-zinc-100 text-zinc-950 dark:border-zinc-600 dark:bg-zinc-900/85 dark:text-zinc-50'
 }
 
 function typePillClass(label: string) {
   const key = label.toLowerCase()
-  if (key.includes('safety')) return 'border-red-300 bg-red-100 text-red-800 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-200'
-  if (key.includes('quality')) return 'border-blue-300 bg-blue-100 text-blue-800 dark:border-blue-900/40 dark:bg-blue-950/40 dark:text-blue-200'
-  if (key.includes('base')) return 'border-violet-300 bg-violet-100 text-violet-800 dark:border-violet-900/40 dark:bg-violet-950/40 dark:text-violet-200'
+  if (key.includes('safety')) return 'border-red-400/80 bg-red-100 text-red-950 dark:border-red-800/60 dark:bg-red-950/55 dark:text-red-50'
+  if (key.includes('quality')) return 'border-blue-400/80 bg-blue-100 text-blue-950 dark:border-blue-800/60 dark:bg-blue-950/55 dark:text-blue-50'
+  if (key.includes('base')) return 'border-violet-400/80 bg-violet-100 text-violet-950 dark:border-violet-800/60 dark:bg-violet-950/55 dark:text-violet-50'
   if (key.includes('contamination'))
-    return 'border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200'
-  if (key.includes('hard')) return 'border-teal-300 bg-teal-100 text-teal-800 dark:border-teal-900/40 dark:bg-teal-950/40 dark:text-teal-200'
-  if (key.includes('minor')) return 'border-slate-300 bg-slate-100 text-slate-800 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-200'
-  return 'border-pink-300 bg-pink-100 text-pink-800 dark:border-pink-900/40 dark:bg-pink-950/40 dark:text-pink-200'
+    return 'border-amber-400/80 bg-amber-100 text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/55 dark:text-amber-50'
+  if (key.includes('hard')) return 'border-teal-400/80 bg-teal-100 text-teal-950 dark:border-teal-800/60 dark:bg-teal-950/55 dark:text-teal-50'
+  if (key.includes('minor')) return 'border-slate-400/70 bg-slate-100 text-slate-950 dark:border-slate-600 dark:bg-slate-900/85 dark:text-slate-50'
+  return 'border-pink-400/80 bg-pink-100 text-pink-950 dark:border-pink-800/60 dark:bg-pink-950/55 dark:text-pink-50'
 }
 
 export function DhDefectHandlingPage({
