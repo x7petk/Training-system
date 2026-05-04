@@ -13,6 +13,7 @@
     "web:ci": "npm run web:lint && npm run web:test && npm run web:build"
   },
   "devDependencies": {
+    "@vercel/node": "^5.5.16",
     "supabase": "^2.83.0"
   }
 }

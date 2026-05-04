@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bot, MessageCircle, Send, X } from 'lucide-react'
 import { supabase, supabaseConfigured } from '../../lib/supabase'
 import { formatSupabaseFunctionError } from '../../lib/formatSupabaseFunctionError'
+import { invokeReportAdvisorViaProxy, shouldUseReportAdvisorProxy } from '../../lib/reportAdvisorProxy'
 import {
   type ReportAdvisorChartSpec,
   type ReportAdvisorContext,
@@ -99,23 +100,45 @@ export function MatrixReportAdvisor(props: {
         return
       }
 
-      const { data, error } = await supabase.functions.invoke<{ content?: string; error?: string; detail?: string }>(
-        'matrix-report-advisor',
-        { body: { messages: next, context } },
-      )
+      const token = sessionData.session.access_token
 
-      if (error) {
-        setInvokeError(await formatSupabaseFunctionError(error))
-        setSending(false)
-        return
+      if (shouldUseReportAdvisorProxy()) {
+        const { data, errorMessage } = await invokeReportAdvisorViaProxy(token, {
+          messages: next,
+          context,
+        })
+        if (errorMessage) {
+          setInvokeError(errorMessage)
+          setSending(false)
+          return
+        }
+        if (data?.error) {
+          setInvokeError(data.detail ? `${data.error}: ${data.detail}` : data.error)
+          setSending(false)
+          return
+        }
+        const content = data?.content?.trim() || 'No response text returned.'
+        setMessages((prev) => [...prev, { role: 'assistant', content }])
+      } else {
+        const { data, error } = await supabase.functions.invoke<{
+          content?: string
+          error?: string
+          detail?: string
+        }>('matrix-report-advisor', { body: { messages: next, context } })
+
+        if (error) {
+          setInvokeError(await formatSupabaseFunctionError(error))
+          setSending(false)
+          return
+        }
+        if (data?.error) {
+          setInvokeError(data.detail ? `${data.error}: ${data.detail}` : data.error)
+          setSending(false)
+          return
+        }
+        const content = data?.content?.trim() || 'No response text returned.'
+        setMessages((prev) => [...prev, { role: 'assistant', content }])
       }
-      if (data?.error) {
-        setInvokeError(data.detail ? `${data.error}: ${data.detail}` : data.error)
-        setSending(false)
-        return
-      }
-      const content = data?.content?.trim() || 'No response text returned.'
-      setMessages((prev) => [...prev, { role: 'assistant', content }])
     } catch (e) {
       setInvokeError(String(e))
     } finally {

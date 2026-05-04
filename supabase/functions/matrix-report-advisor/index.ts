@@ -2,7 +2,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.99.3'
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, accept, accept-profile, prefer',
+  'Access-Control-Max-Age': '86400',
 }
 
 type ChatMsg = { role: 'user' | 'assistant'; content: string }
