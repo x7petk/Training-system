@@ -215,8 +215,7 @@ export function QualificationRecordDialog(props: Props) {
   }, [personId, skillId])
 
   const isCertification = skillKind === 'certification'
-  const progressionEvents = isCertification ? progressions : progressions.filter((e) => e.from_level === 2 && e.to_level === 3)
-  const fmtLevel = (n: number) => (isCertification ? (n >= 1 ? 'Yes' : 'No') : String(n))
+  const progressionEvents = progressions.filter((e) => e.from_level === 2 && e.to_level === 3)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-3 py-6">
@@ -235,8 +234,11 @@ export function QualificationRecordDialog(props: Props) {
                   <span>{skillName}</span>
                 </p>
                 <p className="mt-2 max-w-md text-[11px] leading-relaxed text-muted">
-                  Training quiz, matrix progression, formal verification, and assessor checklist ticks stored for this
-                  skill.
+                  {loading
+                    ? 'Loading…'
+                    : isCertification
+                      ? 'Formal verification and assessor checklist ticks for this certification (No / Yes).'
+                      : 'Training quiz, matrix progression, formal verification, and assessor checklist ticks stored for this skill.'}
                 </p>
               </div>
             </div>
@@ -266,107 +268,99 @@ export function QualificationRecordDialog(props: Props) {
                 </div>
               ) : null}
 
-              <RecordSection
-                step={1}
-                icon={<BookOpen aria-hidden />}
-                title={isCertification ? 'Certification setup (No → Yes)' : 'Level 1 → 2 (theory)'}
-                subtitle={
-                  isCertification
-                    ? 'Certification skills use No/Yes. Assessment + verification moves this skill to Yes.'
-                    : 'Training pack quiz — first passing attempt marks readiness for level 2.'
-                }
-              >
-                {isCertification ? (
-                  <p className="rounded-lg border border-dashed border-border bg-canvas/50 px-3 py-2 text-sm text-muted">
-                    Training quiz attempts are not used for certification skills.
-                  </p>
-                ) : firstPassedL12 ? (
-                  <dl className="space-y-0">
-                    <DefRow label="First pass" value={formatTs(firstPassedL12.created_at)} />
-                    <DefRow label="Score" value={`${firstPassedL12.score_percent}%`} />
-                  </dl>
-                ) : (
-                  <p className="rounded-lg border border-dashed border-border bg-canvas/50 px-3 py-2 text-sm text-muted">
-                    No passing training attempt on file for this skill.
-                  </p>
-                )}
-                {attempts.length > 0 ? (
-                  <div className="mt-3">
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted">All quiz attempts</p>
-                    <div className="overflow-x-auto rounded-lg border border-border/80">
-                      <table className="w-full min-w-[16rem] border-collapse text-left text-xs">
-                        <thead>
-                          <tr className="border-b border-border bg-black/[0.04] dark:bg-white/[0.06]">
-                            <th className="px-2.5 py-2 font-semibold text-muted">When</th>
-                            <th className="px-2.5 py-2 font-semibold text-muted">Result</th>
-                            <th className="px-2.5 py-2 text-right font-semibold text-muted">Score</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {attempts.map((a, i) => (
-                            <tr key={i} className="border-b border-border/50 last:border-b-0">
-                              <td className="whitespace-nowrap px-2.5 py-1.5 text-fg">{formatTs(a.created_at)}</td>
-                              <td className="px-2.5 py-1.5">
-                                <span
-                                  className={
-                                    a.passed
-                                      ? 'rounded-md bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-900'
-                                      : 'rounded-md bg-zinc-200/80 px-1.5 py-0.5 font-medium text-zinc-800'
-                                  }
-                                >
-                                  {a.passed ? 'Passed' : 'Not passed'}
-                                </span>
-                              </td>
-                              <td className="whitespace-nowrap px-2.5 py-1.5 text-right tabular-nums text-fg">
-                                {a.score_percent}%
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ) : null}
-              </RecordSection>
-
-              <RecordSection
-                step={2}
-                icon={<UserRound aria-hidden />}
-                title={isCertification ? 'No → Yes progression' : 'Level 2 → 3 (practice)'}
-                subtitle={
-                  isCertification
-                    ? 'Logged when matrix assessment/verification marks this certification as Yes.'
-                    : 'Logged when the matrix moves this skill from 2 to 3 (assessor or admin).'
-                }
-              >
-                {progressionEvents.length > 0 ? (
-                  <ol className="space-y-2">
-                    {progressionEvents.map((e, i) => (
-                      <li
-                        key={i}
-                        className="rounded-lg border border-border/80 bg-canvas/40 px-3 py-2.5 text-sm text-fg"
-                      >
-                        <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <span className="font-medium tabular-nums">{formatTs(e.created_at)}</span>
-                          <span className="text-[11px] text-muted">
-                            {isCertification ? `${fmtLevel(e.from_level)} → ${fmtLevel(e.to_level)}` : `Level ${e.from_level} → ${e.to_level}`}
-                          </span>
+              {!isCertification ? (
+                <>
+                  <RecordSection
+                    step={1}
+                    icon={<BookOpen aria-hidden />}
+                    title="Level 1 → 2 (theory)"
+                    subtitle="Training pack quiz — first passing attempt marks readiness for level 2."
+                  >
+                    {firstPassedL12 ? (
+                      <dl className="space-y-0">
+                        <DefRow label="First pass" value={formatTs(firstPassedL12.created_at)} />
+                        <DefRow label="Score" value={`${firstPassedL12.score_percent}%`} />
+                      </dl>
+                    ) : (
+                      <p className="rounded-lg border border-dashed border-border bg-canvas/50 px-3 py-2 text-sm text-muted">
+                        No passing training attempt on file for this skill.
+                      </p>
+                    )}
+                    {attempts.length > 0 ? (
+                      <div className="mt-3">
+                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted">All quiz attempts</p>
+                        <div className="overflow-x-auto rounded-lg border border-border/80">
+                          <table className="w-full min-w-[16rem] border-collapse text-left text-xs">
+                            <thead>
+                              <tr className="border-b border-border bg-black/[0.04] dark:bg-white/[0.06]">
+                                <th className="px-2.5 py-2 font-semibold text-muted">When</th>
+                                <th className="px-2.5 py-2 font-semibold text-muted">Result</th>
+                                <th className="px-2.5 py-2 text-right font-semibold text-muted">Score</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {attempts.map((a, i) => (
+                                <tr key={i} className="border-b border-border/50 last:border-b-0">
+                                  <td className="whitespace-nowrap px-2.5 py-1.5 text-fg">{formatTs(a.created_at)}</td>
+                                  <td className="px-2.5 py-1.5">
+                                    <span
+                                      className={
+                                        a.passed
+                                          ? 'rounded-md bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-900'
+                                          : 'rounded-md bg-zinc-200/80 px-1.5 py-0.5 font-medium text-zinc-800'
+                                      }
+                                    >
+                                      {a.passed ? 'Passed' : 'Not passed'}
+                                    </span>
+                                  </td>
+                                  <td className="whitespace-nowrap px-2.5 py-1.5 text-right tabular-nums text-fg">
+                                    {a.score_percent}%
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
-                        <p className="mt-1 text-xs text-muted">
-                          Recorded by <span className="font-medium text-fg/90">{profileName(e.assessor_profile)}</span>
-                        </p>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="rounded-lg border border-dashed border-border bg-canvas/50 px-3 py-2 text-sm text-muted">
-                    {isCertification ? 'No No→Yes progression event logged yet.' : 'No L2→3 progression event logged yet.'}
-                  </p>
-                )}
-              </RecordSection>
+                      </div>
+                    ) : null}
+                  </RecordSection>
+
+                  <RecordSection
+                    step={2}
+                    icon={<UserRound aria-hidden />}
+                    title="Level 2 → 3 (practice)"
+                    subtitle="Logged when the matrix moves this skill from 2 to 3 (assessor or admin)."
+                  >
+                    {progressionEvents.length > 0 ? (
+                      <ol className="space-y-2">
+                        {progressionEvents.map((e, i) => (
+                          <li
+                            key={i}
+                            className="rounded-lg border border-border/80 bg-canvas/40 px-3 py-2.5 text-sm text-fg"
+                          >
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                              <span className="font-medium tabular-nums">{formatTs(e.created_at)}</span>
+                              <span className="text-[11px] text-muted">
+                                Level {e.from_level} → {e.to_level}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-muted">
+                              Recorded by <span className="font-medium text-fg/90">{profileName(e.assessor_profile)}</span>
+                            </p>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="rounded-lg border border-dashed border-border bg-canvas/50 px-3 py-2 text-sm text-muted">
+                        No L2→3 progression event logged yet.
+                      </p>
+                    )}
+                  </RecordSection>
+                </>
+              ) : null}
 
               <RecordSection
-                step={3}
+                step={isCertification ? 1 : 3}
                 icon={<ClipboardCheck aria-hidden />}
                 title="Formal verification"
                 subtitle="When an assessor used “Verify” after completing the checklist."
@@ -391,7 +385,7 @@ export function QualificationRecordDialog(props: Props) {
               </RecordSection>
 
               <RecordSection
-                step={4}
+                step={isCertification ? 2 : 4}
                 icon={<ListChecks aria-hidden />}
                 title="Assessor checklist"
                 subtitle="Each line ticked for this person, with who signed it off and when."
