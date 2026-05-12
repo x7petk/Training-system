@@ -29,6 +29,19 @@ export default defineConfig(({ mode }) => {
               })
             },
           },
+          '/api/ux-ui-expert': {
+            target,
+            changeOrigin: true,
+            secure: true,
+            rewrite: () => '/functions/v1/ux-ui-expert',
+            // http-proxy; types vary by Vite version
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            configure: (proxy: any) => {
+              proxy.on('proxyReq', (proxyReq: { setHeader: (k: string, v: string) => void }) => {
+                proxyReq.setHeader('apikey', anon)
+              })
+            },
+          },
         }
       : undefined
 

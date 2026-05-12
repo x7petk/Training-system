@@ -4,13 +4,14 @@ import { AuthContext, type AppProfileRole } from './auth-context'
 import { supabase, supabaseConfigured } from '../lib/supabase'
 
 const PROFILE_SECTION_SELECT =
-  'role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems' as const
+  'role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents' as const
 
 type ProfileSectionRow = {
   role: string | null
   can_access_skill_matrix: boolean | null
   can_access_ldr_tools: boolean | null
   can_access_rtt_systems: boolean | null
+  can_access_agents: boolean | null
 }
 
 function normalizeProfileRole(raw: string | undefined | null): AppProfileRole {
@@ -33,12 +34,14 @@ function inferSectionFlagsFromRole(role: AppProfileRole): {
   matrix: boolean
   ldr: boolean
   rtt: boolean
+  agents: boolean
 } {
   const isAdm = role === 'admin' || role === 'super_admin'
   return {
     matrix: isAdm || role === 'assessor' || role === 'operator',
     ldr: isAdm,
     rtt: isAdm,
+    agents: isAdm,
   }
 }
 
@@ -50,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [canAccessSkillMatrix, setCanAccessSkillMatrix] = useState(false)
   const [canAccessLdrTools, setCanAccessLdrTools] = useState(false)
   const [canAccessRttSystems, setCanAccessRttSystems] = useState(false)
+  const [canAccessAgents, setCanAccessAgents] = useState(false)
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null)
 
   const applyProfileRow = useCallback((data: ProfileSectionRow) => {
@@ -57,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCanAccessSkillMatrix(Boolean(data.can_access_skill_matrix))
     setCanAccessLdrTools(Boolean(data.can_access_ldr_tools))
     setCanAccessRttSystems(Boolean(data.can_access_rtt_systems))
+    setCanAccessAgents(Boolean(data.can_access_agents))
     setProfileLoadError(null)
   }, [])
 
@@ -65,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCanAccessSkillMatrix(false)
     setCanAccessLdrTools(false)
     setCanAccessRttSystems(false)
+    setCanAccessAgents(false)
     setProfileLoadError(errorMessage)
   }, [])
 
@@ -102,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setCanAccessSkillMatrix(inferred.matrix)
           setCanAccessLdrTools(inferred.ldr)
           setCanAccessRttSystems(inferred.rtt)
+          setCanAccessAgents(inferred.agents)
           setProfileLoadError(null)
           return
         }
@@ -138,6 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCanAccessSkillMatrix(false)
         setCanAccessLdrTools(false)
         setCanAccessRttSystems(false)
+        setCanAccessAgents(false)
         setProfileLoadError(null)
       }
     })
@@ -152,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCanAccessSkillMatrix(false)
         setCanAccessLdrTools(false)
         setCanAccessRttSystems(false)
+        setCanAccessAgents(false)
         setProfileLoadError(null)
       }
     })
@@ -232,6 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canAccessSkillMatrix,
       canAccessLdrTools,
       canAccessRttSystems,
+      canAccessAgents,
       profileReady,
       adminLoading,
       profileLoadError,
@@ -252,6 +262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canAccessSkillMatrix,
       canAccessLdrTools,
       canAccessRttSystems,
+      canAccessAgents,
       profileReady,
       adminLoading,
       profileLoadError,

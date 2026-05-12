@@ -17,6 +17,7 @@ export type AuthContextValue = {
   canAccessSkillMatrix: boolean
   canAccessLdrTools: boolean
   canAccessRttSystems: boolean
+  canAccessAgents: boolean
   /** False while logged in but `profiles.role` has not been loaded yet (avoids wrong redirects on refresh). */
   profileReady: boolean
   adminLoading: boolean

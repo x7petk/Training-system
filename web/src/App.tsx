@@ -65,6 +65,9 @@ import { SuperAdminRoute } from './components/SuperAdminRoute'
 import { MasterDataLayout } from './components/MasterDataLayout'
 import { MasterDataStructurePage } from './pages/MasterDataStructurePage'
 import { MasterDataPeoplePage } from './pages/MasterDataPeoplePage'
+import { AgentsLayout } from './components/AgentsLayout'
+import { AgentsToolPage } from './pages/AgentsToolPage'
+import { UxUiExpertPage } from './pages/UxUiExpertPage'
 
 export default function App() {
   return (
@@ -195,6 +198,29 @@ export default function App() {
                 </RttAdminRoute>
               }
             />
+          </Route>
+
+          <Route
+            path="agents"
+            element={
+              <SectionAccessRoute section="agents">
+                <AgentsLayout />
+              </SectionAccessRoute>
+            }
+          >
+            <Route index element={<Navigate to="problem-solve-advisor" replace />} />
+            <Route path="problem-solve-advisor" element={<AgentsToolPage title="Problem solve advisor" />} />
+            <Route path="planner" element={<AgentsToolPage title="Planner" />} />
+            <Route path="ux-ui-expert" element={<UxUiExpertPage />} />
+            <Route path="q-and-a" element={<AgentsToolPage title="Q&A" />} />
+            <Route path="reliability-engineer" element={<AgentsToolPage title="Reliability Engineer" />} />
+            <Route path="flex-trends" element={<AgentsToolPage title="Flex trends" />} />
+            <Route path="data-sciencer" element={<AgentsToolPage title="Data Sciencer" />} />
+            <Route path="vision-detection" element={<AgentsToolPage title="Vision Detection" />} />
+            <Route path="comms-generator" element={<AgentsToolPage title="Comms generator" />} />
+            <Route path="sop-optimiser" element={<AgentsToolPage title="SOP optimiser" />} />
+            <Route path="staff-calculator" element={<AgentsToolPage title="Staff Calculator" />} />
+            <Route path="kpi-consultant" element={<AgentsToolPage title="KPI consultant" />} />
           </Route>
 
           <Route

@@ -1,0 +1,17 @@
+import { BarChart3, Bot, Calculator, ClipboardList, Database, Eye, Network, Shield, Sparkles } from 'lucide-react'
+import type { SectionNavItem } from '../../components/AppSectionLayout'
+
+export const AGENTS_NAV_ITEMS: SectionNavItem[] = [
+  { to: '/agents/problem-solve-advisor', label: 'Problem solve advisor', icon: Sparkles, end: true },
+  { to: '/agents/planner', label: 'Planner', icon: ClipboardList, end: true },
+  { to: '/agents/ux-ui-expert', label: 'UX/UI expert', icon: Eye, end: true },
+  { to: '/agents/q-and-a', label: 'Q&A', icon: Bot, end: true },
+  { to: '/agents/reliability-engineer', label: 'Reliability Engineer', icon: Shield, end: true },
+  { to: '/agents/flex-trends', label: 'Flex trends', icon: Network, end: true },
+  { to: '/agents/data-sciencer', label: 'Data Sciencer', icon: Database, end: true },
+  { to: '/agents/vision-detection', label: 'Vision Detection', icon: Eye, end: true },
+  { to: '/agents/comms-generator', label: 'Comms generator', icon: Bot, end: true },
+  { to: '/agents/sop-optimiser', label: 'SOP optimiser', icon: ClipboardList, end: true },
+  { to: '/agents/staff-calculator', label: 'Staff Calculator', icon: Calculator, end: true },
+  { to: '/agents/kpi-consultant', label: 'KPI consultant', icon: BarChart3, end: true },
+]

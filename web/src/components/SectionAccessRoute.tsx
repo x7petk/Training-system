@@ -6,10 +6,10 @@ export function SectionAccessRoute({
   section,
   children,
 }: {
-  section: 'ldr' | 'rtt'
+  section: 'ldr' | 'rtt' | 'agents'
   children?: ReactNode
 }) {
-  const { profileReady, canAccessLdrTools, canAccessRttSystems } = useAuth()
+  const { profileReady, canAccessLdrTools, canAccessRttSystems, canAccessAgents } = useAuth()
 
   if (!profileReady) {
     return (
@@ -20,7 +20,8 @@ export function SectionAccessRoute({
     )
   }
 
-  const ok = section === 'ldr' ? canAccessLdrTools : canAccessRttSystems
+  const ok =
+    section === 'ldr' ? canAccessLdrTools : section === 'rtt' ? canAccessRttSystems : canAccessAgents
   if (!ok) {
     return <Navigate to="/" replace />
   }

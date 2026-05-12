@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Database, Grid3X3, KeyRound, LogOut, Network, UsersRound } from 'lucide-react'
+import { Bot, Database, Grid3X3, KeyRound, LogOut, Network, UsersRound } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 const cardClass =
@@ -14,12 +14,13 @@ export function AppHubPage() {
     canAccessSkillMatrix,
     canAccessLdrTools,
     canAccessRttSystems,
+    canAccessAgents,
     profileLoadError,
   } = useAuth()
   const navigate = useNavigate()
 
   const anyApp =
-    canAccessSkillMatrix || canAccessLdrTools || canAccessRttSystems || isAdmin
+    canAccessSkillMatrix || canAccessLdrTools || canAccessRttSystems || canAccessAgents || isAdmin
 
   return (
     <div className="relative flex min-h-svh flex-col justify-center space-y-8 px-4 py-10 md:py-12">
@@ -89,6 +90,16 @@ export function AppHubPage() {
               </span>
               <span className="font-display text-xl font-semibold tracking-tight sm:text-2xl">RTT systems</span>
               <span className="text-xs text-muted">Systems workspace</span>
+            </Link>
+          ) : null}
+
+          {canAccessAgents ? (
+            <Link to="/agents" className={cardClass}>
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-fuchsia-500/15 text-fuchsia-800 transition-transform group-hover:scale-105 dark:text-fuchsia-300">
+                <Bot className="size-8" aria-hidden />
+              </span>
+              <span className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Agents</span>
+              <span className="text-xs text-muted">Build and manage agent sets</span>
             </Link>
           ) : null}
 

@@ -10,26 +10,61 @@ type AccessRow = {
   can_access_skill_matrix: boolean
   can_access_ldr_tools: boolean
   can_access_rtt_systems: boolean
+  can_access_agents: boolean
+}
+
+function isMissingAgentsColumnError(message: string, code?: string): boolean {
+  if (String(code ?? '') === '42703') return true
+  const m = message.toLowerCase()
+  return m.includes('can_access_agents') && m.includes('does not exist')
 }
 
 export function SectionAccessPanel() {
   const { user, refreshProfile } = useAuth()
   const [rows, setRows] = useState<AccessRow[]>([])
+  const [agentsColumnAvailable, setAgentsColumnAvailable] = useState(true)
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const load = useCallback(() => {
-    return supabase
+  const load = useCallback(async () => {
+    const withAgents = await supabase
+      .from('profiles')
+      .select(
+        'id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents',
+      )
+      .order('display_name', { ascending: true })
+
+    if (!withAgents.error && withAgents.data) {
+      setAgentsColumnAvailable(true)
+      setRows(withAgents.data as AccessRow[])
+      setError(null)
+      return null
+    }
+
+    const primaryErr = withAgents.error
+    if (!primaryErr || !isMissingAgentsColumnError(primaryErr.message, primaryErr.code)) {
+      return primaryErr
+    }
+
+    const legacy = await supabase
       .from('profiles')
       .select('id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems')
       .order('display_name', { ascending: true })
-      .then(({ data, error: err }) => {
-        if (!err && data) {
-          setRows(data as AccessRow[])
-        }
-        return err
-      })
+
+    if (legacy.error) return legacy.error
+
+    setAgentsColumnAvailable(false)
+    setRows(
+      (legacy.data ?? []).map((row) => ({
+        ...(row as Omit<AccessRow, 'can_access_agents'>),
+        can_access_agents: false,
+      })),
+    )
+    setError(
+      'Agents access is unavailable until the latest database migration is applied (missing profiles.can_access_agents column).',
+    )
+    return null
   }, [])
 
   useEffect(() => {
@@ -46,7 +81,11 @@ export function SectionAccessPanel() {
 
   async function toggleField(
     profileId: string,
-    field: 'can_access_skill_matrix' | 'can_access_ldr_tools' | 'can_access_rtt_systems',
+    field:
+      | 'can_access_skill_matrix'
+      | 'can_access_ldr_tools'
+      | 'can_access_rtt_systems'
+      | 'can_access_agents',
     next: boolean,
   ) {
     setError(null)
@@ -96,6 +135,7 @@ export function SectionAccessPanel() {
                 <th className="px-4 py-3 text-center">Skill Matrix</th>
                 <th className="px-4 py-3 text-center">LDR tools</th>
                 <th className="px-4 py-3 text-center">RTT systems</th>
+                {agentsColumnAvailable ? <th className="px-4 py-3 text-center">Agents</th> : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -113,6 +153,9 @@ export function SectionAccessPanel() {
                       ['can_access_skill_matrix', r.can_access_skill_matrix],
                       ['can_access_ldr_tools', r.can_access_ldr_tools],
                       ['can_access_rtt_systems', r.can_access_rtt_systems],
+                      ...(agentsColumnAvailable
+                        ? ([['can_access_agents', r.can_access_agents]] as const)
+                        : []),
                     ] as const
                   ).map(([field, checked]) => (
                     <td key={field} className="px-4 py-3 text-center">
