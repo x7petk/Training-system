@@ -99,6 +99,18 @@ export function DdsProcessLayout() {
                   >
                     KPIs
                   </NavLink>
+                  <NavLink
+                    to="/dds-process/admin/p2p-standard"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    P2P standard
+                  </NavLink>
                 </>
               ) : null}
             </div>

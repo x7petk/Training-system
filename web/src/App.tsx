@@ -54,6 +54,9 @@ const DdsAdminKpiGroupsPage = lazy(() =>
   import('./pages/DdsAdminKpiGroupsPage').then((m) => ({ default: m.DdsAdminKpiGroupsPage })),
 )
 const DdsAdminKpisPage = lazy(() => import('./pages/DdsAdminKpisPage').then((m) => ({ default: m.DdsAdminKpisPage })))
+const DdsAdminP2pStandardPage = lazy(() =>
+  import('./pages/DdsAdminP2pStandardPage').then((m) => ({ default: m.DdsAdminP2pStandardPage })),
+)
 
 const RttSystemsUserGuidePage = lazy(() =>
   import('./pages/RttSystemsUserGuidePage').then((m) => ({ default: m.RttSystemsUserGuidePage })),
@@ -267,6 +270,7 @@ export default function App() {
               <Route index element={<Navigate to="kpi-groups" replace />} />
               <Route path="kpi-groups" element={<DdsAdminKpiGroupsPage />} />
               <Route path="kpis" element={<DdsAdminKpisPage />} />
+              <Route path="p2p-standard" element={<DdsAdminP2pStandardPage />} />
             </Route>
           </Route>
 
