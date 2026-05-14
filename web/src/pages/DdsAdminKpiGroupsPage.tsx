@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import {
   DDS_KPI_DISPLAY_SECTION_OPTIONS,
   defaultKpiDisplaySections,
@@ -10,7 +9,6 @@ import {
 
 type KpiGroupRow = {
   id: string
-  master_cell_id: string
   name: string
   sort_order: number
   display_sections: string[] | null
@@ -25,7 +23,6 @@ function sectionsFromRow(raw: string[] | null | undefined): DdsKpiDisplaySection
 }
 
 export function DdsAdminKpiGroupsPage() {
-  const { status: scopeStatus, error: scopeError, cellId } = usePlan24Workspace()
   const [rows, setRows] = useState<KpiGroupRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -35,17 +32,11 @@ export function DdsAdminKpiGroupsPage() {
   const [savingId, setSavingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    if (!cellId) {
-      setRows([])
-      setLoading(false)
-      return
-    }
     setLoading(true)
     setError(null)
     const { data, error: qErr } = await supabase
       .from('dds_kpi_groups')
-      .select('id, master_cell_id, name, sort_order, display_sections')
-      .eq('master_cell_id', cellId)
+      .select('id, name, sort_order, display_sections')
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true })
     setLoading(false)
@@ -60,22 +51,18 @@ export function DdsAdminKpiGroupsPage() {
       nextDrafts[r.id] = { name: r.name, sections: sectionsFromRow(r.display_sections) }
     }
     setDrafts(nextDrafts)
-  }, [cellId])
+  }, [])
 
   useEffect(() => {
-    if (scopeStatus !== 'ready') return
     void load()
-  }, [scopeStatus, load])
-
-  const canUseCell = scopeStatus === 'ready' && Boolean(cellId)
+  }, [load])
 
   async function addGroup() {
     const name = newName.trim()
-    if (!name || !cellId) return
+    if (!name) return
     setError(null)
     const nextOrder = rows.length > 0 ? Math.max(...rows.map((r) => r.sort_order)) + 1 : 0
     const { error: insErr } = await supabase.from('dds_kpi_groups').insert({
-      master_cell_id: cellId,
       name,
       sort_order: nextOrder,
       display_sections: newSections,
@@ -128,35 +115,13 @@ export function DdsAdminKpiGroupsPage() {
     })
   }
 
-  if (scopeStatus === 'loading') {
-    return (
-      <div className="flex min-h-[12rem] items-center justify-center text-sm text-muted" role="status">
-        Loading scope…
-      </div>
-    )
-  }
-
-  if (scopeStatus === 'error') {
-    return (
-      <p className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-        {scopeError ?? 'Could not load master data.'}
-      </p>
-    )
-  }
-
-  if (!canUseCell) {
-    return (
-      <p className="rounded-xl border border-border bg-surface-raised/50 px-4 py-3 text-sm text-muted">
-        Choose a site, plant, and cell in the scope bar to manage KPI groups.
-      </p>
-    )
-  }
-
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-border bg-surface-raised/30 p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-fg">New KPI group</h2>
-        <p className="mt-1 text-xs text-muted">Name must be unique per cell (case-insensitive). Tick where this group should appear.</p>
+        <p className="mt-1 text-xs text-muted">
+          Name must be unique across the whole organisation (case-insensitive). Tick where this group should appear in DDS.
+        </p>
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="min-w-0 flex-1">
             <label htmlFor="dds-kpi-new-name" className="text-xs font-medium text-muted">
@@ -211,7 +176,7 @@ export function DdsAdminKpiGroupsPage() {
         {loading ? (
           <p className="mt-4 text-sm text-muted">Loading…</p>
         ) : rows.length === 0 ? (
-          <p className="mt-4 text-sm text-muted">No KPI groups for this cell yet.</p>
+          <p className="mt-4 text-sm text-muted">No KPI groups yet.</p>
         ) : (
           <ul className="mt-4 space-y-6">
             {rows.map((row) => {

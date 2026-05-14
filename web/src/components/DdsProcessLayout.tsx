@@ -13,14 +13,18 @@ import {
   ShieldCheck,
   UsersRound,
 } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { AppSectionLayout } from './AppSectionLayout'
 import { useAuth } from '../hooks/useAuth'
 import { Plan24WorkspaceProvider } from '../features/plan24/Plan24WorkspaceContext'
 import { Plan24ScopeBar } from '../features/plan24/Plan24ScopeBar'
 
+const adminBasePath = '/dds-process/admin'
+
 export function DdsProcessLayout() {
   const { isAdmin, profileReady } = useAuth()
+  const location = useLocation()
+  const inAdminSection = location.pathname.startsWith(adminBasePath)
 
   return (
     <Plan24WorkspaceProvider>
@@ -28,7 +32,7 @@ export function DdsProcessLayout() {
         storageKey="dds-process.sidebar-collapsed"
         title="DDS Process"
         subtitle="DDS process"
-        mainTop={<Plan24ScopeBar />}
+        mainTop={inAdminSection ? null : <Plan24ScopeBar />}
         headerIconClass="bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
         HeaderIcon={Layers}
         outletFallback={
@@ -55,18 +59,35 @@ export function DdsProcessLayout() {
         ]}
         accountFooter={
           profileReady && isAdmin ? (
-            <NavLink
-              to="/dds-process/admin"
-              className={({ isActive }) =>
-                [
-                  'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
-                  isActive ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
-                ].join(' ')
-              }
-            >
-              <LayoutDashboard className="size-4 shrink-0 opacity-80" aria-hidden />
-              Admin
-            </NavLink>
+            <div className="flex flex-col gap-0.5">
+              <NavLink
+                to={adminBasePath}
+                end={false}
+                className={({ isActive }) =>
+                  [
+                    'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
+                    isActive ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                  ].join(' ')
+                }
+              >
+                <LayoutDashboard className="size-4 shrink-0 opacity-80" aria-hidden />
+                Admin
+              </NavLink>
+              {inAdminSection ? (
+                <NavLink
+                  to="/dds-process/admin/kpi-groups"
+                  end
+                  className={({ isActive }) =>
+                    [
+                      'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                      isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                    ].join(' ')
+                  }
+                >
+                  KPI groups
+                </NavLink>
+              ) : null}
+            </div>
           ) : null
         }
       />
