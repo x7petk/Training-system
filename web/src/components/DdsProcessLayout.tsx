@@ -74,18 +74,32 @@ export function DdsProcessLayout() {
                 Admin
               </NavLink>
               {inAdminSection ? (
-                <NavLink
-                  to="/dds-process/admin/kpi-groups"
-                  end
-                  className={({ isActive }) =>
-                    [
-                      'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
-                      isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
-                    ].join(' ')
-                  }
-                >
-                  KPI groups
-                </NavLink>
+                <>
+                  <NavLink
+                    to="/dds-process/admin/kpi-groups"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    KPI groups
+                  </NavLink>
+                  <NavLink
+                    to="/dds-process/admin/kpis"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    KPIs
+                  </NavLink>
+                </>
               ) : null}
             </div>
           ) : null

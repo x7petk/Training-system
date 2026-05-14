@@ -11,7 +11,7 @@ export function DdsProcessAdminLayout() {
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">DDS Process — Admin</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted">
-            KPI groups are shared across every site, plant, and cell. Use the sidebar to open KPI groups when you are in Admin.
+            KPI groups and their KPIs are shared across every site, plant, and cell. Use the sidebar under Admin for KPI groups and KPIs.
           </p>
         </div>
       </header>

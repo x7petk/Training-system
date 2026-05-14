@@ -53,6 +53,7 @@ const DdsProcessAdminLayout = lazy(() =>
 const DdsAdminKpiGroupsPage = lazy(() =>
   import('./pages/DdsAdminKpiGroupsPage').then((m) => ({ default: m.DdsAdminKpiGroupsPage })),
 )
+const DdsAdminKpisPage = lazy(() => import('./pages/DdsAdminKpisPage').then((m) => ({ default: m.DdsAdminKpisPage })))
 
 const RttSystemsUserGuidePage = lazy(() =>
   import('./pages/RttSystemsUserGuidePage').then((m) => ({ default: m.RttSystemsUserGuidePage })),
@@ -265,6 +266,7 @@ export default function App() {
             >
               <Route index element={<Navigate to="kpi-groups" replace />} />
               <Route path="kpi-groups" element={<DdsAdminKpiGroupsPage />} />
+              <Route path="kpis" element={<DdsAdminKpisPage />} />
             </Route>
           </Route>
 
