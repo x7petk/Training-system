@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
-import { labelForDdsP2pResponseKind } from '../features/dds/ddsP2pResponseKind'
+import {
+  DDS_P2P_RESPONSE_KINDS,
+  labelForDdsP2pResponseKind,
+  type DdsP2pResponseKind,
+  isDdsP2pResponseKind,
+} from '../features/dds/ddsP2pResponseKind'
 
 type StdQuestion = {
   id: string
@@ -13,26 +19,35 @@ type StdQuestion = {
   sort_order: number
 }
 
-type SoftKpi = {
+type CellQuestionRow = {
   id: string
-  label: string
-  sort_order: number
-  kpi_group_id: string
-  group_name: string
-}
-
-type CellSoftRow = {
-  id: string
-  kpi_id: string
-  is_enabled: boolean
-  note: string | null
+  master_cell_id: string
+  prompt: string
+  response_kind: string
+  target_number: number | string | null
   sort_order: number
 }
 
-type Draft = { is_enabled: boolean; note: string; rowId: string | null }
+const inputClass =
+  'mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-2'
 
 const textareaClass =
   'mt-1 min-h-[4.5rem] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-2'
+
+const selectClass =
+  'mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-2'
+
+function parseTargetNumber(raw: string): number | null {
+  const t = raw.trim().replace(',', '.')
+  if (!t) return null
+  const n = Number(t)
+  return Number.isFinite(n) ? n : null
+}
+
+function targetToInputValue(v: number | string | null | undefined): string {
+  if (v === null || v === undefined) return ''
+  return String(v)
+}
 
 export function DdsAdminP2pSoftPointsPage() {
   const { status: scopeStatus, error: scopeError, cellId } = usePlan24Workspace()
@@ -40,11 +55,15 @@ export function DdsAdminP2pSoftPointsPage() {
   const [groupNames, setGroupNames] = useState<Record<string, string>>({})
   const [loadingStd, setLoadingStd] = useState(true)
 
-  const [softKpis, setSoftKpis] = useState<SoftKpi[]>([])
-  const [loadingKpis, setLoadingKpis] = useState(true)
-
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({})
-  const [savingKpiId, setSavingKpiId] = useState<string | null>(null)
+  const [cellQuestions, setCellQuestions] = useState<CellQuestionRow[]>([])
+  const [loadingCellQs, setLoadingCellQs] = useState(false)
+  const [qDrafts, setQDrafts] = useState<
+    Record<string, { prompt: string; response_kind: DdsP2pResponseKind; targetText: string }>
+  >({})
+  const [newPrompt, setNewPrompt] = useState('')
+  const [newKind, setNewKind] = useState<DdsP2pResponseKind>('yes_no')
+  const [newTargetText, setNewTargetText] = useState('')
+  const [savingId, setSavingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const loadGlobalStandard = useCallback(async () => {
@@ -82,92 +101,51 @@ export function DdsAdminP2pSoftPointsPage() {
     setLoadingStd(false)
   }, [])
 
-  const loadSoftKpis = useCallback(async () => {
-    setLoadingKpis(true)
-    setError(null)
-    const { data: kpis, error: kErr } = await supabase
-      .from('dds_kpis')
-      .select('id, label, sort_order, kpi_group_id')
-      .eq('point_kind', 'soft_point')
-      .order('sort_order', { ascending: true })
-      .order('label', { ascending: true })
-    if (kErr) {
-      setError(kErr.message)
-      setLoadingKpis(false)
+  const loadCellQuestions = useCallback(async (cid: string) => {
+    if (!cid) {
+      setCellQuestions([])
+      setQDrafts({})
       return
     }
-    const kList = (kpis ?? []) as Omit<SoftKpi, 'group_name'>[]
-    const gids = [...new Set(kList.map((k) => k.kpi_group_id))]
-    let gmap: Record<string, string> = {}
-    if (gids.length > 0) {
-      const { data: grps, error: gErr } = await supabase.from('dds_kpi_groups').select('id, name').in('id', gids)
-      if (gErr) {
-        setError(gErr.message)
-        setLoadingKpis(false)
-        return
-      }
-      for (const g of grps ?? []) {
-        gmap[g.id as string] = g.name as string
+    setLoadingCellQs(true)
+    setError(null)
+    const { data, error: qErr } = await supabase
+      .from('dds_p2p_cell_soft_point_questions')
+      .select('id, master_cell_id, prompt, response_kind, target_number, sort_order')
+      .eq('master_cell_id', cid)
+      .order('sort_order', { ascending: true })
+      .order('prompt', { ascending: true })
+    setLoadingCellQs(false)
+    if (qErr) {
+      setError(qErr.message)
+      return
+    }
+    const list = (data ?? []) as CellQuestionRow[]
+    setCellQuestions(list)
+    const next: Record<string, { prompt: string; response_kind: DdsP2pResponseKind; targetText: string }> = {}
+    for (const q of list) {
+      const kind = isDdsP2pResponseKind(q.response_kind) ? q.response_kind : 'yes_no'
+      next[q.id] = {
+        prompt: q.prompt,
+        response_kind: kind,
+        targetText: kind === 'number_with_target' ? targetToInputValue(q.target_number) : '',
       }
     }
-    const merged: SoftKpi[] = kList.map((k) => ({
-      ...k,
-      group_name: gmap[k.kpi_group_id] ?? 'Group',
-    }))
-    merged.sort((a, b) => a.group_name.localeCompare(b.group_name) || a.sort_order - b.sort_order || a.label.localeCompare(b.label))
-    setSoftKpis(merged)
-    setLoadingKpis(false)
+    setQDrafts(next)
   }, [])
-
-  const loadCellSettings = useCallback(
-    async (cid: string) => {
-      if (!cid) {
-        setDrafts({})
-        return
-      }
-      setError(null)
-      const { data, error: sErr } = await supabase
-        .from('dds_p2p_cell_soft_points')
-        .select('id, kpi_id, is_enabled, note, sort_order')
-        .eq('master_cell_id', cid)
-      if (sErr) {
-        setError(sErr.message)
-        return
-      }
-      const rows = (data ?? []) as CellSoftRow[]
-      const byKpi = new Map(rows.map((r) => [r.kpi_id, r]))
-      setDrafts(() => {
-        const next: Record<string, Draft> = {}
-        for (const k of softKpis) {
-          const r = byKpi.get(k.id)
-          next[k.id] = {
-            is_enabled: r?.is_enabled ?? false,
-            note: r?.note ?? '',
-            rowId: r?.id ?? null,
-          }
-        }
-        return next
-      })
-    },
-    [softKpis],
-  )
 
   useEffect(() => {
     void loadGlobalStandard()
-    void loadSoftKpis()
-  }, [loadGlobalStandard, loadSoftKpis])
+  }, [loadGlobalStandard])
 
   useEffect(() => {
-    if (softKpis.length === 0) {
-      setDrafts({})
-      return
-    }
     if (scopeStatus !== 'ready' || !cellId) {
-      setDrafts({})
+      setCellQuestions([])
+      setQDrafts({})
       return
     }
-    void loadCellSettings(cellId)
-  }, [scopeStatus, cellId, softKpis, loadCellSettings])
+    void loadCellQuestions(cellId)
+  }, [scopeStatus, cellId, loadCellQuestions])
 
   const stdGrouped = useMemo(() => {
     const map = new Map<string, StdQuestion[]>()
@@ -179,65 +157,85 @@ export function DdsAdminP2pSoftPointsPage() {
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [stdQuestions, groupNames])
 
-  async function saveSoftKpi(kpi: SoftKpi) {
-    const d = drafts[kpi.id]
-    if (!d || !cellId) return
-    setSavingKpiId(kpi.id)
-    setError(null)
-    let ok = true
-    try {
-      if (d.is_enabled) {
-        const note = d.note.trim() || null
-        if (d.rowId) {
-          const { error: uErr } = await supabase
-            .from('dds_p2p_cell_soft_points')
-            .update({ is_enabled: true, note, sort_order: kpi.sort_order })
-            .eq('id', d.rowId)
-          if (uErr) {
-            setError(uErr.message)
-            ok = false
-          }
-        } else {
-          const { data: ins, error: iErr } = await supabase
-            .from('dds_p2p_cell_soft_points')
-            .insert({
-              master_cell_id: cellId,
-              kpi_id: kpi.id,
-              is_enabled: true,
-              note,
-              sort_order: kpi.sort_order,
-            })
-            .select('id')
-            .single()
-          if (iErr) {
-            setError(iErr.message)
-            ok = false
-          } else if (ins?.id) {
-            setDrafts((prev) => ({
-              ...prev,
-              [kpi.id]: { ...d, rowId: ins.id as string },
-            }))
-          }
-        }
-      } else if (d.rowId) {
-        const { error: dErr } = await supabase.from('dds_p2p_cell_soft_points').delete().eq('id', d.rowId)
-        if (dErr) {
-          setError(dErr.message)
-          ok = false
-        } else {
-          setDrafts((prev) => ({
-            ...prev,
-            [kpi.id]: { is_enabled: false, note: '', rowId: null },
-          }))
-        }
-      }
-      if (ok) await loadCellSettings(cellId)
-    } finally {
-      setSavingKpiId(null)
+  function buildQuestionPayload(d: { prompt: string; response_kind: DdsP2pResponseKind; targetText: string }): {
+    prompt: string
+    response_kind: DdsP2pResponseKind
+    target_number: number | null
+  } | null {
+    const prompt = d.prompt.trim()
+    if (!prompt) return null
+    if (d.response_kind === 'yes_no') {
+      return { prompt, response_kind: 'yes_no', target_number: null }
     }
+    const target = parseTargetNumber(d.targetText)
+    if (target === null) {
+      setError('Number questions need a target value.')
+      return null
+    }
+    return { prompt, response_kind: 'number_with_target', target_number: target }
   }
 
-  if (scopeStatus === 'loading' || loadingStd || loadingKpis) {
+  async function addQuestion() {
+    if (!cellId) return
+    if (!newPrompt.trim()) return
+    setError(null)
+    const payload = buildQuestionPayload({
+      prompt: newPrompt,
+      response_kind: newKind,
+      targetText: newTargetText,
+    })
+    if (!payload) return
+    const nextOrder = cellQuestions.length > 0 ? Math.max(...cellQuestions.map((q) => q.sort_order)) + 1 : 0
+    const { error: insErr } = await supabase.from('dds_p2p_cell_soft_point_questions').insert({
+      master_cell_id: cellId,
+      prompt: payload.prompt,
+      response_kind: payload.response_kind,
+      target_number: payload.target_number,
+      sort_order: nextOrder,
+    })
+    if (insErr) {
+      setError(insErr.message)
+      return
+    }
+    setNewPrompt('')
+    setNewKind('yes_no')
+    setNewTargetText('')
+    await loadCellQuestions(cellId)
+  }
+
+  async function saveQuestion(id: string) {
+    const d = qDrafts[id]
+    if (!d || !cellId) return
+    setError(null)
+    const payload = buildQuestionPayload(d)
+    if (!payload) {
+      if (!d.prompt.trim()) setError('Question text is required.')
+      return
+    }
+    setSavingId(id)
+    const { error: uErr } = await supabase
+      .from('dds_p2p_cell_soft_point_questions')
+      .update({
+        prompt: payload.prompt,
+        response_kind: payload.response_kind,
+        target_number: payload.target_number,
+      })
+      .eq('id', id)
+    setSavingId(null)
+    if (uErr) setError(uErr.message)
+    else await loadCellQuestions(cellId)
+  }
+
+  async function removeQuestion(row: CellQuestionRow) {
+    if (!confirm('Remove this soft point question for this cell?')) return
+    if (!cellId) return
+    setError(null)
+    const { error: dErr } = await supabase.from('dds_p2p_cell_soft_point_questions').delete().eq('id', row.id)
+    if (dErr) setError(dErr.message)
+    else await loadCellQuestions(cellId)
+  }
+
+  if (scopeStatus === 'loading') {
     return (
       <div className="flex min-h-[12rem] items-center justify-center text-sm text-muted" role="status">
         Loading…
@@ -253,18 +251,11 @@ export function DdsAdminP2pSoftPointsPage() {
     )
   }
 
-  if (scopeStatus !== 'ready' || !cellId) {
-    return (
-      <p className="rounded-xl border border-border bg-surface-raised/50 px-4 py-3 text-sm text-muted">
-        Choose a site, plant, and cell in the scope bar to configure P2P soft points for that cell.
-      </p>
-    )
-  }
-
   return (
     <div className="space-y-10">
       <p className="max-w-2xl text-sm text-muted">
-        Global P2P standard questions are shown for reference. Soft point KPIs (from Admin → KPIs) can be turned on for this cell with an optional note.
+        Global P2P standard questions apply everywhere and are read-only here. Soft point questions belong only to the
+        cell selected in the scope bar; use the same answer types as P2P standard (yes/no or number with target).
       </p>
 
       {error ? (
@@ -274,7 +265,9 @@ export function DdsAdminP2pSoftPointsPage() {
       <section className="rounded-2xl border border-border bg-surface-raised/30 p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-fg">Global P2P standard questions</h2>
         <p className="mt-1 text-xs text-muted">Defined under P2P standard. Read-only here.</p>
-        {stdQuestions.length === 0 ? (
+        {loadingStd ? (
+          <p className="mt-4 text-sm text-muted">Loading…</p>
+        ) : stdQuestions.length === 0 ? (
           <p className="mt-4 text-sm text-muted">
             None yet. Add them under{' '}
             <Link to="/dds-process/admin/p2p-standard" className="font-medium text-accent underline-offset-2 hover:underline">
@@ -306,76 +299,182 @@ export function DdsAdminP2pSoftPointsPage() {
         )}
       </section>
 
-      <section className="rounded-2xl border border-border bg-surface-raised/30 p-4 sm:p-5">
-        <h2 className="text-sm font-semibold text-fg">Soft points for this cell</h2>
-        <p className="mt-1 text-xs text-muted">
-          Only KPIs marked as Soft Point in{' '}
-          <Link to="/dds-process/admin/kpis" className="font-medium text-accent underline-offset-2 hover:underline">
-            KPIs
-          </Link>{' '}
-          appear here. Saving when enabled creates a row for this cell; turning off removes it.
+      {scopeStatus === 'ready' && !cellId ? (
+        <p className="rounded-xl border border-border bg-surface-raised/50 px-4 py-3 text-sm text-muted">
+          Choose a site, plant, and cell in the scope bar to add or edit soft point questions for that cell only.
         </p>
-        {softKpis.length === 0 ? (
-          <p className="mt-4 text-sm text-muted">No Soft Point KPIs exist yet. Add KPIs with type Soft Point under KPIs.</p>
-        ) : (
-          <ul className="mt-4 space-y-4">
-            {softKpis.map((kpi) => {
-              const d = drafts[kpi.id]
-              if (!d) return null
-              return (
-                <li key={kpi.id} className="rounded-xl border border-border bg-surface p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-xs text-muted">{kpi.group_name}</p>
-                      <p className="text-sm font-medium text-fg">{kpi.label}</p>
+      ) : null}
+
+      {scopeStatus === 'ready' && cellId ? (
+        <section className="rounded-2xl border border-border bg-surface-raised/30 p-4 sm:p-5">
+          <h2 className="text-sm font-semibold text-fg">Soft point questions for this cell</h2>
+          <p className="mt-1 text-xs text-muted">
+            Only this cell will see these in P2P. Question text must be unique per cell (case-insensitive).
+          </p>
+
+          <div className="mt-6 space-y-3 rounded-xl border border-border bg-surface p-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">New question</h3>
+            <div>
+              <label htmlFor="cell-soft-new-prompt" className="text-xs font-medium text-muted">
+                Question
+              </label>
+              <textarea
+                id="cell-soft-new-prompt"
+                className={textareaClass}
+                value={newPrompt}
+                onChange={(e) => setNewPrompt(e.target.value)}
+                placeholder="Cell-specific soft point question"
+                rows={3}
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="cell-soft-new-kind" className="text-xs font-medium text-muted">
+                  Answer type
+                </label>
+                <select
+                  id="cell-soft-new-kind"
+                  className={selectClass}
+                  value={newKind}
+                  onChange={(e) => setNewKind(e.target.value as DdsP2pResponseKind)}
+                >
+                  {DDS_P2P_RESPONSE_KINDS.map((k) => (
+                    <option key={k.value} value={k.value}>
+                      {k.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {newKind === 'number_with_target' ? (
+                <div>
+                  <label htmlFor="cell-soft-new-target" className="text-xs font-medium text-muted">
+                    Target number
+                  </label>
+                  <input
+                    id="cell-soft-new-target"
+                    className={inputClass}
+                    value={newTargetText}
+                    onChange={(e) => setNewTargetText(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="e.g. 100"
+                  />
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+              disabled={!newPrompt.trim()}
+              onClick={() => void addQuestion()}
+            >
+              <Plus className="size-4" aria-hidden />
+              Add question
+            </button>
+          </div>
+
+          {loadingCellQs ? (
+            <p className="mt-4 text-sm text-muted">Loading cell questions…</p>
+          ) : cellQuestions.length === 0 ? (
+            <p className="mt-4 text-sm text-muted">No soft point questions for this cell yet.</p>
+          ) : (
+            <ul className="mt-4 space-y-4">
+              {cellQuestions.map((row) => {
+                const d = qDrafts[row.id]
+                if (!d) return null
+                return (
+                  <li key={row.id} className="rounded-xl border border-border bg-surface p-4">
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-medium text-muted" htmlFor={`cell-soft-prompt-${row.id}`}>
+                          Question
+                        </label>
+                        <textarea
+                          id={`cell-soft-prompt-${row.id}`}
+                          className={textareaClass}
+                          rows={3}
+                          value={d.prompt}
+                          onChange={(e) =>
+                            setQDrafts((prev) => ({
+                              ...prev,
+                              [row.id]: { ...d, prompt: e.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <div>
+                          <label className="text-xs font-medium text-muted" htmlFor={`cell-soft-kind-${row.id}`}>
+                            Answer type
+                          </label>
+                          <select
+                            id={`cell-soft-kind-${row.id}`}
+                            className={selectClass}
+                            value={d.response_kind}
+                            onChange={(e) => {
+                              const kind = e.target.value as DdsP2pResponseKind
+                              setQDrafts((prev) => ({
+                                ...prev,
+                                [row.id]: {
+                                  ...d,
+                                  response_kind: kind,
+                                  targetText: kind === 'number_with_target' ? d.targetText : '',
+                                },
+                              }))
+                            }}
+                          >
+                            {DDS_P2P_RESPONSE_KINDS.map((k) => (
+                              <option key={k.value} value={k.value}>
+                                {k.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        {d.response_kind === 'number_with_target' ? (
+                          <div>
+                            <label className="text-xs font-medium text-muted" htmlFor={`cell-soft-target-${row.id}`}>
+                              Target number
+                            </label>
+                            <input
+                              id={`cell-soft-target-${row.id}`}
+                              className={inputClass}
+                              value={d.targetText}
+                              onChange={(e) =>
+                                setQDrafts((prev) => ({
+                                  ...prev,
+                                  [row.id]: { ...d, targetText: e.target.value },
+                                }))
+                              }
+                              inputMode="decimal"
+                            />
+                          </div>
+                        ) : null}
+                        <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-1 lg:justify-end">
+                          <button
+                            type="button"
+                            className="inline-flex h-10 flex-1 items-center justify-center rounded-lg border border-border bg-surface px-3 text-sm font-semibold hover:bg-black/[0.04] disabled:opacity-40 dark:hover:bg-white/[0.06] lg:flex-none"
+                            disabled={savingId === row.id}
+                            onClick={() => void saveQuestion(row.id)}
+                          >
+                            {savingId === row.id ? 'Saving…' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10"
+                            title="Delete question"
+                            onClick={() => void removeQuestion(row)}
+                          >
+                            <Trash2 className="size-4" aria-hidden />
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs text-muted">
-                      <input
-                        type="checkbox"
-                        className="size-3.5 rounded border-border accent-accent"
-                        checked={d.is_enabled}
-                        onChange={(e) =>
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [kpi.id]: { ...d, is_enabled: e.target.checked },
-                          }))
-                        }
-                      />
-                      Use for this cell
-                    </label>
-                  </div>
-                  <div className="mt-3">
-                    <label className="text-xs font-medium text-muted" htmlFor={`soft-note-${kpi.id}`}>
-                      Note (optional)
-                    </label>
-                    <textarea
-                      id={`soft-note-${kpi.id}`}
-                      className={textareaClass}
-                      rows={2}
-                      value={d.note}
-                      onChange={(e) =>
-                        setDrafts((prev) => ({
-                          ...prev,
-                          [kpi.id]: { ...d, note: e.target.value },
-                        }))
-                      }
-                      disabled={!d.is_enabled}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="mt-3 inline-flex h-10 items-center justify-center rounded-lg border border-border bg-surface px-4 text-sm font-semibold hover:bg-black/[0.04] disabled:opacity-40 dark:hover:bg-white/[0.06]"
-                    disabled={savingKpiId === kpi.id}
-                    onClick={() => void saveSoftKpi(kpi)}
-                  >
-                    {savingKpiId === kpi.id ? 'Saving…' : 'Save'}
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </section>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+      ) : null}
     </div>
   )
 }
