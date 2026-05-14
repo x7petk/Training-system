@@ -11,7 +11,7 @@ export function DdsProcessAdminLayout() {
         <div className="min-w-0">
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">DDS Process — Admin</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted">
-            KPI groups, KPIs, and P2P standard are global. P2P soft points are extra questions per cell only (use the scope bar there). Open sections from the sidebar under Admin.
+            KPI groups, KPIs, and P2P standard are global. P2P soft points are extra questions per cell and KPI group (use the scope bar there). Open sections from the sidebar under Admin.
           </p>
         </div>
       </header>
