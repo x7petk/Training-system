@@ -47,6 +47,12 @@ const SosReportPage = lazy(() => import('./pages/ObsReportPage').then((m) => ({ 
 import { RttSystemsSectionPage } from './pages/RttSystemsSectionPage'
 
 const Plan24Page = lazy(() => import('./pages/Plan24Page').then((m) => ({ default: m.Plan24Page })))
+const DdsProcessAdminLayout = lazy(() =>
+  import('./components/DdsProcessAdminLayout').then((m) => ({ default: m.DdsProcessAdminLayout })),
+)
+const DdsAdminKpiGroupsPage = lazy(() =>
+  import('./pages/DdsAdminKpiGroupsPage').then((m) => ({ default: m.DdsAdminKpiGroupsPage })),
+)
 
 const RttSystemsUserGuidePage = lazy(() =>
   import('./pages/RttSystemsUserGuidePage').then((m) => ({ default: m.RttSystemsUserGuidePage })),
@@ -68,6 +74,12 @@ import { MasterDataPeoplePage } from './pages/MasterDataPeoplePage'
 import { AgentsLayout } from './components/AgentsLayout'
 import { AgentsToolPage } from './pages/AgentsToolPage'
 import { UxUiExpertPage } from './pages/UxUiExpertPage'
+import { DdsAdminRoute } from './components/DdsAdminRoute'
+import { DdsProcessLayout } from './components/DdsProcessLayout'
+import { DdsPlaceholderPage } from './pages/DdsPlaceholderPage'
+import { ProblemSolveAdminRoute } from './components/ProblemSolveAdminRoute'
+import { ProblemSolveLayout } from './components/ProblemSolveLayout'
+import { ProblemSolvePlaceholderPage } from './pages/ProblemSolvePlaceholderPage'
 
 export default function App() {
   return (
@@ -221,6 +233,66 @@ export default function App() {
             <Route path="sop-optimiser" element={<AgentsToolPage title="SOP optimiser" />} />
             <Route path="staff-calculator" element={<AgentsToolPage title="Staff Calculator" />} />
             <Route path="kpi-consultant" element={<AgentsToolPage title="KPI consultant" />} />
+          </Route>
+
+          <Route
+            path="dds-process"
+            element={
+              <SectionAccessRoute section="dds">
+                <DdsProcessLayout />
+              </SectionAccessRoute>
+            }
+          >
+            <Route index element={<Navigate to="plan-24" replace />} />
+            <Route path="plan-24" element={<Plan24Page />} />
+            <Route path="p2p" element={<DdsPlaceholderPage title="P2P" />} />
+            <Route path="shift-dds" element={<DdsPlaceholderPage title="Shift DDS" />} />
+            <Route path="line-compliance" element={<DdsPlaceholderPage title="Line compliance" />} />
+            <Route path="line-dds" element={<DdsPlaceholderPage title="Line DDS" />} />
+            <Route path="plant-dds" element={<DdsPlaceholderPage title="Plant DDS" />} />
+            <Route path="site-compliance" element={<DdsPlaceholderPage title="Site compliance" />} />
+            <Route path="site-dds" element={<DdsPlaceholderPage title="Site DDS" />} />
+            <Route path="wds" element={<DdsPlaceholderPage title="WDS" />} />
+            <Route path="e-plan" element={<DdsPlaceholderPage title="e-plan" />} />
+            <Route path="pdca" element={<DdsPlaceholderPage title="PDCA" />} />
+            <Route
+              path="admin"
+              element={
+                <DdsAdminRoute>
+                  <DdsProcessAdminLayout />
+                </DdsAdminRoute>
+              }
+            >
+              <Route index element={<Navigate to="kpi-groups" replace />} />
+              <Route path="kpi-groups" element={<DdsAdminKpiGroupsPage />} />
+            </Route>
+          </Route>
+
+          <Route
+            path="problem-solve"
+            element={
+              <SectionAccessRoute section="problem-solve">
+                <ProblemSolveLayout />
+              </SectionAccessRoute>
+            }
+          >
+            <Route index element={<Navigate to="plan-24" replace />} />
+            <Route path="plan-24" element={<Plan24Page />} />
+            <Route path="ips" element={<ProblemSolvePlaceholderPage title="IPS" />} />
+            <Route path="ups" element={<ProblemSolvePlaceholderPage title="UPS" />} />
+            <Route path="w-w" element={<ProblemSolvePlaceholderPage title="W-W" />} />
+            <Route path="bde" element={<ProblemSolvePlaceholderPage title="BDE" />} />
+            <Route path="ida" element={<ProblemSolvePlaceholderPage title="IDA" />} />
+            <Route path="safety" element={<ProblemSolvePlaceholderPage title="Safety" />} />
+            <Route path="quality" element={<ProblemSolvePlaceholderPage title="Quality" />} />
+            <Route
+              path="admin"
+              element={
+                <ProblemSolveAdminRoute>
+                  <ProblemSolvePlaceholderPage title="Admin" />
+                </ProblemSolveAdminRoute>
+              }
+            />
           </Route>
 
           <Route

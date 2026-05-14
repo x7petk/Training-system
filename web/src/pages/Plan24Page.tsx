@@ -12,6 +12,7 @@ import {
   PanelRightOpen,
   Plus,
   Search,
+  Settings2,
   Trash2,
   X,
 } from 'lucide-react'
@@ -39,6 +40,15 @@ import type {
 } from '../features/plan24/plan24Types'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { addMinutes, minutesBetween } from '../features/plan24/plan24ShiftUtils'
+import {
+  buildDefaultViewPrefs,
+  loadViewPrefs,
+  mergeViewPrefs,
+  PLAN24_EVENT_TYPE_FILTER_OPTIONS,
+  plan24NormalizedEventType,
+  saveViewPrefs,
+  type Plan24ViewPrefs,
+} from '../features/plan24/plan24ViewPrefs'
 
 /**
  * Persist drag move: optional suppression row (so materialize does not refill the vacated
@@ -220,6 +230,10 @@ export function Plan24Page() {
   const [deviationTypes, setDeviationTypes] = useState<{ id: string; label: string; is_active: boolean; sort_order: number }[]>([])
   const [dhTypes, setDhTypes] = useState<{ id: string; label: string; is_active: boolean; sort_order: number }[]>([])
   const [qualityFailTypes, setQualityFailTypes] = useState<{ id: string; label: string; is_active: boolean; sort_order: number }[]>([])
+
+  const [viewPrefs, setViewPrefs] = useState<Plan24ViewPrefs>(() => buildDefaultViewPrefs([]))
+  const [prefsModalOpen, setPrefsModalOpen] = useState(false)
+  const [prefsDraft, setPrefsDraft] = useState<Plan24ViewPrefs>(() => buildDefaultViewPrefs([]))
 
   const [adhocOpen, setAdhocOpen] = useState(false)
   const [adhocRole, setAdhocRole] = useState<string>('')
@@ -417,6 +431,51 @@ export function Plan24Page() {
     () => events.filter((e) => !e.deleted_at && !eventRoleMatchesRosterColumn(e)),
     [events, eventRoleMatchesRosterColumn],
   )
+
+  useEffect(() => {
+    if (!cellId || !user?.id) {
+      setViewPrefs(buildDefaultViewPrefs([]))
+      return
+    }
+    const roleNames = activeRoles.map((r) => r.name.trim())
+    const stored = loadViewPrefs(user.id, cellId)
+    setViewPrefs(mergeViewPrefs(stored, roleNames))
+    setPrefsModalOpen(false)
+  }, [user?.id, cellId, activeRoles])
+
+  const viewPrefsPasses = useCallback(
+    (e: Plan24EventRow) => {
+      const tk = plan24NormalizedEventType(e.event_type)
+      if (viewPrefs.eventTypes[tk] === false) return false
+      const rn = (e.role_name ?? '').trim()
+      if (!rn) return true
+      if (viewPrefs.roles[rn] === false) return false
+      return true
+    },
+    [viewPrefs],
+  )
+
+  const assignedEventsView = useMemo(
+    () => assignedEvents.filter(viewPrefsPasses),
+    [assignedEvents, viewPrefsPasses],
+  )
+
+  const gridPlacedEventsView = useMemo(
+    () => gridPlacedEvents.filter(viewPrefsPasses),
+    [gridPlacedEvents, viewPrefsPasses],
+  )
+
+  const roleColsView = useMemo(
+    () => roleCols.filter((c) => viewPrefs.roles[c.name] !== false),
+    [roleCols, viewPrefs],
+  )
+
+  const progress = useMemo(() => {
+    const total = assignedEventsView.length
+    const done = assignedEventsView.filter((e) => e.status === 'complete').length
+    const inProg = assignedEventsView.filter((e) => e.status === 'in_progress').length
+    return { total, done, inProg }
+  }, [assignedEventsView])
 
   const refresh = useCallback(async () => {
     if (!cellId || scopeStatus !== 'ready') return
@@ -1079,11 +1138,18 @@ export function Plan24Page() {
   )
 
   useEffect(() => {
-    const anyModalOpen = adhocOpen || detailEv !== null || raiseIssueOpen || deleteEv !== null || rolePickOpen
+    const anyModalOpen =
+      prefsModalOpen ||
+      adhocOpen ||
+      detailEv !== null ||
+      raiseIssueOpen ||
+      deleteEv !== null ||
+      rolePickOpen
     function onKey(e: KeyboardEvent) {
       if (e.defaultPrevented) return
       if (e.key === 'Escape') {
-        if (deleteEv) setDeleteEv(null)
+        if (prefsModalOpen) setPrefsModalOpen(false)
+        else if (deleteEv) setDeleteEv(null)
         else if (raiseIssueOpen) setRaiseIssueOpen(false)
         else if (rolePickOpen) setRolePickOpen(false)
         else if (adhocOpen) setAdhocOpen(false)
@@ -1116,7 +1182,7 @@ export function Plan24Page() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [adhocOpen, detailEv, raiseIssueOpen, deleteEv, rolePickOpen, panelOpen, taskBarOpen, stepDay, gotoToday, cycleShift])
+  }, [prefsModalOpen, adhocOpen, detailEv, raiseIssueOpen, deleteEv, rolePickOpen, panelOpen, taskBarOpen, stepDay, gotoToday, cycleShift])
 
   const filteredPickPeople = useMemo(() => {
     const q = rolePickQuery.trim().toLowerCase()
@@ -1126,13 +1192,6 @@ export function Plan24Page() {
       return label.includes(q)
     })
   }, [people, rolePickQuery])
-
-  const progress = useMemo(() => {
-    const total = assignedEvents.length
-    const done = assignedEvents.filter((e) => e.status === 'complete').length
-    const inProg = assignedEvents.filter((e) => e.status === 'in_progress').length
-    return { total, done, inProg }
-  }, [assignedEvents])
 
   const isToday = planDate === todayYmd
   const atMaxVisible = planDate >= maxVisibleYmd
@@ -1169,22 +1228,6 @@ export function Plan24Page() {
     <div className="flex h-full min-h-0 flex-1 flex-col gap-1">
       <div className="flex min-h-0 min-w-0 shrink-0 items-center gap-2 overflow-x-auto border-b border-border/50 pb-2">
         <h1 className="shrink-0 font-display text-lg font-semibold tracking-tight md:text-xl">Plan 24</h1>
-        {loading ? (
-          <span
-            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-dim px-2 py-0.5 text-[11px] font-medium text-accent"
-            role="status"
-            aria-live="polite"
-          >
-            <Loader2 className="size-3 animate-spin" aria-hidden /> Loading
-          </span>
-        ) : null}
-        {roster && progress.total > 0 ? (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-fg/80">
-            <CircleDot className="size-3 text-emerald-600" aria-hidden />
-            {progress.done}/{progress.total}
-            {progress.inProg > 0 ? ` · ${progress.inProg} prog` : ''}
-          </span>
-        ) : null}
 
         <span className="hidden h-5 w-px shrink-0 bg-border sm:block" aria-hidden />
 
@@ -1283,9 +1326,43 @@ export function Plan24Page() {
         <span className="inline-flex shrink-0 rounded-lg border border-border bg-surface px-2 py-1 text-[10px] font-medium text-muted">
           Visible horizon: today to {maxVisibleYmd}
         </span>
+        <div className="min-w-0 flex-1 shrink" aria-hidden />
+        {loading ? (
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-dim px-2 py-0.5 text-[11px] font-medium text-accent"
+            role="status"
+            aria-live="polite"
+          >
+            <Loader2 className="size-3 animate-spin" aria-hidden /> Loading
+          </span>
+        ) : null}
+        {roster ? (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-fg/80">
+            <CircleDot className="size-3 text-emerald-600" aria-hidden />
+            {progress.done}/{progress.total}
+            {progress.inProg > 0 ? ` · ${progress.inProg} prog` : ''}
+          </span>
+        ) : null}
+        {roster ? (
+          <button
+            type="button"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted hover:bg-black/[0.05] hover:text-fg"
+            aria-label="View preferences"
+            title="View preferences"
+            onClick={() => {
+              setPrefsDraft({
+                eventTypes: { ...viewPrefs.eventTypes },
+                roles: { ...viewPrefs.roles },
+              })
+              setPrefsModalOpen(true)
+            }}
+          >
+            <Settings2 className="size-4" aria-hidden />
+          </button>
+        ) : null}
         <button
           type="button"
-          className={`ml-auto inline-flex shrink-0 items-center rounded-xl border border-border bg-surface py-1.5 text-xs font-semibold text-fg shadow-sm hover:bg-surface-raised/80 ${
+          className={`inline-flex shrink-0 items-center rounded-xl border border-border bg-surface py-1.5 text-xs font-semibold text-fg shadow-sm hover:bg-surface-raised/80 ${
             panelOpen ? 'gap-1 px-2 sm:px-2.5' : 'px-1.5 sm:px-2'
           }`}
           onClick={() => setPanelOpen((o) => !o)}
@@ -1323,18 +1400,26 @@ export function Plan24Page() {
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl pb-11">
-          {roster && shifts.length > 0 && activeRoles.length > 0 ? (
+          {roster && shifts.length > 0 && activeRoles.length > 0 && roleColsView.length > 0 ? (
             <Plan24Grid
               windowStart={windowBounds.start}
               windowEnd={windowBounds.end}
-              roles={roleCols}
-              events={gridPlacedEvents}
+              roles={roleColsView}
+              events={gridPlacedEventsView}
               onBackgroundClick={onBackgroundClick}
               onEventClick={openDetail}
               onEventMove={onEventMove}
               onDropUnassigned={onDropUnassigned}
               onRoleHeaderClick={onRoleHeaderClick}
             />
+          ) : roster && shifts.length > 0 && activeRoles.length > 0 && roleColsView.length === 0 ? (
+            <div className="flex min-h-[12rem] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-surface-raised/30 p-6 text-center text-sm text-muted">
+              <p className="text-fg/80">All roles are hidden in view preferences.</p>
+              <p className="max-w-md text-xs">
+                Open the <strong className="text-fg/90">preferences</strong> icon beside the task count and select at
+                least one role to display.
+              </p>
+            </div>
           ) : roster ? (
             <div className="flex min-h-[12rem] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-surface-raised/30 p-6 text-center text-sm text-muted">
               <p className="text-fg/80">
@@ -1508,6 +1593,103 @@ export function Plan24Page() {
           </div>
         </div>
       </div>
+
+      {prefsModalOpen ? (
+        <div
+          className="fixed inset-0 z-[55] flex items-center justify-center bg-black/45 p-4"
+          role="presentation"
+          onClick={() => setPrefsModalOpen(false)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border-strong bg-surface p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="plan24-prefs-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="plan24-prefs-title" className="font-display text-lg font-semibold">
+              View preferences
+            </h2>
+            <p className="mt-1 text-xs text-muted">Filters apply to the day grid and the task count. Saved per cell on this device.</p>
+
+            <div className="mt-5 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Event types</p>
+              <div className="space-y-2 rounded-xl border border-border bg-surface-raised/40 p-3">
+                {PLAN24_EVENT_TYPE_FILTER_OPTIONS.map((opt) => (
+                  <label key={opt.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="size-4 rounded border-border accent-violet-600"
+                      checked={prefsDraft.eventTypes[opt.id] !== false}
+                      onChange={() =>
+                        setPrefsDraft((d) => ({
+                          ...d,
+                          eventTypes: { ...d.eventTypes, [opt.id]: !(d.eventTypes[opt.id] !== false) },
+                        }))
+                      }
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Roles</p>
+              {activeRoles.length === 0 ? (
+                <p className="text-sm text-muted">No roles on this roster.</p>
+              ) : (
+                <div className="max-h-[40vh] space-y-2 overflow-y-auto rounded-xl border border-border bg-surface-raised/40 p-3">
+                  {activeRoles.map((r) => (
+                    <label key={r.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="size-4 rounded border-border accent-violet-600"
+                        checked={prefsDraft.roles[r.name] !== false}
+                        onChange={() =>
+                          setPrefsDraft((d) => ({
+                            ...d,
+                            roles: { ...d.roles, [r.name]: !(d.roles[r.name] !== false) },
+                          }))
+                        }
+                      />
+                      {r.name}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-xl px-3 py-2 text-sm text-muted hover:bg-black/[0.06]"
+                onClick={() => setPrefsModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+                disabled={!user?.id || !cellId}
+                onClick={() => {
+                  if (!user?.id || !cellId) return
+                  saveViewPrefs(user.id, cellId, prefsDraft)
+                  setViewPrefs({
+                    eventTypes: { ...prefsDraft.eventTypes },
+                    roles: { ...prefsDraft.roles },
+                  })
+                  setPrefsModalOpen(false)
+                  setSuccessMsg('View preferences saved.')
+                  window.setTimeout(() => setSuccessMsg(null), 2500)
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {adhocOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation">

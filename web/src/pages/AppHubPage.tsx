@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Bot, Database, Grid3X3, KeyRound, LogOut, Network, UsersRound } from 'lucide-react'
+import { Bot, Database, Grid3X3, KeyRound, Layers, Lightbulb, LogOut, Network, UsersRound } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 const cardClass =
@@ -15,12 +15,20 @@ export function AppHubPage() {
     canAccessLdrTools,
     canAccessRttSystems,
     canAccessAgents,
+    canAccessDdsProcess,
+    canAccessProblemSolve,
     profileLoadError,
   } = useAuth()
   const navigate = useNavigate()
 
   const anyApp =
-    canAccessSkillMatrix || canAccessLdrTools || canAccessRttSystems || canAccessAgents || isAdmin
+    canAccessSkillMatrix ||
+    canAccessLdrTools ||
+    canAccessRttSystems ||
+    canAccessAgents ||
+    canAccessDdsProcess ||
+    canAccessProblemSolve ||
+    isAdmin
 
   return (
     <div className="relative flex min-h-svh flex-col justify-center space-y-8 px-4 py-10 md:py-12">
@@ -100,6 +108,26 @@ export function AppHubPage() {
               </span>
               <span className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Agents</span>
               <span className="text-xs text-muted">Build and manage agent sets</span>
+            </Link>
+          ) : null}
+
+          {canAccessDdsProcess ? (
+            <Link to="/dds-process" className={cardClass}>
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-800 transition-transform group-hover:scale-105 dark:text-emerald-300">
+                <Layers className="size-8" aria-hidden />
+              </span>
+              <span className="font-display text-xl font-semibold tracking-tight sm:text-2xl">DDS Process</span>
+              <span className="text-xs text-muted">DDS process</span>
+            </Link>
+          ) : null}
+
+          {canAccessProblemSolve ? (
+            <Link to="/problem-solve" className={cardClass}>
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-orange-500/15 text-orange-900 transition-transform group-hover:scale-105 dark:text-orange-300">
+                <Lightbulb className="size-8" aria-hidden />
+              </span>
+              <span className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Problem Solve</span>
+              <span className="text-xs text-muted">Problem solve</span>
             </Link>
           ) : null}
 

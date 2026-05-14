@@ -11,60 +11,149 @@ type AccessRow = {
   can_access_ldr_tools: boolean
   can_access_rtt_systems: boolean
   can_access_agents: boolean
+  can_access_dds_process: boolean
+  can_access_problem_solve: boolean
 }
 
-function isMissingAgentsColumnError(message: string, code?: string): boolean {
-  if (String(code ?? '') === '42703') return true
+const SELECT_FULL =
+  'id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_dds_process, can_access_problem_solve' as const
+
+const SELECT_NO_PS =
+  'id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_dds_process' as const
+
+const SELECT_NO_DDS =
+  'id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_problem_solve' as const
+
+const SELECT_NO_DDS_NO_PS =
+  'id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents' as const
+
+const SELECT_LEGACY = 'id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems' as const
+
+function isMissingColumnError(message: string, code: string | undefined, columnSnake: string): boolean {
   const m = message.toLowerCase()
-  return m.includes('can_access_agents') && m.includes('does not exist')
+  const c = columnSnake.toLowerCase()
+  if (!m.includes(c)) return false
+  return String(code ?? '') === '42703' || m.includes('does not exist')
 }
 
 export function SectionAccessPanel() {
   const { user, refreshProfile } = useAuth()
   const [rows, setRows] = useState<AccessRow[]>([])
   const [agentsColumnAvailable, setAgentsColumnAvailable] = useState(true)
+  const [ddsColumnAvailable, setDdsColumnAvailable] = useState(true)
+  const [problemSolveColumnAvailable, setProblemSolveColumnAvailable] = useState(true)
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const withAgents = await supabase
+    let res = await supabase
       .from('profiles')
-      .select(
-        'id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents',
-      )
+      .select(SELECT_FULL)
       .order('display_name', { ascending: true })
 
-    if (!withAgents.error && withAgents.data) {
+    if (!res.error && res.data) {
       setAgentsColumnAvailable(true)
-      setRows(withAgents.data as AccessRow[])
+      setDdsColumnAvailable(true)
+      setProblemSolveColumnAvailable(true)
+      setRows(res.data as AccessRow[])
       setError(null)
       return null
     }
 
-    const primaryErr = withAgents.error
-    if (!primaryErr || !isMissingAgentsColumnError(primaryErr.message, primaryErr.code)) {
-      return primaryErr
+    const primaryErr = res.error
+    if (
+      primaryErr &&
+      isMissingColumnError(primaryErr.message, primaryErr.code, 'can_access_problem_solve')
+    ) {
+      const noPs = await supabase
+        .from('profiles')
+        .select(SELECT_NO_PS)
+        .order('display_name', { ascending: true })
+      if (!noPs.error && noPs.data) {
+        setAgentsColumnAvailable(true)
+        setDdsColumnAvailable(true)
+        setProblemSolveColumnAvailable(false)
+        setRows(
+          (noPs.data as Omit<AccessRow, 'can_access_problem_solve'>[]).map((row) => ({
+            ...row,
+            can_access_problem_solve: false,
+          })),
+        )
+        setError(
+          'Problem Solve access is unavailable until the latest database migration is applied (missing profiles.can_access_problem_solve column).',
+        )
+        return null
+      }
+      res = noPs
     }
 
-    const legacy = await supabase
-      .from('profiles')
-      .select('id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems')
-      .order('display_name', { ascending: true })
+    if (res.error && isMissingColumnError(res.error.message, res.error.code, 'can_access_dds_process')) {
+      const noDdsFirst = await supabase
+        .from('profiles')
+        .select(SELECT_NO_DDS)
+        .order('display_name', { ascending: true })
 
-    if (legacy.error) return legacy.error
+      const noDds =
+        noDdsFirst.error &&
+        isMissingColumnError(noDdsFirst.error.message, noDdsFirst.error.code, 'can_access_problem_solve')
+          ? await supabase
+              .from('profiles')
+              .select(SELECT_NO_DDS_NO_PS)
+              .order('display_name', { ascending: true })
+          : noDdsFirst
 
-    setAgentsColumnAvailable(false)
-    setRows(
-      (legacy.data ?? []).map((row) => ({
-        ...(row as Omit<AccessRow, 'can_access_agents'>),
-        can_access_agents: false,
-      })),
-    )
-    setError(
-      'Agents access is unavailable until the latest database migration is applied (missing profiles.can_access_agents column).',
-    )
-    return null
+      if (!noDds.error && noDds.data) {
+        setAgentsColumnAvailable(true)
+        setDdsColumnAvailable(false)
+        const hasPsCol =
+          noDds.data.length > 0 && Object.prototype.hasOwnProperty.call(noDds.data[0], 'can_access_problem_solve')
+        setProblemSolveColumnAvailable(hasPsCol)
+        setRows(
+          noDds.data.map((row) => ({
+            ...(row as AccessRow),
+            can_access_dds_process: false,
+            can_access_problem_solve: hasPsCol ? Boolean((row as AccessRow).can_access_problem_solve) : false,
+          })),
+        )
+        setError(
+          'DDS Process access is unavailable until the latest database migration is applied (missing profiles.can_access_dds_process column).',
+        )
+        return null
+      }
+      res = noDds as typeof res
+    }
+
+    const errForAgents = res.error ?? primaryErr
+    if (errForAgents && isMissingColumnError(errForAgents.message, errForAgents.code, 'can_access_agents')) {
+      const legacy = await supabase
+        .from('profiles')
+        .select(SELECT_LEGACY)
+        .order('display_name', { ascending: true })
+      if (!legacy.error && legacy.data) {
+        setAgentsColumnAvailable(false)
+        setDdsColumnAvailable(false)
+        setProblemSolveColumnAvailable(false)
+        setRows(
+          (legacy.data as Omit<
+            AccessRow,
+            'can_access_agents' | 'can_access_dds_process' | 'can_access_problem_solve'
+          >[]).map((row) => ({
+            ...row,
+            can_access_agents: false,
+            can_access_dds_process: false,
+            can_access_problem_solve: false,
+          })),
+        )
+        setError(
+          'Agents, DDS Process, and Problem Solve access are unavailable until the latest database migrations are applied (missing column on profiles).',
+        )
+        return null
+      }
+      return legacy.error ?? errForAgents
+    }
+
+    return primaryErr
   }, [])
 
   useEffect(() => {
@@ -85,7 +174,9 @@ export function SectionAccessPanel() {
       | 'can_access_skill_matrix'
       | 'can_access_ldr_tools'
       | 'can_access_rtt_systems'
-      | 'can_access_agents',
+      | 'can_access_agents'
+      | 'can_access_dds_process'
+      | 'can_access_problem_solve',
     next: boolean,
   ) {
     setError(null)
@@ -96,9 +187,7 @@ export function SectionAccessPanel() {
       setError(upErr.message)
       return
     }
-    setRows((prev) =>
-      prev.map((r) => (r.id === profileId ? { ...r, [field]: next } : r)),
-    )
+    setRows((prev) => prev.map((r) => (r.id === profileId ? { ...r, [field]: next } : r)))
     if (profileId === user?.id) {
       await refreshProfile()
     }
@@ -127,7 +216,7 @@ export function SectionAccessPanel() {
         ) : rows.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-muted">No profiles yet.</p>
         ) : (
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[800px] text-left text-sm">
             <thead className="border-b border-border text-xs font-medium uppercase tracking-wider text-muted">
               <tr>
                 <th className="px-4 py-3">Display name</th>
@@ -136,6 +225,10 @@ export function SectionAccessPanel() {
                 <th className="px-4 py-3 text-center">LDR tools</th>
                 <th className="px-4 py-3 text-center">RTT systems</th>
                 {agentsColumnAvailable ? <th className="px-4 py-3 text-center">Agents</th> : null}
+                {ddsColumnAvailable ? <th className="px-4 py-3 text-center">DDS Process</th> : null}
+                {problemSolveColumnAvailable ? (
+                  <th className="px-4 py-3 text-center">Problem Solve</th>
+                ) : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -153,8 +246,12 @@ export function SectionAccessPanel() {
                       ['can_access_skill_matrix', r.can_access_skill_matrix],
                       ['can_access_ldr_tools', r.can_access_ldr_tools],
                       ['can_access_rtt_systems', r.can_access_rtt_systems],
-                      ...(agentsColumnAvailable
-                        ? ([['can_access_agents', r.can_access_agents]] as const)
+                      ...(agentsColumnAvailable ? ([['can_access_agents', r.can_access_agents]] as const) : []),
+                      ...(ddsColumnAvailable
+                        ? ([['can_access_dds_process', r.can_access_dds_process]] as const)
+                        : []),
+                      ...(problemSolveColumnAvailable
+                        ? ([['can_access_problem_solve', r.can_access_problem_solve]] as const)
                         : []),
                     ] as const
                   ).map(([field, checked]) => (

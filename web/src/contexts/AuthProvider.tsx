@@ -4,7 +4,7 @@ import { AuthContext, type AppProfileRole } from './auth-context'
 import { supabase, supabaseConfigured } from '../lib/supabase'
 
 const PROFILE_SECTION_SELECT =
-  'role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents' as const
+  'role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_dds_process, can_access_problem_solve' as const
 
 type ProfileSectionRow = {
   role: string | null
@@ -12,6 +12,8 @@ type ProfileSectionRow = {
   can_access_ldr_tools: boolean | null
   can_access_rtt_systems: boolean | null
   can_access_agents: boolean | null
+  can_access_dds_process: boolean | null
+  can_access_problem_solve: boolean | null
 }
 
 function normalizeProfileRole(raw: string | undefined | null): AppProfileRole {
@@ -35,6 +37,8 @@ function inferSectionFlagsFromRole(role: AppProfileRole): {
   ldr: boolean
   rtt: boolean
   agents: boolean
+  ddsProcess: boolean
+  problemSolve: boolean
 } {
   const isAdm = role === 'admin' || role === 'super_admin'
   return {
@@ -42,7 +46,18 @@ function inferSectionFlagsFromRole(role: AppProfileRole): {
     ldr: isAdm,
     rtt: isAdm,
     agents: isAdm,
+    ddsProcess: role === 'super_admin',
+    problemSolve: role === 'super_admin',
   }
+}
+
+/** Recover profile when newer `can_access_*` columns are not migrated yet. */
+function isMissingProfilesColumn(error: PostgrestError | null, column: string): boolean {
+  if (!error) return false
+  const m = error.message.toLowerCase()
+  const c = column.toLowerCase()
+  if (!m.includes(c)) return false
+  return String(error.code ?? '') === '42703' || m.includes('does not exist')
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -54,6 +69,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [canAccessLdrTools, setCanAccessLdrTools] = useState(false)
   const [canAccessRttSystems, setCanAccessRttSystems] = useState(false)
   const [canAccessAgents, setCanAccessAgents] = useState(false)
+  const [canAccessDdsProcess, setCanAccessDdsProcess] = useState(false)
+  const [canAccessProblemSolve, setCanAccessProblemSolve] = useState(false)
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null)
 
   const applyProfileRow = useCallback((data: ProfileSectionRow) => {
@@ -62,6 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCanAccessLdrTools(Boolean(data.can_access_ldr_tools))
     setCanAccessRttSystems(Boolean(data.can_access_rtt_systems))
     setCanAccessAgents(Boolean(data.can_access_agents))
+    setCanAccessDdsProcess(Boolean(data.can_access_dds_process))
+    setCanAccessProblemSolve(Boolean(data.can_access_problem_solve))
     setProfileLoadError(null)
   }, [])
 
@@ -71,6 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCanAccessLdrTools(false)
     setCanAccessRttSystems(false)
     setCanAccessAgents(false)
+    setCanAccessDdsProcess(false)
+    setCanAccessProblemSolve(false)
     setProfileLoadError(errorMessage)
   }, [])
 
@@ -88,6 +109,124 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!error && data) {
           applyProfileRow(data as ProfileSectionRow)
           return
+        }
+
+        if (error && isMissingProfilesColumn(error, 'can_access_problem_solve')) {
+          const { data: rowNoPs, error: errNoPs } = await supabase
+            .from('profiles')
+            .select(
+              'role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_dds_process',
+            )
+            .eq('id', userId)
+            .maybeSingle()
+          if (cancelled()) return
+          if (!errNoPs && rowNoPs) {
+            applyProfileRow({
+              ...(rowNoPs as Omit<ProfileSectionRow, 'can_access_problem_solve'>),
+              can_access_problem_solve: false,
+            })
+            return
+          }
+          if (errNoPs && isMissingProfilesColumn(errNoPs, 'can_access_dds_process')) {
+            const { data: rowNoDds, error: errNoDds } = await supabase
+              .from('profiles')
+              .select(
+                'role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents',
+              )
+              .eq('id', userId)
+              .maybeSingle()
+            if (cancelled()) return
+            if (!errNoDds && rowNoDds) {
+              applyProfileRow({
+                ...(rowNoDds as Omit<
+                  ProfileSectionRow,
+                  'can_access_dds_process' | 'can_access_problem_solve'
+                >),
+                can_access_dds_process: false,
+                can_access_problem_solve: false,
+              })
+              return
+            }
+            if (errNoDds && isMissingProfilesColumn(errNoDds, 'can_access_agents')) {
+              const { data: rowCore, error: errCore } = await supabase
+                .from('profiles')
+                .select('role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems')
+                .eq('id', userId)
+                .maybeSingle()
+              if (cancelled()) return
+              if (!errCore && rowCore) {
+                applyProfileRow({
+                  ...(rowCore as Omit<
+                    ProfileSectionRow,
+                    'can_access_agents' | 'can_access_dds_process' | 'can_access_problem_solve'
+                  >),
+                  can_access_agents: false,
+                  can_access_dds_process: false,
+                  can_access_problem_solve: false,
+                })
+                return
+              }
+            }
+          }
+        }
+
+        if (error && isMissingProfilesColumn(error, 'can_access_dds_process')) {
+          const { data: rowNoDds, error: errNoDds } = await supabase
+            .from('profiles')
+            .select(
+              'role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_problem_solve',
+            )
+            .eq('id', userId)
+            .maybeSingle()
+          if (cancelled()) return
+          if (!errNoDds && rowNoDds) {
+            applyProfileRow({
+              ...(rowNoDds as Omit<ProfileSectionRow, 'can_access_dds_process'>),
+              can_access_dds_process: false,
+            })
+            return
+          }
+          if (errNoDds && isMissingProfilesColumn(errNoDds, 'can_access_agents')) {
+            const { data: rowCore, error: errCore } = await supabase
+              .from('profiles')
+              .select('role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems')
+              .eq('id', userId)
+              .maybeSingle()
+            if (cancelled()) return
+            if (!errCore && rowCore) {
+              applyProfileRow({
+                ...(rowCore as Omit<
+                  ProfileSectionRow,
+                  'can_access_agents' | 'can_access_dds_process' | 'can_access_problem_solve'
+                >),
+                can_access_agents: false,
+                can_access_dds_process: false,
+                can_access_problem_solve: false,
+              })
+              return
+            }
+          }
+        }
+
+        if (error && isMissingProfilesColumn(error, 'can_access_agents')) {
+          const { data: rowCore, error: errCore } = await supabase
+            .from('profiles')
+            .select('role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems')
+            .eq('id', userId)
+            .maybeSingle()
+          if (cancelled()) return
+          if (!errCore && rowCore) {
+            applyProfileRow({
+              ...(rowCore as Omit<
+                ProfileSectionRow,
+                'can_access_agents' | 'can_access_dds_process' | 'can_access_problem_solve'
+              >),
+              can_access_agents: false,
+              can_access_dds_process: false,
+              can_access_problem_solve: false,
+            })
+            return
+          }
         }
 
         if (error && isMissingSectionColumnsError(error)) {
@@ -109,6 +248,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setCanAccessLdrTools(inferred.ldr)
           setCanAccessRttSystems(inferred.rtt)
           setCanAccessAgents(inferred.agents)
+          setCanAccessDdsProcess(inferred.ddsProcess)
+          setCanAccessProblemSolve(inferred.problemSolve)
           setProfileLoadError(null)
           return
         }
@@ -146,6 +287,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCanAccessLdrTools(false)
         setCanAccessRttSystems(false)
         setCanAccessAgents(false)
+        setCanAccessDdsProcess(false)
+        setCanAccessProblemSolve(false)
         setProfileLoadError(null)
       }
     })
@@ -161,6 +304,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCanAccessLdrTools(false)
         setCanAccessRttSystems(false)
         setCanAccessAgents(false)
+        setCanAccessDdsProcess(false)
+        setCanAccessProblemSolve(false)
         setProfileLoadError(null)
       }
     })
@@ -242,6 +387,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canAccessLdrTools,
       canAccessRttSystems,
       canAccessAgents,
+      canAccessDdsProcess,
+      canAccessProblemSolve,
       profileReady,
       adminLoading,
       profileLoadError,
@@ -263,6 +410,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canAccessLdrTools,
       canAccessRttSystems,
       canAccessAgents,
+      canAccessDdsProcess,
+      canAccessProblemSolve,
       profileReady,
       adminLoading,
       profileLoadError,
