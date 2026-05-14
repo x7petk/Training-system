@@ -9,3 +9,8 @@ export type DdsP2pResponseKind = (typeof DDS_P2P_RESPONSE_KINDS)[number]['value'
 export function isDdsP2pResponseKind(s: string): s is DdsP2pResponseKind {
   return DDS_P2P_RESPONSE_KINDS.some((k) => k.value === s)
 }
+
+export function labelForDdsP2pResponseKind(kind: string): string {
+  const row = DDS_P2P_RESPONSE_KINDS.find((k) => k.value === kind)
+  return row?.label ?? kind
+}

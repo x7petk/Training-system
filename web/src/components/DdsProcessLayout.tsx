@@ -25,6 +25,8 @@ export function DdsProcessLayout() {
   const { isAdmin, profileReady } = useAuth()
   const location = useLocation()
   const inAdminSection = location.pathname.startsWith(adminBasePath)
+  const adminNeedsScope = location.pathname.includes('/admin/p2p-soft-points')
+  const showPlan24Scope = !inAdminSection || adminNeedsScope
 
   return (
     <Plan24WorkspaceProvider>
@@ -32,7 +34,7 @@ export function DdsProcessLayout() {
         storageKey="dds-process.sidebar-collapsed"
         title="DDS Process"
         subtitle="DDS process"
-        mainTop={inAdminSection ? null : <Plan24ScopeBar />}
+        mainTop={showPlan24Scope ? <Plan24ScopeBar /> : null}
         headerIconClass="bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
         HeaderIcon={Layers}
         outletFallback={
@@ -110,6 +112,18 @@ export function DdsProcessLayout() {
                     }
                   >
                     P2P standard
+                  </NavLink>
+                  <NavLink
+                    to="/dds-process/admin/p2p-soft-points"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    P2P soft points
                   </NavLink>
                 </>
               ) : null}
