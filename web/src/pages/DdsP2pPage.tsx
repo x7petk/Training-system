@@ -28,7 +28,7 @@ type P2pQuestion = {
   linkedKpiId: string | null
 }
 
-type FormAns = { yesNo: boolean | null; num: string; comment: string; kpiIncidentNum: string; kpiIncidentComment: string }
+type FormAns = { yesNo: boolean | null; num: string; comment: string; kpiIncidentNum: string }
 
 type AuditHead = { id: string; submitted_at: string; sheet_comment: string | null }
 
@@ -39,7 +39,7 @@ function sortGroups<T extends { sort_order: number; name: string }>(rows: T[]): 
 function emptyForm(questions: P2pQuestion[]): Record<string, FormAns> {
   const m: Record<string, FormAns> = {}
   for (const q of questions) {
-    m[q.key] = { yesNo: null, num: '', comment: '', kpiIncidentNum: '', kpiIncidentComment: '' }
+    m[q.key] = { yesNo: null, num: '', comment: '', kpiIncidentNum: '' }
   }
   return m
 }
@@ -342,12 +342,13 @@ export function DdsP2pPage() {
       const qid = kind === 'standard' ? (row.standard_question_id as string) : (row.soft_question_id as string)
       const k = ddsP2pQuestionKey(kind, qid)
       if (!next[k]) continue
+      const qc = (row.question_comment as string | null) ?? ''
+      const klc = (row.kpi_link_comment as string | null) ?? ''
       next[k] = {
         yesNo: typeof row.answer_yes_no === 'boolean' ? row.answer_yes_no : null,
         num: row.answer_number != null ? String(row.answer_number) : '',
-        comment: row.question_comment ?? '',
+        comment: qc.trim() ? qc : klc,
         kpiIncidentNum: row.kpi_link_value != null && row.kpi_link_value !== '' ? String(row.kpi_link_value) : '',
-        kpiIncidentComment: (row.kpi_link_comment as string | null) ?? '',
       }
     }
     setForm(next)
@@ -387,8 +388,8 @@ export function DdsP2pPage() {
           setError(`Enter a non‑negative incident count for: ${q.prompt.slice(0, 40)}…`)
           return
         }
-        if (!String(f.kpiIncidentComment ?? '').trim()) {
-          setError(`Add a KPI comment for: ${q.prompt.slice(0, 40)}…`)
+        if (!String(f.comment ?? '').trim()) {
+          setError(`Add a comment for: ${q.prompt.slice(0, 40)}…`)
           return
         }
       }
@@ -418,6 +419,7 @@ export function DdsP2pPage() {
       if (q.responseKind === 'yes_no') {
         const linkNo = Boolean(q.linkedKpiId) && f.yesNo === false
         const kn = linkNo ? Number(String(f.kpiIncidentNum).trim().replace(',', '.')) : null
+        const cmt = f.comment.trim() || null
         const { error: ansErr } = await supabase.from('dds_p2p_audit_answers').insert({
           audit_id: auditId,
           question_kind: q.source,
@@ -425,9 +427,9 @@ export function DdsP2pPage() {
           soft_question_id: q.source === 'soft' ? q.questionId : null,
           answer_yes_no: f.yesNo,
           answer_number: null,
-          question_comment: f.comment.trim() || null,
+          question_comment: cmt,
           kpi_link_value: linkNo && kn != null && Number.isFinite(kn) ? kn : null,
-          kpi_link_comment: linkNo ? f.kpiIncidentComment.trim() || null : null,
+          kpi_link_comment: linkNo ? cmt : null,
         })
         if (ansErr) {
           setSaving(false)
@@ -546,8 +548,9 @@ export function DdsP2pPage() {
                           num: '',
                           comment: '',
                           kpiIncidentNum: '',
-                          kpiIncidentComment: '',
                         }
+                        const linkedNo = Boolean(q.linkedKpiId) && q.responseKind === 'yes_no' && f.yesNo === false
+                        const commentInvalid = linkedNo && !f.comment.trim()
                         const kindHint =
                           q.responseKind === 'yes_no'
                             ? null
@@ -576,7 +579,7 @@ export function DdsP2pPage() {
                                     onClick={() =>
                                       setForm((prev) => ({
                                         ...prev,
-                                        [q.key]: { ...f, yesNo: true, kpiIncidentNum: '', kpiIncidentComment: '' },
+                                        [q.key]: { ...f, yesNo: true, kpiIncidentNum: '' },
                                       }))
                                     }
                                     className={`h-6 min-w-[2.35rem] rounded px-2 text-[11px] font-semibold transition-colors disabled:opacity-50 ${
@@ -618,51 +621,39 @@ export function DdsP2pPage() {
                                 <span className="shrink-0 text-[10px] text-muted">{kindHint}</span>
                               ) : null}
                             </div>
-                            {q.responseKind === 'yes_no' && q.linkedKpiId && f.yesNo === false ? (
+                            {linkedNo ? (
                               <div className="mt-1 space-y-1 rounded-md border border-amber-600/35 bg-amber-500/10 px-1.5 py-1 dark:bg-amber-950/25">
                                 <p className="text-[9px] font-medium text-amber-950 dark:text-amber-100/90">
-                                  Linked KPI: enter incident count and a short comment (rolled up across roles for this
-                                  shift).
+                                  Linked KPI: enter the incident count below. Use the comment under the question
+                                  (required) for details; it rolls up across roles for this shift.
                                 </p>
-                                <div className="flex flex-wrap items-end gap-2">
-                                  <label className="flex min-w-[5rem] flex-col gap-0.5">
-                                    <span className="text-[9px] text-muted">Count</span>
-                                    <input
-                                      className={`${compactControl} w-[4.5rem] text-right tabular-nums`}
-                                      inputMode="numeric"
-                                      placeholder="0"
-                                      disabled={readOnlyRevision}
-                                      value={f.kpiIncidentNum}
-                                      onChange={(e) =>
-                                        setForm((prev) => ({
-                                          ...prev,
-                                          [q.key]: { ...f, kpiIncidentNum: e.target.value },
-                                        }))
-                                      }
-                                    />
-                                  </label>
-                                  <label className="min-w-0 flex-1 basis-[12rem]">
-                                    <span className="text-[9px] text-muted">KPI comment</span>
-                                    <input
-                                      className="mt-0.5 w-full rounded-md border border-border/80 bg-surface px-1.5 py-0.5 text-[11px] outline-none ring-accent/30 focus:border-accent/50 focus:ring-1"
-                                      disabled={readOnlyRevision}
-                                      value={f.kpiIncidentComment}
-                                      onChange={(e) =>
-                                        setForm((prev) => ({
-                                          ...prev,
-                                          [q.key]: { ...f, kpiIncidentComment: e.target.value },
-                                        }))
-                                      }
-                                      placeholder="What happened?"
-                                    />
-                                  </label>
-                                </div>
+                                <label className="flex min-w-[5rem] max-w-[6rem] flex-col gap-0.5">
+                                  <span className="text-[9px] text-muted">Count</span>
+                                  <input
+                                    className={`${compactControl} w-full text-right tabular-nums`}
+                                    inputMode="numeric"
+                                    placeholder="0"
+                                    disabled={readOnlyRevision}
+                                    value={f.kpiIncidentNum}
+                                    onChange={(e) =>
+                                      setForm((prev) => ({
+                                        ...prev,
+                                        [q.key]: { ...f, kpiIncidentNum: e.target.value },
+                                      }))
+                                    }
+                                  />
+                                </label>
                               </div>
                             ) : null}
                             <textarea
-                              className="p2p-auto-comment mt-0.5 w-full resize-none overflow-hidden rounded-md border border-border/80 bg-surface px-1.5 py-0.5 text-[11px] leading-snug outline-none ring-accent/30 focus:border-accent/50 focus:ring-1"
+                              className={`p2p-auto-comment mt-0.5 w-full resize-none overflow-hidden rounded-md border bg-surface px-1.5 py-0.5 text-[11px] leading-snug outline-none ring-accent/30 focus:ring-1 ${
+                                commentInvalid
+                                  ? 'border-2 border-rose-600 ring-rose-500/35 focus:border-rose-600 dark:border-rose-500'
+                                  : 'border-border/80 focus:border-accent/50'
+                              }`}
                               rows={1}
-                              placeholder="Comment"
+                              placeholder={linkedNo ? 'Comment (required)' : 'Comment'}
+                              aria-invalid={commentInvalid}
                               disabled={readOnlyRevision}
                               value={f.comment}
                               onChange={(e) =>
