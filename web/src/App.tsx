@@ -60,6 +60,12 @@ const DdsAdminP2pStandardPage = lazy(() =>
 const DdsAdminP2pSoftPointsPage = lazy(() =>
   import('./pages/DdsAdminP2pSoftPointsPage').then((m) => ({ default: m.DdsAdminP2pSoftPointsPage })),
 )
+const DdsP2pSetupPage = lazy(() => import('./pages/DdsP2pSetupPage').then((m) => ({ default: m.DdsP2pSetupPage })))
+const DdsP2pPage = lazy(() => import('./pages/DdsP2pPage').then((m) => ({ default: m.DdsP2pPage })))
+const DdsP2pSummaryPage = lazy(() =>
+  import('./pages/DdsP2pSummaryPage').then((m) => ({ default: m.DdsP2pSummaryPage })),
+)
+const ShiftDdsPage = lazy(() => import('./pages/ShiftDdsPage').then((m) => ({ default: m.ShiftDdsPage })))
 
 const RttSystemsUserGuidePage = lazy(() =>
   import('./pages/RttSystemsUserGuidePage').then((m) => ({ default: m.RttSystemsUserGuidePage })),
@@ -252,8 +258,9 @@ export default function App() {
           >
             <Route index element={<Navigate to="plan-24" replace />} />
             <Route path="plan-24" element={<Plan24Page />} />
-            <Route path="p2p" element={<DdsPlaceholderPage title="P2P" />} />
-            <Route path="shift-dds" element={<DdsPlaceholderPage title="Shift DDS" />} />
+            <Route path="p2p" element={<DdsP2pPage />} />
+            <Route path="p2p-summary" element={<DdsP2pSummaryPage />} />
+            <Route path="shift-dds" element={<ShiftDdsPage />} />
             <Route path="line-compliance" element={<DdsPlaceholderPage title="Line compliance" />} />
             <Route path="line-dds" element={<DdsPlaceholderPage title="Line DDS" />} />
             <Route path="plant-dds" element={<DdsPlaceholderPage title="Plant DDS" />} />
@@ -275,6 +282,7 @@ export default function App() {
               <Route path="kpis" element={<DdsAdminKpisPage />} />
               <Route path="p2p-standard" element={<DdsAdminP2pStandardPage />} />
               <Route path="p2p-soft-points" element={<DdsAdminP2pSoftPointsPage />} />
+              <Route path="p2p-setup" element={<DdsP2pSetupPage />} />
             </Route>
           </Route>
 

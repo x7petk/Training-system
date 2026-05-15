@@ -94,36 +94,36 @@ function WeekEventBoard(props: WeekBoardProps) {
   } = props
   const boardRef = useRef<HTMLDivElement>(null)
 
-  const ymdFromClientX = useCallback(
-    (clientX: number): string | null => {
-      const el = boardRef.current
-      if (!el) return null
-      const rect = el.getBoundingClientRect()
-      if (rect.width <= 0) return null
-      const x = clientX - rect.left
-      const col = Math.floor((x / rect.width) * 7)
-      const idx = Math.max(0, Math.min(6, col))
-      return toYMD(weekDays[idx])
-    },
-    [weekDays],
-  )
-
   const handleDragOverBoard = useCallback(
     (e: DragEvent) => {
       e.preventDefault()
-      const ymd = ymdFromClientX(e.clientX)
+      const el = boardRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      if (rect.width <= 0) return
+      const x = e.clientX - rect.left
+      const col = Math.floor((x / rect.width) * 7)
+      const idx = Math.max(0, Math.min(6, col))
+      const ymd = toYMD(weekDays[idx])
       if (ymd) setDragOverYmd(ymd)
     },
-    [ymdFromClientX, setDragOverYmd],
+    [weekDays, setDragOverYmd],
   )
 
   const handleDropAtPointer = useCallback(
     (e: DragEvent) => {
       e.preventDefault()
-      const ymd = ymdFromClientX(e.clientX)
+      const el = boardRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      if (rect.width <= 0) return
+      const x = e.clientX - rect.left
+      const col = Math.floor((x / rect.width) * 7)
+      const idx = Math.max(0, Math.min(6, col))
+      const ymd = toYMD(weekDays[idx])
       if (ymd) onDropOnDay(ymd)
     },
-    [ymdFromClientX, onDropOnDay],
+    [weekDays, onDropOnDay],
   )
 
   return (
@@ -211,8 +211,7 @@ function WeekEventBoard(props: WeekBoardProps) {
                       }}
                       onDragOver={(e) => {
                         e.preventDefault()
-                        const ymd = ymdFromClientX(e.clientX)
-                        if (ymd) setDragOverYmd(ymd)
+                        handleDragOverBoard(e)
                       }}
                       onDrop={handleDropAtPointer}
                       onClick={() => openEdit(s.event, s.displayStart)}

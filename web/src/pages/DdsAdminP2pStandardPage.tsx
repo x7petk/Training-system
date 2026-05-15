@@ -3,6 +3,21 @@ import { Link } from 'react-router-dom'
 import { Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { DDS_P2P_RESPONSE_KINDS, type DdsP2pResponseKind, isDdsP2pResponseKind } from '../features/dds/ddsP2pResponseKind'
+import {
+  ddsBtn,
+  ddsBtnDanger,
+  ddsBtnGhostGrow,
+  ddsErr,
+  ddsH2,
+  ddsH3,
+  ddsHint,
+  ddsInput,
+  ddsInset,
+  ddsSection,
+  ddsSelect,
+  ddsStack,
+  ddsTextarea,
+} from '../features/dds/ddsAdminCompactClasses'
 
 type KpiGroupRow = {
   id: string
@@ -19,15 +34,6 @@ type QuestionRow = {
   response_kind: string
   target_number: number | string | null
 }
-
-const inputClass =
-  'mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-2'
-
-const textareaClass =
-  'mt-1 min-h-[4.5rem] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-2'
-
-const selectClass =
-  'mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-2'
 
 function parseTargetNumber(raw: string): number | null {
   const t = raw.trim().replace(',', '.')
@@ -201,7 +207,7 @@ export function DdsAdminP2pStandardPage() {
 
   if (loadingGroups) {
     return (
-      <div className="flex min-h-[12rem] items-center justify-center text-sm text-muted" role="status">
+      <div className="flex min-h-[10rem] items-center justify-center text-xs text-muted" role="status">
         Loading…
       </div>
     )
@@ -209,7 +215,7 @@ export function DdsAdminP2pStandardPage() {
 
   if (groups.length === 0) {
     return (
-      <p className="rounded-xl border border-border bg-surface-raised/50 px-4 py-3 text-sm text-muted">
+      <p className={ddsHint}>
         Create{' '}
         <Link to="/dds-process/admin/kpi-groups" className="font-medium text-accent underline-offset-2 hover:underline">
           KPI groups
@@ -220,27 +226,27 @@ export function DdsAdminP2pStandardPage() {
   }
 
   return (
-    <div className="space-y-8">
-      <p className="max-w-2xl text-sm text-muted">
+    <div className={ddsStack}>
+      <p className="max-w-2xl text-xs leading-snug text-muted">
         Questions are global (every cell). Pick a KPI group, then define the standard questions for that group. Turn on
         P2P for a group under KPI groups if those questions should appear on the P2P screen.
       </p>
 
-      {error ? (
-        <p className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
-      ) : null}
+      {error ? <p className={ddsErr}>{error}</p> : null}
 
-      <section className="rounded-2xl border border-border bg-surface-raised/30 p-4 sm:p-5">
-        <h2 className="text-sm font-semibold text-fg">P2P standard questions</h2>
-        <p className="mt-1 text-xs text-muted">KPI group comes from Admin → KPI groups. Names must be unique per group.</p>
+      <section className={ddsSection}>
+        <h2 className={ddsH2}>P2P standard questions</h2>
+        <p className="mt-0.5 text-[11px] leading-snug text-muted">
+          KPI group comes from Admin → KPI groups. Names must be unique per group.
+        </p>
 
-        <div className="mt-4">
-          <label htmlFor="p2p-q-group" className="text-xs font-medium text-muted">
+        <div className="mt-2">
+          <label htmlFor="p2p-q-group" className="text-[10px] font-medium text-muted">
             KPI group
           </label>
           <select
             id="p2p-q-group"
-            className={selectClass}
+            className={ddsSelect}
             value={groupId}
             onChange={(e) => setGroupId(e.target.value)}
           >
@@ -253,29 +259,29 @@ export function DdsAdminP2pStandardPage() {
           </select>
         </div>
 
-        <div className="mt-6 space-y-3 rounded-xl border border-border bg-surface p-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">New question</h3>
+        <div className={`${ddsInset} mt-2 space-y-2`}>
+          <h3 className={ddsH3}>New question</h3>
           <div>
-            <label htmlFor="p2p-new-q-prompt" className="text-xs font-medium text-muted">
+            <label htmlFor="p2p-new-q-prompt" className="text-[10px] font-medium text-muted">
               Question
             </label>
             <textarea
               id="p2p-new-q-prompt"
-              className={textareaClass}
+              className={ddsTextarea}
               value={newPrompt}
               onChange={(e) => setNewPrompt(e.target.value)}
               placeholder="What do you ask on the line?"
-              rows={3}
+              rows={2}
             />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             <div>
-              <label htmlFor="p2p-new-q-kind" className="text-xs font-medium text-muted">
+              <label htmlFor="p2p-new-q-kind" className="text-[10px] font-medium text-muted">
                 Answer type
               </label>
               <select
                 id="p2p-new-q-kind"
-                className={selectClass}
+                className={ddsSelect}
                 value={newKind}
                 onChange={(e) => setNewKind(e.target.value as DdsP2pResponseKind)}
               >
@@ -288,12 +294,12 @@ export function DdsAdminP2pStandardPage() {
             </div>
             {newKind === 'number_with_target' ? (
               <div>
-                <label htmlFor="p2p-new-q-target" className="text-xs font-medium text-muted">
+                <label htmlFor="p2p-new-q-target" className="text-[10px] font-medium text-muted">
                   Target number
                 </label>
                 <input
                   id="p2p-new-q-target"
-                  className={inputClass}
+                  className={ddsInput}
                   value={newTargetText}
                   onChange={(e) => setNewTargetText(e.target.value)}
                   inputMode="decimal"
@@ -304,35 +310,35 @@ export function DdsAdminP2pStandardPage() {
           </div>
           <button
             type="button"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+            className={ddsBtn}
             disabled={!newPrompt.trim()}
             onClick={() => void addQuestion()}
           >
-            <Plus className="size-4" aria-hidden />
+            <Plus className="size-3.5" aria-hidden />
             Add question
           </button>
         </div>
 
         {loadingQs ? (
-          <p className="mt-4 text-sm text-muted">Loading questions…</p>
+          <p className="mt-2 text-xs text-muted">Loading questions…</p>
         ) : questions.length === 0 ? (
-          <p className="mt-4 text-sm text-muted">No questions for this group yet.</p>
+          <p className="mt-2 text-xs text-muted">No questions for this group yet.</p>
         ) : (
-          <ul className="mt-4 space-y-4">
+          <ul className="mt-2 space-y-2">
             {questions.map((row) => {
               const d = qDrafts[row.id]
               if (!d) return null
               return (
-                <li key={row.id} className="rounded-xl border border-border bg-surface p-4">
-                  <div className="space-y-3">
+                <li key={row.id} className={ddsInset}>
+                  <div className="space-y-2">
                     <div>
-                      <label className="text-xs font-medium text-muted" htmlFor={`p2p-q-prompt-${row.id}`}>
+                      <label className="text-[10px] font-medium text-muted" htmlFor={`p2p-q-prompt-${row.id}`}>
                         Question
                       </label>
                       <textarea
                         id={`p2p-q-prompt-${row.id}`}
-                        className={textareaClass}
-                        rows={3}
+                        className={ddsTextarea}
+                        rows={2}
                         value={d.prompt}
                         onChange={(e) =>
                           setQDrafts((prev) => ({
@@ -342,14 +348,14 @@ export function DdsAdminP2pStandardPage() {
                         }
                       />
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                       <div>
-                        <label className="text-xs font-medium text-muted" htmlFor={`p2p-q-kind-${row.id}`}>
+                        <label className="text-[10px] font-medium text-muted" htmlFor={`p2p-q-kind-${row.id}`}>
                           Answer type
                         </label>
                         <select
                           id={`p2p-q-kind-${row.id}`}
-                          className={selectClass}
+                          className={ddsSelect}
                           value={d.response_kind}
                           onChange={(e) => {
                             const kind = e.target.value as DdsP2pResponseKind
@@ -372,12 +378,12 @@ export function DdsAdminP2pStandardPage() {
                       </div>
                       {d.response_kind === 'number_with_target' ? (
                         <div>
-                          <label className="text-xs font-medium text-muted" htmlFor={`p2p-q-target-${row.id}`}>
+                          <label className="text-[10px] font-medium text-muted" htmlFor={`p2p-q-target-${row.id}`}>
                             Target number
                           </label>
                           <input
                             id={`p2p-q-target-${row.id}`}
-                            className={inputClass}
+                            className={ddsInput}
                             value={d.targetText}
                             onChange={(e) =>
                               setQDrafts((prev) => ({
@@ -389,10 +395,10 @@ export function DdsAdminP2pStandardPage() {
                           />
                         </div>
                       ) : null}
-                      <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-1 lg:justify-end">
+                      <div className="flex items-end gap-1.5 sm:col-span-2 lg:col-span-1 lg:justify-end">
                         <button
                           type="button"
-                          className="inline-flex h-10 flex-1 items-center justify-center rounded-lg border border-border bg-surface px-3 text-sm font-semibold hover:bg-black/[0.04] disabled:opacity-40 dark:hover:bg-white/[0.06] lg:flex-none"
+                          className={ddsBtnGhostGrow}
                           disabled={qSavingId === row.id}
                           onClick={() => void saveQuestion(row.id)}
                         >
@@ -400,11 +406,11 @@ export function DdsAdminP2pStandardPage() {
                         </button>
                         <button
                           type="button"
-                          className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10"
+                          className={ddsBtnDanger}
                           title="Delete question"
                           onClick={() => void removeQuestion(row)}
                         >
-                          <Trash2 className="size-4" aria-hidden />
+                          <Trash2 className="size-3.5" aria-hidden />
                         </button>
                       </div>
                     </div>

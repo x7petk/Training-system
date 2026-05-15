@@ -6,6 +6,20 @@ import {
   defaultKpiDisplaySections,
   type DdsKpiDisplaySectionKey,
 } from '../features/dds/ddsKpiDisplaySections'
+import {
+  ddsBtn,
+  ddsBtnDanger,
+  ddsBtnGhost,
+  ddsCheckLabel,
+  ddsCheckLabelMuted,
+  ddsErr,
+  ddsFieldsetGrid,
+  ddsH2,
+  ddsInput,
+  ddsInset,
+  ddsSection,
+  ddsStack,
+} from '../features/dds/ddsAdminCompactClasses'
 
 type KpiGroupRow = {
   id: string
@@ -13,9 +27,6 @@ type KpiGroupRow = {
   sort_order: number
   display_sections: string[] | null
 }
-
-const inputClass =
-  'mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-2'
 
 function sectionsFromRow(raw: string[] | null | undefined): DdsKpiDisplaySectionKey[] {
   const allowed = new Set<string>(DDS_KPI_DISPLAY_SECTION_OPTIONS.map((o) => o.key))
@@ -116,47 +127,39 @@ export function DdsAdminKpiGroupsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-border bg-surface-raised/30 p-4 sm:p-5">
-        <h2 className="text-sm font-semibold text-fg">New KPI group</h2>
-        <p className="mt-1 text-xs text-muted">
+    <div className={ddsStack}>
+      <section className={ddsSection}>
+        <h2 className={ddsH2}>New KPI group</h2>
+        <p className="mt-0.5 text-[11px] leading-snug text-muted">
           Name must be unique across the whole organisation (case-insensitive). Tick where this group should appear in DDS.
         </p>
-        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="min-w-0 flex-1">
-            <label htmlFor="dds-kpi-new-name" className="text-xs font-medium text-muted">
+            <label htmlFor="dds-kpi-new-name" className="text-[10px] font-medium text-muted">
               Name
             </label>
             <input
               id="dds-kpi-new-name"
-              className={inputClass}
+              className={ddsInput}
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="e.g. Safety"
               autoComplete="off"
             />
           </div>
-          <button
-            type="button"
-            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
-            disabled={!newName.trim()}
-            onClick={() => void addGroup()}
-          >
-            <Plus className="size-4" aria-hidden />
+          <button type="button" className={ddsBtn} disabled={!newName.trim()} onClick={() => void addGroup()}>
+            <Plus className="size-3.5" aria-hidden />
             Add group
           </button>
         </div>
-        <fieldset className="mt-4">
-          <legend className="text-xs font-medium text-muted">Displayed in</legend>
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <fieldset className="mt-2">
+          <legend className="text-[10px] font-medium text-muted">Displayed in</legend>
+          <div className={ddsFieldsetGrid}>
             {DDS_KPI_DISPLAY_SECTION_OPTIONS.map((opt) => (
-              <label
-                key={opt.key}
-                className="flex cursor-pointer items-center gap-2 rounded-lg border border-border/80 bg-surface px-2 py-1.5 text-xs"
-              >
+              <label key={opt.key} className={ddsCheckLabel}>
                 <input
                   type="checkbox"
-                  className="size-3.5 rounded border-border accent-accent"
+                  className="size-3 rounded border-border accent-accent"
                   checked={newSections.includes(opt.key)}
                   onChange={() => toggleNewSection(opt.key)}
                 />
@@ -167,41 +170,39 @@ export function DdsAdminKpiGroupsPage() {
         </fieldset>
       </section>
 
-      {error ? (
-        <p className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>
-      ) : null}
+      {error ? <p className={ddsErr}>{error}</p> : null}
 
-      <section className="rounded-2xl border border-border bg-surface-raised/30 p-4 sm:p-5">
-        <h2 className="text-sm font-semibold text-fg">Existing groups</h2>
+      <section className={ddsSection}>
+        <h2 className={ddsH2}>Existing groups</h2>
         {loading ? (
-          <p className="mt-4 text-sm text-muted">Loading…</p>
+          <p className="mt-2 text-xs text-muted">Loading…</p>
         ) : rows.length === 0 ? (
-          <p className="mt-4 text-sm text-muted">No KPI groups yet.</p>
+          <p className="mt-2 text-xs text-muted">No KPI groups yet.</p>
         ) : (
-          <ul className="mt-4 space-y-6">
+          <ul className="mt-2 space-y-2">
             {rows.map((row) => {
               const d = drafts[row.id]
               if (!d) return null
               return (
-                <li key={row.id} className="rounded-xl border border-border bg-surface p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <li key={row.id} className={ddsInset}>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
-                      <label className="text-xs font-medium text-muted" htmlFor={`dds-kpi-name-${row.id}`}>
+                      <label className="text-[10px] font-medium text-muted" htmlFor={`dds-kpi-name-${row.id}`}>
                         Name
                       </label>
                       <input
                         id={`dds-kpi-name-${row.id}`}
-                        className={inputClass}
+                        className={ddsInput}
                         value={d.name}
                         onChange={(e) =>
                           setDrafts((prev) => ({ ...prev, [row.id]: { ...d, name: e.target.value } }))
                         }
                       />
                     </div>
-                    <div className="flex shrink-0 gap-2">
+                    <div className="flex shrink-0 gap-1.5">
                       <button
                         type="button"
-                        className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-surface px-3 text-sm font-semibold hover:bg-black/[0.04] disabled:opacity-40 dark:hover:bg-white/[0.06]"
+                        className={ddsBtnGhost}
                         disabled={savingId === row.id}
                         onClick={() => void saveRow(row.id)}
                       >
@@ -209,25 +210,22 @@ export function DdsAdminKpiGroupsPage() {
                       </button>
                       <button
                         type="button"
-                        className="inline-flex size-10 items-center justify-center rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10"
+                        className={ddsBtnDanger}
                         title="Delete group"
                         onClick={() => void removeRow(row)}
                       >
-                        <Trash2 className="size-4" aria-hidden />
+                        <Trash2 className="size-3.5" aria-hidden />
                       </button>
                     </div>
                   </div>
-                  <fieldset className="mt-3">
-                    <legend className="text-xs font-medium text-muted">Displayed in</legend>
-                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  <fieldset className="mt-2">
+                    <legend className="text-[10px] font-medium text-muted">Displayed in</legend>
+                    <div className={ddsFieldsetGrid}>
                       {DDS_KPI_DISPLAY_SECTION_OPTIONS.map((opt) => (
-                        <label
-                          key={opt.key}
-                          className="flex cursor-pointer items-center gap-2 rounded-lg border border-border/80 bg-surface-raised/40 px-2 py-1.5 text-xs"
-                        >
+                        <label key={opt.key} className={ddsCheckLabelMuted}>
                           <input
                             type="checkbox"
-                            className="size-3.5 rounded border-border accent-accent"
+                            className="size-3 rounded border-border accent-accent"
                             checked={d.sections.includes(opt.key)}
                             onChange={() => toggleRowSection(row.id, opt.key)}
                           />

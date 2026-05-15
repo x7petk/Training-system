@@ -210,16 +210,16 @@ export function AppSectionLayout({
           </button>
         </header>
         <main className="flex min-h-0 flex-1 flex-col p-4 md:p-8">
-          <div className="mx-auto flex w-full max-w-7xl min-h-0 flex-1 flex-col">
+          <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-1 flex-col">
             {mainTop ? <div className="mb-6 shrink-0">{mainTop}</div> : null}
             {outletFallback ? (
               <Suspense fallback={outletFallback}>
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
                   <Outlet />
                 </div>
               </Suspense>
             ) : (
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
                 <Outlet />
               </div>
             )}

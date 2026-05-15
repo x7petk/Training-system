@@ -42,6 +42,12 @@ export function addMinutes(d: Date, n: number): Date {
   return new Date(d.getTime() + n * 60000)
 }
 
+export function formatPlan24Clock(d: Date): string {
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  return `${h}:${m}`
+}
+
 /** 1-based pattern day index from roster anchor date (UTC date arithmetic). */
 export function patternDayIndex(planDateYmd: string, startYmd: string | null, length: number): number {
   const L = Math.max(1, length)

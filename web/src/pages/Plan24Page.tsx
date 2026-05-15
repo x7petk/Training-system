@@ -13,33 +13,26 @@ import {
   Plus,
   Search,
   Settings2,
-  Trash2,
-  X,
 } from 'lucide-react'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { localYMD } from '../lib/dueDateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { Plan24Grid, PLAN24_DRAG_MIME } from '../features/plan24/Plan24Grid'
-import { Plan24CilRoutePanel } from '../features/plan24/Plan24CilRoutePanel'
-import { Plan24ClQualityRoutePanel } from '../features/plan24/Plan24ClQualityRoutePanel'
-import { plan24ClQualitySubTaskComplete } from '../features/plan24/plan24ClQualityRouteUtils'
-import { patternDayIndex, shiftWindowBounds, type ShiftRow } from '../features/plan24/plan24ShiftUtils'
+import { Plan24EventDetailModal } from '../features/plan24/Plan24EventDetailModal'
+import { addMinutes, formatPlan24Clock, minutesBetween, patternDayIndex, shiftWindowBounds, type ShiftRow } from '../features/plan24/plan24ShiftUtils'
 import type {
   Plan24EventRow,
   Plan24PatternSlotRow,
+  Plan24RoleAssignmentRow,
   Plan24RoleTeamDefaultRow,
   Plan24RosterRoleRow,
   Plan24RosterRow,
-  Plan24RoleAssignmentRow,
   Plan24ShiftKind,
-  Plan24SubTask,
   Plan24TaskRow,
   Plan24TeamRow,
 } from '../features/plan24/plan24Types'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
-import { addMinutes, minutesBetween } from '../features/plan24/plan24ShiftUtils'
 import {
   buildDefaultViewPrefs,
   loadViewPrefs,
@@ -49,71 +42,10 @@ import {
   saveViewPrefs,
   type Plan24ViewPrefs,
 } from '../features/plan24/plan24ViewPrefs'
-
-/**
- * Persist drag move: optional suppression row (so materialize does not refill the vacated
- * schedule slot), then update the event. Uses table APIs only — no RPC (avoids PostgREST
- * function schema cache issues).
- */
-async function plan24PersistCheckMove(
-  client: SupabaseClient,
-  ev: Plan24EventRow,
-  eventId: string,
-  startAt: Date,
-  endAt: Date,
-  roleName: string,
-): Promise<string | null> {
-  if (endAt.getTime() <= startAt.getTime()) {
-    return 'Invalid time range'
-  }
-  const roleChanged = (roleName || '') !== (ev.role_name ?? '')
-  const isScheduledSource = ev.source === 'scheduled' && !!ev.schedule_id
-
-  if (ev.schedule_id && roleChanged && ev.schedule_occurrence_at) {
-    const oldSlot = (ev.schedule_role_name?.trim() || ev.role_name || '').trim() || ''
-    const { error } = await client.from('plan24_check_schedule_occurrence_suppressions').insert({
-      master_cell_id: ev.master_cell_id,
-      schedule_id: ev.schedule_id,
-      schedule_occurrence_at: ev.schedule_occurrence_at,
-      schedule_role_name: oldSlot,
-    })
-    if (error && String(error.code) !== '23505') {
-      return error.message
-    }
-  }
-
-  const nextRole = roleName.trim() === '' ? null : roleName.trim()
-  const payload: Record<string, unknown> = {
-    start_at: startAt.toISOString(),
-    end_at: endAt.toISOString(),
-    role_name: nextRole,
-  }
-  if (isScheduledSource) {
-    payload.source = 'ad_hoc'
-  }
-  if (ev.schedule_id && roleChanged) {
-    payload.schedule_id = null
-    payload.schedule_occurrence_at = null
-    payload.template_version_id = null
-    payload.schedule_role_name = ''
-  } else if (!ev.schedule_id) {
-    payload.schedule_role_name = roleName || ''
-  }
-
-  const { error: uErr } = await client.from('plan24_events').update(payload).eq('id', eventId)
-  return uErr?.message ?? null
-}
+import { plan24PersistCheckMove } from '../features/plan24/plan24PersistCheckMove'
 
 const inputClass =
   'w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2'
-
-/** Check detail modal: same border/focus colour as idle (no accent shift while editing). */
-const detailInputClass =
-  'w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm outline-none focus:border-border focus:ring-1 focus:ring-fg/10 dark:focus:ring-white/10'
-
-/** Save in check detail: neutral pressed/focus states (no accent / teal flash on click). */
-const detailSaveButtonClass =
-  'rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium text-fg outline-none [-webkit-tap-highlight-color:transparent] transition-colors hover:bg-black/[0.05] active:border-border active:bg-black/[0.08] active:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border/60 focus-visible:ring-offset-0 dark:hover:bg-white/[0.05] dark:active:bg-white/[0.1]'
 
 function personLabel(p: {
   id: string
@@ -154,52 +86,6 @@ function readStoredTaskPanelHeight(): number {
   return TASK_PANEL_DEFAULT_PX
 }
 
-function parseSubTasks(raw: unknown): Plan24SubTask[] {
-  if (!Array.isArray(raw)) return []
-  const out: Plan24SubTask[] = []
-  for (const x of raw) {
-    if (x && typeof x === 'object' && 'id' in x && 'label' in x) {
-      const o = x as Record<string, unknown>
-      const wc = o.when_condition
-      const whenOk = wc === 'running' || wc === 'down' || wc === 'other' ? wc : null
-      let checkTypes: string[] | undefined
-      if (Array.isArray(o.check_types)) {
-        checkTypes = o.check_types.map((t) => String(t))
-      }
-      const res = o.result
-      const resultOk = res === 'pass' || res === 'fail' ? res : null
-      const evNum = o.entered_value
-      let enteredVal: number | null | undefined
-      if (evNum === null) enteredVal = null
-      else if (typeof evNum === 'number' && Number.isFinite(evNum)) enteredVal = evNum
-      else if (typeof evNum === 'string' && evNum.trim() !== '' && Number.isFinite(Number(evNum))) enteredVal = Number(evNum)
-      const tv = o.target_value
-      let targetVal: number | null | undefined
-      if (tv === null) targetVal = null
-      else if (typeof tv === 'number' && Number.isFinite(tv)) targetVal = tv
-      else if (typeof tv === 'string' && tv.trim() !== '' && Number.isFinite(Number(tv))) targetVal = Number(tv)
-      out.push({
-        id: String(o.id),
-        label: String(o.label),
-        done: Boolean(o.done),
-        required: typeof o.required === 'boolean' ? o.required : undefined,
-        input_kind: typeof o.input_kind === 'string' ? o.input_kind : undefined,
-        min_value: typeof o.min_value === 'number' ? o.min_value : o.min_value === null ? null : undefined,
-        max_value: typeof o.max_value === 'number' ? o.max_value : o.max_value === null ? null : undefined,
-        target_value: targetVal,
-        standard_description: typeof o.standard_description === 'string' ? o.standard_description : undefined,
-        photo_path: typeof o.photo_path === 'string' ? o.photo_path : undefined,
-        check_types: checkTypes,
-        when_condition: whenOk,
-        entered_value: enteredVal,
-        result: resultOk,
-        text_value: typeof o.text_value === 'string' ? o.text_value : o.text_value === null ? null : undefined,
-      })
-    }
-  }
-  return out
-}
-
 export function Plan24Page() {
   const navigate = useNavigate()
   const { cellId, status: scopeStatus } = usePlan24Workspace()
@@ -225,11 +111,6 @@ export function Plan24Page() {
     { id: string; display_name: string | null; first_name: string | null; last_name: string | null }[]
   >([])
   const [tasks, setTasks] = useState<Plan24TaskRow[]>([])
-  const [areas, setAreas] = useState<{ id: string; name: string }[]>([])
-  const [equipment, setEquipment] = useState<{ id: string; area_id: string; name: string }[]>([])
-  const [deviationTypes, setDeviationTypes] = useState<{ id: string; label: string; is_active: boolean; sort_order: number }[]>([])
-  const [dhTypes, setDhTypes] = useState<{ id: string; label: string; is_active: boolean; sort_order: number }[]>([])
-  const [qualityFailTypes, setQualityFailTypes] = useState<{ id: string; label: string; is_active: boolean; sort_order: number }[]>([])
 
   const [viewPrefs, setViewPrefs] = useState<Plan24ViewPrefs>(() => buildDefaultViewPrefs([]))
   const [prefsModalOpen, setPrefsModalOpen] = useState(false)
@@ -242,21 +123,6 @@ export function Plan24Page() {
   const [adhocEndMin, setAdhocEndMin] = useState('30')
 
   const [detailEv, setDetailEv] = useState<Plan24EventRow | null>(null)
-  const [detailSubs, setDetailSubs] = useState<Plan24SubTask[]>([])
-  const [detailOverride, setDetailOverride] = useState(false)
-  const [detailDurationMin, setDetailDurationMin] = useState('30')
-  const [detailCompleting, setDetailCompleting] = useState(false)
-  const [raiseIssueOpen, setRaiseIssueOpen] = useState(false)
-  const [issueTitle, setIssueTitle] = useState('')
-  const [issueDescription, setIssueDescription] = useState('')
-  const [issueAreaId, setIssueAreaId] = useState('')
-  const [issueEquipmentId, setIssueEquipmentId] = useState('')
-  const [issuePriority, setIssuePriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium')
-  /** CIL per-task defect: template task row id (UUID string). */
-  const [issueForTaskId, setIssueForTaskId] = useState<string | null>(null)
-
-  const [deleteEv, setDeleteEv] = useState<Plan24EventRow | null>(null)
-  const [deleteComment, setDeleteComment] = useState('')
 
   const [rolePickOpen, setRolePickOpen] = useState(false)
   const [rolePickName, setRolePickName] = useState('')
@@ -284,8 +150,11 @@ export function Plan24Page() {
 
   const [taskPanelHeight, setTaskPanelHeight] = useState(readStoredTaskPanelHeight)
   const taskPanelHeightRef = useRef(taskPanelHeight)
-  taskPanelHeightRef.current = taskPanelHeight
   const [taskResizing, setTaskResizing] = useState(false)
+
+  useEffect(() => {
+    taskPanelHeightRef.current = taskPanelHeight
+  }, [taskPanelHeight])
 
   useEffect(() => {
     function onResize() {
@@ -366,7 +235,7 @@ export function Plan24Page() {
   const patternDay = useMemo(() => {
     const plen = roster?.pattern_length != null ? roster.pattern_length : 8
     return patternDayIndex(planDate, roster?.pattern_start_date ?? null, plen)
-  }, [planDate, roster?.pattern_start_date, roster?.pattern_length])
+  }, [planDate, roster])
 
   const activeTeamId = useMemo(() => {
     const slot = patternSlots.find((p) => p.pattern_day === patternDay && p.shift_kind === shiftKind)
@@ -592,34 +461,11 @@ export function Plan24Page() {
       if (!tRes.error) setTasks((tRes.data ?? []) as Plan24TaskRow[])
     }
     setLoading(false)
-  }, [cellId, scopeStatus, planDate, shiftKind, user?.id])
+  }, [cellId, scopeStatus, planDate, shiftKind, user])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
-
-  useEffect(() => {
-    if (!cellId || scopeStatus !== 'ready') return
-    void (async () => {
-      const [aRes, eRes, devRes, dhRes, qfRes] = await Promise.all([
-        supabase.from('master_areas').select('id, name').eq('cell_id', cellId).order('sort_order').order('name'),
-        supabase.from('master_equipment').select('id, area_id, name').order('sort_order').order('name'),
-        supabase.from('deviation_types').select('id, label, is_active, sort_order').eq('is_active', true).order('sort_order').order('label'),
-        supabase.from('dh_defect_types').select('id, label, is_active, sort_order').eq('is_active', true).order('sort_order').order('label'),
-        supabase.from('quality_fail_types').select('id, label, is_active, sort_order').eq('is_active', true).order('sort_order').order('label'),
-      ])
-      const err = aRes.error ?? eRes.error ?? devRes.error ?? dhRes.error ?? qfRes.error
-      if (err) {
-        setLoadErr(err.message)
-        return
-      }
-      setAreas((aRes.data ?? []) as { id: string; name: string }[])
-      setEquipment((eRes.data ?? []) as { id: string; area_id: string; name: string }[])
-      setDeviationTypes((devRes.data ?? []) as { id: string; label: string; is_active: boolean; sort_order: number }[])
-      setDhTypes((dhRes.data ?? []) as { id: string; label: string; is_active: boolean; sort_order: number }[])
-      setQualityFailTypes((qfRes.data ?? []) as { id: string; label: string; is_active: boolean; sort_order: number }[])
-    })()
-  }, [cellId, scopeStatus])
 
   const shiftTabs = useMemo(() => [...shifts], [shifts])
 
@@ -633,10 +479,6 @@ export function Plan24Page() {
     if (!taskRoleName && first) setTaskRoleName(first)
     else if (taskRoleName && !activeRoles.some((r) => r.name === taskRoleName) && first) setTaskRoleName(first)
   }, [activeRoles, taskRoleName])
-
-  useEffect(() => {
-    if (!detailEv) setRaiseIssueOpen(false)
-  }, [detailEv])
 
   const rosterId = roster?.id
 
@@ -697,7 +539,7 @@ export function Plan24Page() {
       setAdhocOpen(false)
       void refresh()
     }
-  }, [cellId, rosterId, planDate, shiftKind, adhocStart, adhocRole, adhocTitle, adhocEndMin, user?.id, refresh])
+  }, [cellId, rosterId, planDate, shiftKind, adhocStart, adhocRole, adhocTitle, adhocEndMin, user, refresh])
 
   const onEventMove = useCallback(
     async (eventId: string, startAt: Date, endAt: Date, roleName: string) => {
@@ -705,7 +547,27 @@ export function Plan24Page() {
       if (!ev) return
       const err = await plan24PersistCheckMove(supabase, ev, eventId, startAt, endAt, roleName)
       if (err) setLoadErr(err)
-      else void refresh()
+      else {
+        // Keep local UI in sync immediately to avoid a stale row being re-used by a second drag/resize.
+        setEvents((prev) =>
+          prev.map((row) =>
+            row.id === eventId
+              ? {
+                  ...row,
+                  start_at: startAt.toISOString(),
+                  end_at: endAt.toISOString(),
+                  role_name: roleName.trim() === '' ? null : roleName.trim(),
+                  source: row.schedule_id ? 'ad_hoc' : row.source,
+                  schedule_id: row.schedule_id ? null : row.schedule_id,
+                  schedule_occurrence_at: row.schedule_id ? null : row.schedule_occurrence_at,
+                  template_version_id: row.schedule_id ? null : row.template_version_id,
+                  schedule_role_name: row.schedule_id ? '' : roleName,
+                }
+              : row,
+          ),
+        )
+        void refresh()
+      }
     },
     [events, refresh],
   )
@@ -729,364 +591,41 @@ export function Plan24Page() {
       const endAt = addMinutes(startAt, Math.max(5, dur))
       const err = await plan24PersistCheckMove(supabase, ev, eventId, startAt, endAt, roleName)
       if (err) setLoadErr(err)
-      else void refresh()
+      else {
+        setEvents((prev) =>
+          prev.map((row) =>
+            row.id === eventId
+              ? {
+                  ...row,
+                  start_at: startAt.toISOString(),
+                  end_at: endAt.toISOString(),
+                  role_name: roleName.trim() === '' ? null : roleName.trim(),
+                  source: row.schedule_id ? 'ad_hoc' : row.source,
+                  schedule_id: row.schedule_id ? null : row.schedule_id,
+                  schedule_occurrence_at: row.schedule_id ? null : row.schedule_occurrence_at,
+                  template_version_id: row.schedule_id ? null : row.template_version_id,
+                  schedule_role_name: row.schedule_id ? '' : roleName,
+                }
+              : row,
+          ),
+        )
+        void refresh()
+      }
     },
     [events, refresh],
   )
 
   const openDetail = useCallback((ev: Plan24EventRow) => {
     setDetailEv(ev)
-    setDetailSubs(parseSubTasks(ev.sub_tasks))
-    setDetailOverride(false)
-    setDetailCompleting(false)
-    const dur = Math.max(5, Math.round(minutesBetween(new Date(ev.start_at), new Date(ev.end_at))))
-    setDetailDurationMin(String(dur))
   }, [])
 
-  /* Narrow deps: re-fetch template id when schedule / row identity changes, not on every detailEv field update. */
-  useEffect(() => {
-    if (!detailEv || detailEv.event_type !== 'cil_check' || detailEv.cil_template_id || !detailEv.schedule_id) return
-    let cancelled = false
-    const sid = detailEv.schedule_id
-    const eid = detailEv.id
-    void (async () => {
-      const { data, error } = await supabase
-        .from('plan24_cil_check_schedules')
-        .select('template_id')
-        .eq('id', sid)
-        .maybeSingle()
-      if (cancelled || error || !data?.template_id) return
-      const tid = String(data.template_id)
-      setDetailEv((prev) => (prev && prev.id === eid ? { ...prev, cil_template_id: tid } : prev))
-      await supabase.from('plan24_events').update({ cil_template_id: tid }).eq('id', eid)
-    })()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above effect
-  }, [detailEv?.id, detailEv?.event_type, detailEv?.schedule_id, detailEv?.cil_template_id])
-
-  const saveDetail = useCallback(async () => {
-    if (!detailEv) return
-    let status = detailEv.status
-    let opened_at = detailEv.opened_at
-    if (status === 'scheduled') {
-      status = 'in_progress'
-      opened_at = new Date().toISOString()
-    }
-    const isCheck =
-      !detailEv.event_type || String(detailEv.event_type).toLowerCase() === 'check'
-    const startAt = new Date(detailEv.start_at)
-    const durRaw = Math.max(5, Math.round(Number(detailDurationMin)) || 5)
-    const maxDurInWindow = Math.max(5, Math.floor(minutesBetween(startAt, windowBounds.end)))
-    const dur = isCheck ? Math.min(maxDurInWindow, durRaw) : durRaw
-    const endAt = isCheck ? addMinutes(startAt, dur).toISOString() : detailEv.end_at
-    const { error } = await supabase
-      .from('plan24_events')
-      .update({
-        title: detailEv.title,
-        sub_tasks: detailSubs,
-        status,
-        opened_at,
-        end_at: endAt,
-      })
-      .eq('id', detailEv.id)
-    if (error) setLoadErr(error.message)
-    else {
-      setDetailEv(null)
-      void refresh()
-    }
-  }, [detailEv, detailSubs, detailDurationMin, refresh, windowBounds.end])
-
-  /** CIL / CL / Quality route: title edits persist without a separate Save button. */
-  /* Narrow deps: debounce title persist on id/title/type only. */
-  useEffect(() => {
-    if (!detailEv || !['cil_check', 'cl_check', 'quality_check'].includes(detailEv.event_type)) return
-    const eid = detailEv.id
-    const title = detailEv.title
-    const tmr = window.setTimeout(() => {
-      void (async () => {
-        const { error } = await supabase.from('plan24_events').update({ title: title.trim() }).eq('id', eid)
-        if (error) setLoadErr(error.message)
-      })()
-    }, 550)
-    return () => window.clearTimeout(tmr)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above effect
-  }, [detailEv?.id, detailEv?.title, detailEv?.event_type])
-
-  const markComplete = useCallback(async () => {
-    if (!detailEv || !user?.id) return
-    const measured = detailEv.event_type === 'cl_check' || detailEv.event_type === 'quality_check'
-    const measuredVariant = detailEv.event_type === 'quality_check' ? ('quality' as const) : ('cl' as const)
-    const subsOk =
-      detailSubs.length === 0 ||
-      (measured
-        ? detailSubs.every((s) => !s.required || plan24ClQualitySubTaskComplete(s, measuredVariant))
-        : detailSubs.every((s) => s.done))
-    if (!subsOk && !(isAdmin && detailOverride)) {
-      setLoadErr(
-        measured
-          ? detailEv.event_type === 'quality_check'
-            ? 'Complete every required step (Pass or Fail for each). Or use admin override.'
-            : 'Complete every required step (readings within limits or text filled). Or use admin override.'
-          : 'Complete all sub-tasks, or use admin override.',
-      )
-      return
-    }
-    setLoadErr(null)
-    setDetailCompleting(true)
-    try {
-      const { error } = await supabase
-        .from('plan24_events')
-        .update({
-          title: detailEv.title.trim(),
-          status: 'complete',
-          completed_at: new Date().toISOString(),
-          completed_by: user.id,
-          opened_at: detailEv.opened_at ?? new Date().toISOString(),
-          sub_tasks: detailSubs,
-        })
-        .eq('id', detailEv.id)
-      if (error) setLoadErr(error.message)
-      else {
-        setDetailEv(null)
-        void refresh()
-      }
-    } finally {
-      setDetailCompleting(false)
-    }
-  }, [detailEv, detailSubs, detailOverride, isAdmin, user?.id, refresh])
-
-  const openRaiseIssueForCilTask = useCallback(
-    (task: Plan24SubTask) => {
-      if (!detailEv) return
-      setIssueTitle(`Defect: ${detailEv.title} — ${task.label}`)
-      setIssueDescription('')
-      setIssueAreaId(detailEv.area_id ?? '')
-      setIssueEquipmentId(detailEv.equipment_id ?? '')
-      setIssuePriority('medium')
-      setIssueForTaskId(task.id)
-      setRaiseIssueOpen(true)
-    },
-    [detailEv],
-  )
-
-  const openRaiseIssueForMeasuredTask = useCallback(
-    (task: Plan24SubTask) => {
-      if (!detailEv) return
-      const kind = detailEv.event_type
-      const prefix = kind === 'cl_check' ? 'Deviation' : kind === 'quality_check' ? 'Quality fail' : 'Issue'
-      setIssueTitle(`${prefix}: ${detailEv.title} — ${task.label}`)
-      setIssueDescription('')
-      setIssueAreaId(detailEv.area_id ?? '')
-      setIssueEquipmentId(detailEv.equipment_id ?? '')
-      setIssuePriority('medium')
-      setIssueForTaskId(task.id)
-      setRaiseIssueOpen(true)
-    },
-    [detailEv],
-  )
-
-  const submitRaisedIssue = useCallback(async () => {
-    if (!detailEv || !cellId || !user?.id || !issueTitle.trim()) return
-    const eventKind = String(detailEv.event_type || '')
-    const areaName = issueAreaId ? areas.find((a) => a.id === issueAreaId)?.name ?? null : null
-    const equipmentName = issueEquipmentId ? equipment.find((e) => e.id === issueEquipmentId)?.name ?? null : null
-
-    let linkedIssueKind: string | null = null
-    let linkedIssueId: string | null = null
-    if (eventKind === 'cl_check') {
-      const defectTypeId = deviationTypes[0]?.id
-      if (!defectTypeId) {
-        setLoadErr('No active deviation types. Ask super admin to add one.')
-        return
-      }
-      const { data, error } = await supabase
-        .from('deviations')
-        .insert({
-          master_cell_id: cellId,
-          defect_type_id: defectTypeId,
-          title: issueTitle.trim(),
-          description: issueDescription.trim() || null,
-          area: areaName,
-          equipment: equipmentName,
-          priority: issuePriority,
-          status: 'open',
-          location_summary: [areaName, equipmentName].filter(Boolean).join(' / ') || null,
-          created_by: user.id,
-        })
-        .select('id')
-        .single()
-      if (error || !data) {
-        setLoadErr(error?.message ?? 'Could not create deviation.')
-        return
-      }
-      if (issueForTaskId) {
-        setSuccessMsg('Deviation recorded.')
-        setRaiseIssueOpen(false)
-        setIssueForTaskId(null)
-        void refresh()
-        return
-      }
-      linkedIssueKind = 'deviation'
-      linkedIssueId = data.id as string
-    } else if (eventKind === 'cil_check') {
-      const defectTypeId = dhTypes[0]?.id
-      if (!defectTypeId) {
-        setLoadErr('No active DH defect types. Ask super admin to add one.')
-        return
-      }
-      const cilTpl = detailEv.cil_template_id ?? null
-      const { data, error } = await supabase
-        .from('dh_defects')
-        .insert({
-          master_cell_id: cellId,
-          defect_type_id: defectTypeId,
-          title: issueTitle.trim(),
-          description: issueDescription.trim() || null,
-          area: areaName,
-          equipment: equipmentName,
-          area_id: issueAreaId || null,
-          equipment_id: issueEquipmentId || null,
-          cil_template_id: cilTpl,
-          cil_template_task_id: issueForTaskId || null,
-          priority: issuePriority,
-          status: 'open',
-          location_summary: [areaName, equipmentName].filter(Boolean).join(' / ') || null,
-          created_by: user.id,
-        })
-        .select('id')
-        .single()
-      if (error || !data) {
-        setLoadErr(error?.message ?? 'Could not create defect.')
-        return
-      }
-      if (issueForTaskId) {
-        setSuccessMsg('Defect created.')
-        setRaiseIssueOpen(false)
-        setIssueForTaskId(null)
-        void refresh()
-        return
-      }
-      linkedIssueKind = 'dh_defect'
-      linkedIssueId = data.id as string
-    } else if (eventKind === 'quality_check') {
-      const defectTypeId = qualityFailTypes[0]?.id
-      if (!defectTypeId) {
-        setLoadErr('No active quality fail types. Ask super admin to add one.')
-        return
-      }
-      const { data, error } = await supabase
-        .from('quality_fails')
-        .insert({
-          master_cell_id: cellId,
-          defect_type_id: defectTypeId,
-          title: issueTitle.trim(),
-          description: issueDescription.trim() || null,
-          area: areaName,
-          equipment: equipmentName,
-          priority: issuePriority,
-          status: 'open',
-          location_summary: [areaName, equipmentName].filter(Boolean).join(' / ') || null,
-          created_by: user.id,
-        })
-        .select('id')
-        .single()
-      if (error || !data) {
-        setLoadErr(error?.message ?? 'Could not create quality fail.')
-        return
-      }
-      if (issueForTaskId) {
-        setSuccessMsg('Quality fail recorded.')
-        setRaiseIssueOpen(false)
-        setIssueForTaskId(null)
-        void refresh()
-        return
-      }
-      linkedIssueKind = 'quality_fail'
-      linkedIssueId = data.id as string
-    } else {
-      setLoadErr('Raise issue is only available for CL, CIL, and Quality checks.')
-      return
-    }
-
-    const { error: eventErr } = await supabase
-      .from('plan24_events')
-      .update({
-        status: 'complete',
-        completed_at: new Date().toISOString(),
-        completed_by: user.id,
-        linked_issue_kind: linkedIssueKind,
-        linked_issue_id: linkedIssueId,
-        linked_issue_created_at: new Date().toISOString(),
-        area_id: issueAreaId || null,
-        equipment_id: issueEquipmentId || null,
-      })
-      .eq('id', detailEv.id)
-    if (eventErr) {
-      setLoadErr(eventErr.message)
-      return
-    }
-    setSuccessMsg(
-      linkedIssueKind === 'deviation'
-        ? 'Deviation created and linked.'
-        : linkedIssueKind === 'dh_defect'
-          ? 'Defect created and linked.'
-          : 'Quality fail created and linked.',
-    )
-    setRaiseIssueOpen(false)
-    setIssueForTaskId(null)
+  const closeDetailModal = useCallback(() => {
     setDetailEv(null)
+  }, [])
+
+  const onDetailSaved = useCallback(() => {
     void refresh()
-  }, [
-    areas,
-    cellId,
-    detailEv,
-    deviationTypes,
-    dhTypes,
-    equipment,
-    issueAreaId,
-    issueDescription,
-    issueEquipmentId,
-    issueForTaskId,
-    issuePriority,
-    issueTitle,
-    qualityFailTypes,
-    refresh,
-    user?.id,
-  ])
-
-  const openLinkedIssue = useCallback(() => {
-    if (!detailEv?.linked_issue_id) return
-    const kind = detailEv.linked_issue_kind
-    let path = '/rtt-systems/defect-handling'
-    if (kind === 'deviation') path = '/rtt-systems/deviations'
-    else if (kind === 'quality_fail') path = '/rtt-systems/quality-fails'
-    else if (kind === 'dh_defect') path = '/rtt-systems/defect-handling'
-    navigate(`${path}?linkedIssueId=${detailEv.linked_issue_id}`)
-    setDetailEv(null)
-  }, [detailEv, navigate])
-
-  const confirmDelete = useCallback(async () => {
-    if (!deleteEv || !user?.id || !deleteComment.trim()) return
-    setBusy(true)
-    const { error } = await supabase
-      .from('plan24_events')
-      .update({
-        deleted_at: new Date().toISOString(),
-        delete_comment: deleteComment.trim(),
-        deleted_by: user.id,
-      })
-      .eq('id', deleteEv.id)
-    setBusy(false)
-    if (error) setLoadErr(error.message)
-    else {
-      setDeleteEv(null)
-      setDeleteComment('')
-      setDetailEv(null)
-      void refresh()
-    }
-  }, [deleteEv, deleteComment, user?.id, refresh])
+  }, [refresh])
 
   const addTask = useCallback(async () => {
     if (!cellId || !user?.id || !taskRoleName || !newTaskTitle.trim()) return
@@ -1103,7 +642,7 @@ export function Plan24Page() {
       setNewTaskTitle('')
       void refresh()
     }
-  }, [cellId, user?.id, taskRoleName, newTaskTitle, tasks, refresh])
+  }, [cellId, user, taskRoleName, newTaskTitle, tasks, refresh])
 
   const toggleTask = useCallback(
     async (t: Plan24TaskRow) => {
@@ -1138,19 +677,11 @@ export function Plan24Page() {
   )
 
   useEffect(() => {
-    const anyModalOpen =
-      prefsModalOpen ||
-      adhocOpen ||
-      detailEv !== null ||
-      raiseIssueOpen ||
-      deleteEv !== null ||
-      rolePickOpen
+    const anyModalOpen = prefsModalOpen || adhocOpen || detailEv !== null || rolePickOpen
     function onKey(e: KeyboardEvent) {
       if (e.defaultPrevented) return
       if (e.key === 'Escape') {
         if (prefsModalOpen) setPrefsModalOpen(false)
-        else if (deleteEv) setDeleteEv(null)
-        else if (raiseIssueOpen) setRaiseIssueOpen(false)
         else if (rolePickOpen) setRolePickOpen(false)
         else if (adhocOpen) setAdhocOpen(false)
         else if (detailEv) setDetailEv(null)
@@ -1182,7 +713,7 @@ export function Plan24Page() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [prefsModalOpen, adhocOpen, detailEv, raiseIssueOpen, deleteEv, rolePickOpen, panelOpen, taskBarOpen, stepDay, gotoToday, cycleShift])
+  }, [prefsModalOpen, adhocOpen, detailEv, rolePickOpen, panelOpen, taskBarOpen, stepDay, gotoToday, cycleShift])
 
   const filteredPickPeople = useMemo(() => {
     const q = rolePickQuery.trim().toLowerCase()
@@ -1205,9 +736,9 @@ export function Plan24Page() {
       b.getDate() !== a.getDate() ||
       b.getMonth() !== a.getMonth() ||
       b.getFullYear() !== a.getFullYear()
-    const timeRange = `${a.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${formatClock(a)} → ${b.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${formatClock(b)}`
+    const timeRange = `${a.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${formatPlan24Clock(a)} → ${b.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${formatPlan24Clock(b)}`
     if (crosses) return `${name} · ${timeRange}`
-    return `${name} · ${a.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${formatClock(a)}–${formatClock(b)}`
+    return `${name} · ${a.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${formatPlan24Clock(a)}–${formatPlan24Clock(b)}`
   }, [shiftKind, windowBounds, shifts])
 
   const activeTeam = useMemo(() => teams.find((t) => t.id === activeTeamId), [teams, activeTeamId])
@@ -1476,7 +1007,7 @@ export function Plan24Page() {
                   >
                     <div className="font-semibold">{ev.title}</div>
                     <div className="mt-0.5 text-[10px] font-normal opacity-90">
-                      {formatClock(new Date(ev.start_at))}–{formatClock(new Date(ev.end_at))}
+                      {formatPlan24Clock(new Date(ev.start_at))}–{formatPlan24Clock(new Date(ev.end_at))}
                       {ev.source === 'ad_hoc' ? ' · Ad hoc' : ''}
                     </div>
                     <p className="mt-1 text-[10px] text-sky-200/90">Drag onto a role column to assign.</p>
@@ -1710,7 +1241,7 @@ export function Plan24Page() {
                 Ad hoc check
               </h2>
               <p className="text-xs text-muted">
-                Role <strong className="text-fg">{adhocRole}</strong> · starts {adhocStart ? formatClock(adhocStart) : '—'}
+                Role <strong className="text-fg">{adhocRole}</strong> · starts {adhocStart ? formatPlan24Clock(adhocStart) : '—'}
               </p>
               <label className="block text-xs font-medium text-muted">
                 Title
@@ -1749,273 +1280,18 @@ export function Plan24Page() {
       ) : null}
 
       {detailEv ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation">
-          <div
-            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border-strong bg-surface p-5 shadow-xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="plan24-check-detail-title"
-          >
-          <div className="space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <h2 id="plan24-check-detail-title" className="font-display text-lg font-semibold">
-                Check
-              </h2>
-              <button
-                type="button"
-                className="shrink-0 rounded-lg p-1.5 text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/10"
-                aria-label="Close"
-                onClick={() => setDetailEv(null)}
-              >
-                <X className="size-5" aria-hidden />
-              </button>
-            </div>
-            <label className="block text-xs font-medium text-muted">
-              Title
-              <input
-                className={`${detailInputClass} mt-1`}
-                value={detailEv.title}
-                onChange={(e) => setDetailEv({ ...detailEv, title: e.target.value })}
-              />
-            </label>
-            {!detailEv.event_type || String(detailEv.event_type).toLowerCase() === 'check' ? (
-              <label className="block text-xs font-medium text-muted">
-                Duration (minutes)
-                <input
-                  type="number"
-                  min={5}
-                  step={1}
-                  className={`${detailInputClass} mt-1`}
-                  inputMode="numeric"
-                  value={detailDurationMin}
-                  onChange={(e) => setDetailDurationMin(e.target.value)}
-                />
-                <span className="mt-1 block text-[10px] text-muted/90">
-                  Starts {formatClock(new Date(detailEv.start_at))} · end updates from duration
-                </span>
-              </label>
-            ) : null}
-            <div className="text-xs text-muted">
-              {detailEv.role_name ? `Role: ${detailEv.role_name}` : 'Unassigned'} · {detailEv.source === 'ad_hoc' ? 'Ad hoc' : 'Scheduled'}
-            </div>
-            {detailEv.linked_issue_id ? (
-              <div className="rounded-lg border border-border bg-surface-raised/40 px-2.5 py-2 text-xs text-muted">
-                Linked issue: {detailEv.linked_issue_kind ?? 'issue'} · {detailEv.linked_issue_id}
-              </div>
-            ) : null}
-            {detailEv.event_type === 'cil_check' && cellId ? (
-              <Plan24CilRoutePanel
-                event={detailEv}
-                cellId={cellId}
-                subs={detailSubs}
-                onSubsChange={setDetailSubs}
-                onMarkFullComplete={() => void markComplete()}
-                routeSubmitting={detailCompleting}
-                onOpenDefectForTask={openRaiseIssueForCilTask}
-              />
-            ) : (detailEv.event_type === 'cl_check' || detailEv.event_type === 'quality_check') && cellId ? (
-              <Plan24ClQualityRoutePanel
-                variant={detailEv.event_type === 'cl_check' ? 'cl' : 'quality'}
-                event={detailEv}
-                subs={detailSubs}
-                onSubsChange={setDetailSubs}
-                onMarkFullComplete={() => void markComplete()}
-                routeSubmitting={detailCompleting}
-                onOpenIssueForTask={openRaiseIssueForMeasuredTask}
-              />
-            ) : (
-              <div className="space-y-2">
-                <span className="text-xs font-semibold text-fg/80">Sub-tasks</span>
-                {detailSubs.map((s, idx) => (
-                  <label key={s.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={s.done}
-                      onChange={() => {
-                        const next = [...detailSubs]
-                        next[idx] = { ...s, done: !s.done }
-                        setDetailSubs(next)
-                      }}
-                    />
-                    <input
-                      className={`${detailInputClass} flex-1 py-1.5`}
-                      value={s.label}
-                      onChange={(e) => {
-                        const next = [...detailSubs]
-                        next[idx] = { ...s, label: e.target.value }
-                        setDetailSubs(next)
-                      }}
-                    />
-                  </label>
-                ))}
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-accent hover:underline"
-                  onClick={() =>
-                    setDetailSubs((prev) => [...prev, { id: crypto.randomUUID(), label: 'New step', done: false }])
-                  }
-                >
-                  + Add sub-task
-                </button>
-              </div>
-            )}
-            {isAdmin ? (
-              <label className="flex items-center gap-2 text-xs text-muted">
-                <input type="checkbox" checked={detailOverride} onChange={(e) => setDetailOverride(e.target.checked)} />
-                Admin: complete without all sub-tasks
-              </label>
-            ) : null}
-            <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-              {detailEv.event_type !== 'cil_check' &&
-              detailEv.event_type !== 'cl_check' &&
-              detailEv.event_type !== 'quality_check' ? (
-                <>
-                  <button type="button" className={detailSaveButtonClass} onClick={() => void saveDetail()}>
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-600 dark:bg-emerald-600"
-                    onClick={() => void markComplete()}
-                  >
-                    Mark complete
-                  </button>
-                </>
-              ) : null}
-              {detailEv.linked_issue_id ? (
-                <button
-                  type="button"
-                  className="rounded-xl border border-border px-3 py-2 text-sm font-semibold hover:bg-surface-raised/60"
-                  onClick={openLinkedIssue}
-                >
-                  View linked issue
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="ml-auto inline-flex items-center gap-1 rounded-xl border border-danger/40 px-3 py-2 text-sm text-danger hover:bg-danger/10"
-                onClick={() => {
-                  setDeleteEv(detailEv)
-                  setDeleteComment('')
-                }}
-              >
-                <Trash2 className="size-4" aria-hidden />
-                Remove…
-              </button>
-            </div>
-          </div>
-          </div>
-        </div>
-      ) : null}
-
-      {raiseIssueOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border-strong bg-surface p-5 shadow-xl" role="dialog" aria-modal="true">
-            <div className="space-y-3">
-              <h2 className="font-display text-lg font-semibold">
-                {detailEv?.event_type === 'cl_check'
-                  ? 'Raise deviation'
-                  : detailEv?.event_type === 'cil_check'
-                    ? 'Raise defect'
-                    : 'Record quality fail'}
-              </h2>
-              <label className="block text-xs font-medium text-muted">
-                Title
-                <input className={`${inputClass} mt-1`} value={issueTitle} onChange={(e) => setIssueTitle(e.target.value)} />
-              </label>
-              <label className="block text-xs font-medium text-muted">
-                Description
-                <textarea
-                  className={`${inputClass} mt-1 min-h-[88px] py-2`}
-                  value={issueDescription}
-                  onChange={(e) => setIssueDescription(e.target.value)}
-                />
-              </label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="text-xs font-medium text-muted">
-                  Area
-                  <select className={inputClass} value={issueAreaId} onChange={(e) => setIssueAreaId(e.target.value)}>
-                    <option value="">-- None --</option>
-                    {areas.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-xs font-medium text-muted">
-                  Equipment
-                  <select className={inputClass} value={issueEquipmentId} onChange={(e) => setIssueEquipmentId(e.target.value)}>
-                    <option value="">-- None --</option>
-                    {equipment
-                      .filter((e) => !issueAreaId || e.area_id === issueAreaId)
-                      .map((e) => (
-                        <option key={e.id} value={e.id}>
-                          {e.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-              </div>
-              <label className="block text-xs font-medium text-muted">
-                Priority
-                <select className={inputClass} value={issuePriority} onChange={(e) => setIssuePriority(e.target.value as 'low' | 'medium' | 'high' | 'critical')}>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="critical">Critical</option>
-                </select>
-              </label>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" className="rounded-xl px-3 py-2 text-sm text-muted hover:bg-black/[0.06]" onClick={() => setRaiseIssueOpen(false)}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                  disabled={!issueTitle.trim()}
-                  onClick={() => void submitRaisedIssue()}
-                >
-                  Save and link
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {deleteEv ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation">
-          <div
-            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border-strong bg-surface p-5 shadow-xl"
-            role="dialog"
-            aria-modal="true"
-          >
-          <div className="space-y-3">
-            <h2 className="font-display text-lg font-semibold">Remove from plan</h2>
-            <p className="text-xs text-muted">Soft delete with a required comment (audit).</p>
-            <textarea
-              className={`${inputClass} min-h-[5rem]`}
-              value={deleteComment}
-              onChange={(e) => setDeleteComment(e.target.value)}
-              placeholder="Why is this being removed?"
-            />
-            <div className="flex justify-end gap-2">
-              <button type="button" className="rounded-xl px-3 py-2 text-sm text-muted hover:bg-black/[0.06]" onClick={() => setDeleteEv(null)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={busy || !deleteComment.trim()}
-                className="rounded-xl bg-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                onClick={() => void confirmDelete()}
-              >
-                Confirm remove
-              </button>
-            </div>
-          </div>
-          </div>
-        </div>
+        <Plan24EventDetailModal
+          event={detailEv}
+          cellId={cellId}
+          windowEnd={windowBounds.end}
+          userId={user?.id}
+          isAdmin={isAdmin}
+          navigate={navigate}
+          onClose={closeDetailModal}
+          onSaved={onDetailSaved}
+          onLoadError={setLoadErr}
+          onSuccessMsg={setSuccessMsg}
+        />
       ) : null}
 
       {rolePickOpen ? (
@@ -2102,10 +1378,4 @@ export function Plan24Page() {
       ) : null}
     </div>
   )
-}
-
-function formatClock(d: Date): string {
-  const h = String(d.getHours()).padStart(2, '0')
-  const m = String(d.getMinutes()).padStart(2, '0')
-  return `${h}:${m}`
 }

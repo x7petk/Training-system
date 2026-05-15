@@ -11,12 +11,14 @@ import {
   ListTree,
   RefreshCw,
   ShieldCheck,
+  Table2,
   UsersRound,
 } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { AppSectionLayout } from './AppSectionLayout'
 import { useAuth } from '../hooks/useAuth'
 import { Plan24WorkspaceProvider } from '../features/plan24/Plan24WorkspaceContext'
+import { ShiftDdsShellProvider } from '../features/dds/ShiftDdsShellContext'
 import { Plan24ScopeBar } from '../features/plan24/Plan24ScopeBar'
 
 const adminBasePath = '/dds-process/admin'
@@ -25,12 +27,14 @@ export function DdsProcessLayout() {
   const { isAdmin, profileReady } = useAuth()
   const location = useLocation()
   const inAdminSection = location.pathname.startsWith(adminBasePath)
-  const adminNeedsScope = location.pathname.includes('/admin/p2p-soft-points')
+  const adminNeedsScope =
+    location.pathname.includes('/admin/p2p-soft-points') || location.pathname.includes('/admin/p2p-setup')
   const showPlan24Scope = !inAdminSection || adminNeedsScope
 
   return (
     <Plan24WorkspaceProvider>
-      <AppSectionLayout
+      <ShiftDdsShellProvider>
+        <AppSectionLayout
         storageKey="dds-process.sidebar-collapsed"
         title="DDS Process"
         subtitle="DDS process"
@@ -49,6 +53,7 @@ export function DdsProcessLayout() {
         navItems={[
           { to: '/dds-process/plan-24', label: 'Plan 24', icon: CalendarDays, end: true },
           { to: '/dds-process/p2p', label: 'P2P', icon: UsersRound, end: true },
+          { to: '/dds-process/p2p-summary', label: 'P2P Summary', icon: Table2, end: true },
           { to: '/dds-process/shift-dds', label: 'Shift DDS', icon: Clock, end: true },
           { to: '/dds-process/line-compliance', label: 'Line compliance', icon: ClipboardCheck, end: true },
           { to: '/dds-process/line-dds', label: 'Line DDS', icon: ListTree, end: true },
@@ -125,12 +130,25 @@ export function DdsProcessLayout() {
                   >
                     P2P soft points
                   </NavLink>
+                  <NavLink
+                    to="/dds-process/admin/p2p-setup"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    P2P set-up
+                  </NavLink>
                 </>
               ) : null}
             </div>
           ) : null
         }
       />
+      </ShiftDdsShellProvider>
     </Plan24WorkspaceProvider>
   )
 }

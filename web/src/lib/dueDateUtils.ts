@@ -6,6 +6,13 @@ export function localYMD(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+/** Calendar yesterday in local time (YYYY-MM-DD). */
+export function localYMDYesterday(): string {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  return localYMD(d)
+}
+
 export function addDays(d: Date, n: number): Date {
   const x = new Date(d)
   x.setDate(x.getDate() + n)

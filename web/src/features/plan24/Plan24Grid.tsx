@@ -58,7 +58,7 @@ function assignLanes(items: { id: string; start: number; end: number }[]): Map<s
 }
 
 function formatClock(d: Date): string {
-  const h = String(d.getHours()).padStart(2, '0')
+  const h = d.getHours()
   const m = String(d.getMinutes()).padStart(2, '0')
   return `${h}:${m}`
 }
@@ -126,9 +126,10 @@ type ResizeSession = {
   moved: boolean
 }
 
-const TIME_COL = '4.5rem'
+/** Narrow time-scale gutter (hour labels + minor guides). */
+const TIME_COL = '3rem'
 /** Minimum width per role column when many roles force horizontal scroll. */
-const ROLE_COL_MIN = '6.5rem'
+const ROLE_COL_MIN = '6.25rem'
 
 export function Plan24Grid(props: {
   windowStart: Date
@@ -217,7 +218,8 @@ export function Plan24Grid(props: {
 
   const gridTemplateColumns =
     roles.length === 0 ? TIME_COL : `${TIME_COL} repeat(${roles.length}, minmax(${ROLE_COL_MIN}, 1fr))`
-  const chartMinWidth = roles.length === 0 ? undefined : `max(100%, calc(4.5rem + ${roles.length} * 6.5rem))`
+  const chartMinWidth =
+    roles.length === 0 ? undefined : `max(100%, calc(${TIME_COL} + ${roles.length} * ${ROLE_COL_MIN}))`
 
   const byRole = useMemo(() => buildEventsByRole(roles, events), [roles, events])
 
@@ -485,7 +487,7 @@ export function Plan24Grid(props: {
             className="grid shrink-0 border-b border-border bg-surface-raised/40"
             style={{ gridTemplateColumns }}
           >
-            <div className="min-w-0 border-r border-border" aria-hidden />
+            <div className="min-w-0 border-r border-border bg-surface-raised/25" aria-hidden />
             {roles.map((r) => (
               <div key={r.name} className="min-w-0 border-l border-border px-1.5 py-2 text-center">
                 {onRoleHeaderClick ? (
@@ -521,12 +523,12 @@ export function Plan24Grid(props: {
                 height: bodyHeightPx,
               }}
             >
-              <div className="relative z-10 min-w-0 border-r border-border bg-surface">
+              <div className="relative z-10 min-w-0 border-r border-border bg-surface-raised/20">
                 {ticks.map((t) => (
                   <div
                     key={t.label + String(t.top)}
-                    className="absolute right-1 text-[10px] font-medium tabular-nums text-muted"
-                    style={{ top: t.top - 6 }}
+                    className="absolute right-0.5 translate-y-[-50%] text-[9px] font-medium tabular-nums leading-none text-muted"
+                    style={{ top: t.top }}
                   >
                     {t.label}
                   </div>
@@ -706,13 +708,18 @@ export function Plan24Grid(props: {
 
             {nowTopPx !== null ? (
               <div
-                className="pointer-events-none absolute top-0 bottom-0 z-[4]"
-                style={{ left: TIME_COL, right: 0 }}
+                className="pointer-events-none absolute inset-x-0 top-0 bottom-0 z-[12]"
                 aria-hidden
               >
-                <div className="absolute right-0 left-0 flex items-center" style={{ top: nowTopPx }}>
-                  <span className="-ml-1 mr-1 inline-block size-2 rounded-full bg-rose-500 shadow-[0_0_0_2px_rgba(255,255,255,0.6)]" />
-                  <span className="h-px flex-1 bg-rose-500/70" />
+                <div
+                  className="absolute right-0 left-0 flex items-center"
+                  style={{ top: nowTopPx, transform: 'translateY(-50%)' }}
+                >
+                  <span
+                    className="mr-0.5 inline-block size-1.5 shrink-0 rounded-full bg-emerald-500 shadow-[0_0_0_1.5px_rgba(255,255,255,0.75)] dark:shadow-[0_0_0_1.5px_rgba(0,0,0,0.45)]"
+                    aria-hidden
+                  />
+                  <span className="h-[2px] min-w-0 flex-1 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.45)]" />
                 </div>
               </div>
             ) : null}

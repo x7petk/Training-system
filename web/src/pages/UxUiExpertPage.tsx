@@ -240,7 +240,7 @@ export function UxUiExpertPage() {
           </label>
 
           <UploadDropzone
-            title="Company design map file (optional)"
+            title="UI Kit (optional)"
             hint="Supports image or text files. Text gets appended to standards input."
             accept="image/*,.txt,.md,.json"
             loadedName={standardImage?.label}
