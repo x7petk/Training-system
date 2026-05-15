@@ -1,6 +1,7 @@
 import { Building2, ChevronLeft, ChevronRight, Factory, LayoutGrid } from 'lucide-react'
 import { usePlan24Workspace } from './Plan24WorkspaceContext'
 import { useShiftDdsShellOptional } from '../dds/ShiftDdsShellContext'
+import { supabaseProjectRef } from '../../lib/supabase'
 
 export function Plan24ScopeBar() {
   const shiftDds = useShiftDdsShellOptional()
@@ -159,6 +160,19 @@ export function Plan24ScopeBar() {
           </span>
         ) : null}
       </div>
+      {import.meta.env.DEV && supabaseProjectRef ? (
+        <p className="mt-1.5 border-t border-border/50 pt-1.5 text-[10px] leading-snug text-muted">
+          Dev: Supabase <code className="rounded bg-black/[0.04] px-1 font-mono text-[9px] text-fg/85 dark:bg-white/[0.06]">{supabaseProjectRef}</code>
+          {cellId ? (
+            <>
+              {' '}
+              · cell <code className="rounded bg-black/[0.04] px-1 font-mono text-[9px] text-fg/85 dark:bg-white/[0.06]">{cellId}</code>
+            </>
+          ) : null}
+          . Match Vercel&apos;s <code className="font-mono text-[9px]">VITE_SUPABASE_URL</code> for prod parity; site/plant/cell
+          are saved per host (localhost vs deployment pick different defaults unless you align them).
+        </p>
+      ) : null}
     </div>
   )
 }

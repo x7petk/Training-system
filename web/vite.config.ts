@@ -5,12 +5,22 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
+const repoRoot = path.resolve(dir, '..')
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, dir, '')
-  const target = env.VITE_SUPABASE_URL?.trim().replace(/\/$/, '')
-  const anon = env.VITE_SUPABASE_ANON_KEY?.trim()
+  // Merge repo-root `.env*` with `web/.env*` so local dev matches prod when vars live at repo root
+  // (Vite’s default envDir is `web/` only). `web/` wins on duplicate keys.
+  const merged = { ...loadEnv(mode, repoRoot, ''), ...loadEnv(mode, dir, '') }
+  const mergedUrl = merged.VITE_SUPABASE_URL ?? ''
+  const mergedAnon = merged.VITE_SUPABASE_ANON_KEY ?? ''
+  const target = mergedUrl.trim().replace(/\/$/, '')
+  const anon = mergedAnon.trim()
+
+  /** Only pin keys when set from files; otherwise Vite keeps default `process.env` injection (CI/Vercel). */
+  const envDefine: Record<string, string> = {}
+  if (mergedUrl) envDefine['import.meta.env.VITE_SUPABASE_URL'] = JSON.stringify(mergedUrl)
+  if (mergedAnon) envDefine['import.meta.env.VITE_SUPABASE_ANON_KEY'] = JSON.stringify(mergedAnon)
 
   /** Dev/preview: same-origin `/api/report-advisor` → Supabase Edge Function (adds apikey server-side). */
   const advisorProxy =
@@ -47,6 +57,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), tailwindcss()],
+    ...(Object.keys(envDefine).length ? { define: envDefine } : {}),
     server: advisorProxy ? { proxy: advisorProxy } : {},
     preview: advisorProxy ? { proxy: advisorProxy } : {},
   }

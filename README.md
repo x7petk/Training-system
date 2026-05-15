@@ -35,7 +35,9 @@ Stack: Vite, React, TypeScript, Tailwind v4, Supabase Auth.
 
 ### Local setup
 
-**Env (already done if you followed earlier steps):** `web/.env.local` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (publishable key).
+**Env:** `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (publishable key). Put them in **`web/.env.local`** and/or the **repository root** `.env.local` / `.env` (same folder as the root `package.json`). Vite merges **root first, then `web/`**, so keys in `web/.env.local` win; root-only files are now picked up so localhost matches production when you use the same Supabase project as Vercel.
+
+**Parity checklist:** Same Supabase URL/key as production · same **signed-in user** (RLS) · same **site / plant / cell** in the scope bar (scope is stored in `localStorage` per origin, so `localhost` and `*.vercel.app` do not share it).
 
 #### Option A — automated (recommended)
 
