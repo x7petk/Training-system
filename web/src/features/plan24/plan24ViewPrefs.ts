@@ -5,6 +5,7 @@ export const PLAN24_EVENT_TYPE_FILTER_OPTIONS: { id: string; label: string }[] =
   { id: 'cl_check', label: 'CL check' },
   { id: 'cil_check', label: 'CIL check' },
   { id: 'quality_check', label: 'Quality check' },
+  { id: 'dds_action', label: 'DDS action' },
 ]
 
 export type Plan24ViewPrefs = {

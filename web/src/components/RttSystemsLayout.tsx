@@ -6,6 +6,7 @@ import {
   ClipboardList,
   LayoutDashboard,
   LayoutList,
+  ListTodo,
   Network,
   XCircle,
 } from 'lucide-react'
@@ -20,6 +21,7 @@ export function RttSystemsLayout() {
   const { pathname } = useLocation()
   const showPlan24Scope =
     pathname.includes('/rtt-systems/plan-24') ||
+    pathname.includes('/rtt-systems/dds-actions') ||
     pathname.includes('/rtt-systems/admin') ||
     pathname.includes('/rtt-systems/defect-handling') ||
     pathname.includes('/rtt-systems/deviations') ||
@@ -45,6 +47,7 @@ export function RttSystemsLayout() {
       }
       navItems={[
         { to: '/rtt-systems/plan-24', label: 'Plan 24', icon: CalendarDays, end: true },
+        { to: '/rtt-systems/dds-actions', label: 'DDS actions', icon: ListTodo, end: true },
         { to: '/rtt-systems/my-plan', label: 'My Plan', icon: ClipboardList, end: true },
         { to: '/rtt-systems/list-view', label: 'List view', icon: LayoutList, end: true },
         { to: '/rtt-systems/deviations', label: 'Deviations', icon: AlertTriangle, end: true },

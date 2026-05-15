@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { addMinutes, minutesBetween } from './plan24ShiftUtils'
+import { isPlan24DdsAction } from './plan24DdsUtils'
 import type { Plan24EventRow } from './plan24Types'
 
 const DRAG_DT = 'application/x-plan24-event'
@@ -136,6 +137,8 @@ export function Plan24Grid(props: {
   windowEnd: Date
   roles: Plan24GridRoleCol[]
   events: Plan24EventRow[]
+  /** Column key for layout / drag; defaults to `role_name`. */
+  gridRoleKey?: (ev: Plan24EventRow) => string
   onBackgroundClick: (roleName: string, startAt: Date) => void
   onEventClick: (ev: Plan24EventRow) => void
   /** When role changes, updates `role_name` on the event. */
@@ -148,6 +151,7 @@ export function Plan24Grid(props: {
     windowEnd,
     roles,
     events,
+    gridRoleKey = (ev: Plan24EventRow) => (ev.role_name ?? '').trim(),
     onBackgroundClick,
     onEventClick,
     onEventMove,
@@ -221,7 +225,7 @@ export function Plan24Grid(props: {
   const chartMinWidth =
     roles.length === 0 ? undefined : `max(100%, calc(${TIME_COL} + ${roles.length} * ${ROLE_COL_MIN}))`
 
-  const byRole = useMemo(() => buildEventsByRole(roles, events), [roles, events])
+  const byRole = useMemo(() => buildEventsByRole(roles, events, gridRoleKey), [roles, events, gridRoleKey])
 
   const flushDragUi = useCallback((s: DragSession, ghostX: number, ghostY: number) => {
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
@@ -297,7 +301,7 @@ export function Plan24Grid(props: {
 
   const startMove = useCallback(
     (ev: Plan24EventRow, roleName: string, e: ReactPointerEvent<Element>) => {
-      if (!ev.role_name) return
+      if (!gridRoleKey(ev)) return
       e.preventDefault()
       e.stopPropagation()
       lastDragMovedIdRef.current = null
@@ -358,7 +362,7 @@ export function Plan24Grid(props: {
       document.addEventListener('pointerup', up, true)
       document.addEventListener('pointercancel', up, true)
     },
-    [windowStart, pixelsPerMinute, totalMin, findRoleUnderPointer, flushDragUi, onEventMove, endDocumentDrag],
+    [windowStart, pixelsPerMinute, totalMin, findRoleUnderPointer, flushDragUi, onEventMove, endDocumentDrag, gridRoleKey],
   )
 
   const endResizeDocumentDrag = useCallback(
@@ -373,7 +377,7 @@ export function Plan24Grid(props: {
 
   const startResizeEnd = useCallback(
     (ev: Plan24EventRow, roleName: string, e: ReactPointerEvent<Element>) => {
-      if (!ev.role_name || !isPlan24EventCheck(ev)) return
+      if (!gridRoleKey(ev) || (!isPlan24EventCheck(ev) && !isPlan24DdsAction(ev))) return
       e.preventDefault()
       e.stopPropagation()
       lastResizeMovedIdRef.current = null
@@ -440,7 +444,7 @@ export function Plan24Grid(props: {
       document.addEventListener('pointerup', up, true)
       document.addEventListener('pointercancel', up, true)
     },
-    [windowStart, pixelsPerMinute, totalMin, flushResizeUi, onEventMove, endResizeDocumentDrag],
+    [windowStart, pixelsPerMinute, totalMin, flushResizeUi, onEventMove, endResizeDocumentDrag, gridRoleKey],
   )
 
   function roleBackgroundClick(roleName: string, e: React.MouseEvent<HTMLDivElement>) {
@@ -592,29 +596,48 @@ export function Plan24Grid(props: {
                       const innerLeft = `${(ln / lc) * 100}%`
                       const innerW = `${(1 / lc) * 100}%`
                       const isAdHoc = ev.source === 'ad_hoc'
+                      const isDds = isPlan24DdsAction(ev)
+                      const isNr = ev.status === 'not_required'
                       const isDone = ev.status === 'complete'
                       const inProgress = ev.status === 'in_progress'
+                      const isDdsInProgress = isDds && (inProgress || ev.status === 'scheduled')
                       const isDragging = dragUi?.eventId === ev.id
                       const sameColumn = isDragging && dragUi.sourceRole === dragUi.hoverRole
                       const topPx = isDragging && sameColumn && previewMin !== null ? previewMin * pixelsPerMinute : top
                       const fadedCross = isDragging && !sameColumn
-                      const statusClass = isDone
-                        ? isClCilQualityFamily(ev.event_type)
-                          ? familyCompletedClass(ev.event_type)
-                          : 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
-                        : inProgress
-                          ? 'border-amber-400/60 bg-amber-500 text-amber-950 shadow-amber-900/20 dark:bg-amber-400 dark:text-amber-950'
-                          : familyScheduledClass(ev.event_type)
-                      const statusLabel = isDone ? 'Complete' : inProgress ? 'In progress' : 'Scheduled'
+                      const statusClass = isDds
+                        ? isDone
+                          ? 'border-emerald-900/45 bg-emerald-600 text-emerald-50 dark:border-emerald-800/60 dark:bg-emerald-700 dark:text-emerald-50'
+                          : isNr
+                            ? 'border-zinc-500/45 bg-zinc-400 text-zinc-950 dark:border-zinc-600/60 dark:bg-zinc-600 dark:text-zinc-50'
+                            : 'border-orange-700/45 bg-orange-500 text-orange-950 shadow-orange-900/15 dark:border-orange-600/60 dark:bg-orange-500 dark:text-orange-950'
+                        : isDone
+                          ? isClCilQualityFamily(ev.event_type)
+                            ? familyCompletedClass(ev.event_type)
+                            : 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
+                          : inProgress
+                            ? 'border-amber-400/60 bg-amber-500 text-amber-950 shadow-amber-900/20 dark:bg-amber-400 dark:text-amber-950'
+                            : familyScheduledClass(ev.event_type)
+                      const statusLabel = isDds
+                        ? isDone
+                          ? 'Complete'
+                          : isNr
+                            ? 'Not required'
+                            : 'In process'
+                        : isDone
+                          ? 'Complete'
+                          : inProgress
+                            ? 'In progress'
+                            : 'Scheduled'
                       const resizingThis = resizeUi?.eventId === ev.id && resizeUi.roleName === r.name
                       const endMinVisual = resizingThis ? resizeUi.previewEndMin : minutesBetween(windowStart, end)
                       const hMin = Math.max(2, endMinVisual - topMin)
                       const hVisual = hMin * pixelsPerMinute
-                      const isCheck = isPlan24EventCheck(ev)
-                      const canResizeEnd = isCheck && !!ev.role_name
+                      const isCheck = isPlan24EventCheck(ev) || isPlan24DdsAction(ev)
+                      const canResizeEnd = isCheck && !!gridRoleKey(ev)
                       const tip = `${ev.title}\n${formatClock(start)}–${formatClock(end)}\n${statusLabel}${isAdHoc ? ' · Ad hoc' : ''}`
                       const donePatternStyle: CSSProperties | undefined = isDone
-                        ? isClCilQualityFamily(ev.event_type)
+                        ? isClCilQualityFamily(ev.event_type) && !isDds
                           ? familyCompletedStripeStyle()
                           : {
                               backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,255,255,0.28) 5px, rgba(255,255,255,0.28) 9px)`,
@@ -638,7 +661,7 @@ export function Plan24Grid(props: {
                             <span
                               aria-hidden
                               className={`pointer-events-none absolute inset-0 z-0 rounded-md ${
-                                isClCilQualityFamily(ev.event_type) ? 'opacity-80 dark:opacity-70' : 'opacity-[0.4]'
+                                isClCilQualityFamily(ev.event_type) && !isDds ? 'opacity-80 dark:opacity-70' : 'opacity-[0.4]'
                               }`}
                               style={donePatternStyle}
                             />
@@ -665,10 +688,12 @@ export function Plan24Grid(props: {
                               }
                             }}
                           >
-                            {inProgress ? (
+                            {!isDone && !isNr && (isDds ? isDdsInProgress : inProgress) ? (
                               <span
                                 aria-hidden
-                                className="pointer-events-none absolute right-1 top-1 inline-flex size-1.5 rounded-full bg-amber-900/90"
+                                className={`pointer-events-none absolute right-1 top-1 inline-flex size-1.5 rounded-full ${
+                                  isDds ? 'bg-orange-950/85' : 'bg-amber-900/90'
+                                }`}
                               />
                             ) : null}
                             <span
@@ -752,12 +777,16 @@ function buildHourTicks(windowStart: Date, totalMin: number, pixelsPerMinute: nu
   return ticks
 }
 
-function buildEventsByRole(roles: Plan24GridRoleCol[], events: Plan24EventRow[]) {
+function buildEventsByRole(
+  roles: Plan24GridRoleCol[],
+  events: Plan24EventRow[],
+  gridRoleKey: (ev: Plan24EventRow) => string,
+) {
   const m = new Map<string, Plan24EventRow[]>()
   for (const r of roles) m.set(r.name, [])
   const lowerToCanonical = new Map(roles.map((r) => [r.name.trim().toLowerCase(), r.name]))
   for (const ev of events) {
-    const rn = (ev.role_name ?? '').trim()
+    const rn = gridRoleKey(ev).trim()
     if (!rn) continue
     const canon = lowerToCanonical.get(rn.toLowerCase())
     if (!canon) continue

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, MessageSquare } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -8,6 +8,9 @@ import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
 import { parseDdsP2pKpiBreakdown, type DdsP2pKpiBreakdownItem } from './ddsKpiP2pRollup'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
+import type { DdsKpiDisplaySectionKey } from './ddsKpiDisplaySections'
+
+type KpiShellSurface = Extract<DdsKpiDisplaySectionKey, 'shift-dds' | 'line-dds'>
 
 type KpiGroup = { id: string; name: string; sort_order: number }
 
@@ -32,6 +35,8 @@ type Props = {
   cellId: string
   planDate: string
   shiftKind: string
+  /** Admin KPI display surface: Shift DDS vs Line DDS metrics. */
+  kpiSurface?: KpiShellSurface
 }
 
 function blockClasses(tone: 'neutral' | 'good' | 'bad'): string {
@@ -47,8 +52,10 @@ function placeDetailPanel(anchor: HTMLElement, maxW: number): { top: number; lef
   return { top: rect.bottom + 6, left, maxW }
 }
 
-export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
+export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = 'shift-dds' }: Props) {
   const { user } = useAuth()
+  const kpiEditTitleId = useId()
+  const surfaceLabel = kpiSurface === 'line-dds' ? 'Line DDS' : 'Shift DDS'
   const [groups, setGroups] = useState<KpiGroup[]>([])
   const [kpis, setKpis] = useState<KpiDef[]>([])
   const [entries, setEntries] = useState<Record<string, EntryRow>>({})
@@ -86,7 +93,7 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
       supabase
         .from('dds_kpis')
         .select('id, kpi_group_id, label, sort_order, unit, display_sections, scoring')
-        .contains('display_sections', ['shift-dds'])
+        .contains('display_sections', [kpiSurface])
         .order('sort_order')
         .order('label'),
       supabase
@@ -140,7 +147,7 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
       }
     }
     setEntries(em)
-  }, [cellId, planDate, shiftKind])
+  }, [cellId, planDate, shiftKind, kpiSurface])
 
   useEffect(() => {
     void load()
@@ -151,11 +158,11 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
       if (d.masterCellId !== cellId || d.planDate !== planDate || d.shiftKind !== shiftKind) return
       void load()
     })
-  }, [cellId, planDate, shiftKind, load])
+  }, [cellId, planDate, shiftKind, kpiSurface, load])
 
   useEffect(() => {
     setDetailPop(null)
-  }, [cellId, planDate, shiftKind])
+  }, [cellId, planDate, shiftKind, kpiSurface])
 
   useLayoutEffect(() => {
     if (!detailPop) return
@@ -249,8 +256,9 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
   if (kpis.length === 0) {
     return (
       <p className="text-[11px] leading-snug text-muted">
-        No KPIs are assigned to <strong className="text-fg/80">Shift DDS</strong> yet. In{' '}
-        <strong className="text-fg/80">Admin → KPIs</strong>, tick &quot;Shift DDS&quot; (and set scoring) for each metric you want here.
+        No KPIs are assigned to <strong className="text-fg/80">{surfaceLabel}</strong> yet. In{' '}
+        <strong className="text-fg/80">Admin → KPIs</strong>, tick &quot;{surfaceLabel}&quot; (and set scoring) for each
+        metric you want here.
       </p>
     )
   }
@@ -368,9 +376,9 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
             className="w-full max-w-md rounded-2xl border border-border-strong bg-surface p-5 shadow-xl"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="shift-dds-kpi-edit-title"
+            aria-labelledby={kpiEditTitleId}
           >
-            <h2 id="shift-dds-kpi-edit-title" className="font-display text-lg font-semibold">
+            <h2 id={kpiEditTitleId} className="font-display text-lg font-semibold">
               {modal.kpi.label}
             </h2>
             <p className="mt-1 text-[11px] text-muted">

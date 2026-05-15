@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase'
 import { Plan24CilRoutePanel } from './Plan24CilRoutePanel'
 import { Plan24ClQualityRoutePanel } from './Plan24ClQualityRoutePanel'
 import { plan24ClQualitySubTaskComplete } from './plan24ClQualityRouteUtils'
+import { isPlan24DdsAction } from './plan24DdsUtils'
 import { parsePlan24SubTasks } from './plan24ParseSubTasks'
 import { addMinutes, formatPlan24Clock, minutesBetween } from './plan24ShiftUtils'
 import type { Plan24EventRow, Plan24SubTask } from './plan24Types'
@@ -80,6 +81,7 @@ export function Plan24EventDetailModal({
   const [deleteEv, setDeleteEv] = useState<Plan24EventRow | null>(null)
   const [deleteComment, setDeleteComment] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [ddsOwnerLabel, setDdsOwnerLabel] = useState('')
 
   useLayoutEffect(() => {
     if (!event) {
@@ -93,6 +95,33 @@ export function Plan24EventDetailModal({
     const dur = Math.max(5, Math.round(minutesBetween(new Date(event.start_at), new Date(event.end_at))))
     setDetailDurationMin(String(dur))
   }, [event])
+
+  useEffect(() => {
+    if (!detailEv || !isPlan24DdsAction(detailEv) || !detailEv.assigned_person_id) {
+      setDdsOwnerLabel('')
+      return
+    }
+    let cancelled = false
+    const pid = detailEv.assigned_person_id
+    void (async () => {
+      const { data, error } = await supabase
+        .from('people')
+        .select('display_name, first_name, last_name')
+        .eq('id', pid)
+        .maybeSingle()
+      if (cancelled) return
+      if (error || !data) {
+        setDdsOwnerLabel(pid.slice(0, 8))
+        return
+      }
+      const row = data as { display_name: string | null; first_name: string | null; last_name: string | null }
+      const a = [row.first_name, row.last_name].filter(Boolean).join(' ').trim()
+      setDdsOwnerLabel(a || row.display_name || pid.slice(0, 8))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [detailEv?.id, detailEv?.assigned_person_id, detailEv?.event_type])
 
   useEffect(() => {
     if (!event) {
@@ -182,6 +211,7 @@ export function Plan24EventDetailModal({
 
   const saveDetail = useCallback(async () => {
     if (!detailEv) return
+    if (isPlan24DdsAction(detailEv)) return
     let status = detailEv.status
     let opened_at = detailEv.opened_at
     if (status === 'scheduled') {
@@ -211,8 +241,56 @@ export function Plan24EventDetailModal({
     }
   }, [detailEv, detailSubs, detailDurationMin, windowEnd])
 
+  const saveDdsDetail = useCallback(async () => {
+    if (!detailEv || !isPlan24DdsAction(detailEv)) return
+    const st = detailEv.status
+    if (st !== 'in_progress' && st !== 'complete' && st !== 'not_required') {
+      onLoadErrorRef.current('Pick a valid status.')
+      return
+    }
+    const startAt = new Date(detailEv.start_at)
+    const durRaw = Math.max(5, Math.round(Number(detailDurationMin)) || 5)
+    const maxDurInWindow = Math.max(5, Math.floor(minutesBetween(startAt, windowEnd)))
+    const dur = Math.min(maxDurInWindow, durRaw)
+    const endAt = addMinutes(startAt, dur).toISOString()
+    let opened_at = detailEv.opened_at
+    let completed_at: string | null = detailEv.completed_at ?? null
+    let completed_by: string | null = detailEv.completed_by ?? null
+    if (st === 'complete' && userId) {
+      opened_at = opened_at ?? new Date().toISOString()
+      completed_at = completed_at ?? new Date().toISOString()
+      completed_by = completed_by ?? userId
+    } else {
+      completed_at = null
+      completed_by = null
+    }
+    if ((st === 'in_progress' || st === 'not_required') && !opened_at) {
+      opened_at = new Date().toISOString()
+    }
+    const { error } = await supabase
+      .from('plan24_events')
+      .update({
+        title: detailEv.title.trim() || 'DDS action',
+        comment: detailEv.comment?.trim() ? detailEv.comment.trim() : null,
+        status: st,
+        start_at: detailEv.start_at,
+        end_at: endAt,
+        sub_tasks: [],
+        opened_at,
+        completed_at,
+        completed_by,
+      })
+      .eq('id', detailEv.id)
+    if (error) onLoadErrorRef.current(error.message)
+    else {
+      onCloseRef.current()
+      onSavedRef.current()
+    }
+  }, [detailEv, detailDurationMin, windowEnd, userId])
+
   const markComplete = useCallback(async () => {
     if (!detailEv || !userId) return
+    if (isPlan24DdsAction(detailEv)) return
     const measured = detailEv.event_type === 'cl_check' || detailEv.event_type === 'quality_check'
     const measuredVariant = detailEv.event_type === 'quality_check' ? ('quality' as const) : ('cl' as const)
     const subsOk =
@@ -486,6 +564,8 @@ export function Plan24EventDetailModal({
 
   if (!event || !detailEv) return null
 
+  const isDdsUi = isPlan24DdsAction(detailEv)
+
   return (
     <>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation">
@@ -498,7 +578,7 @@ export function Plan24EventDetailModal({
           <div className="space-y-3">
             <div className="flex items-start justify-between gap-3">
               <h2 id="plan24-check-detail-title" className="font-display text-lg font-semibold">
-                Check
+                {isDdsUi ? 'DDS action' : 'Check'}
               </h2>
               <button
                 type="button"
@@ -517,97 +597,159 @@ export function Plan24EventDetailModal({
                 onChange={(e) => setDetailEv({ ...detailEv, title: e.target.value })}
               />
             </label>
-            {!detailEv.event_type || String(detailEv.event_type).toLowerCase() === 'check' ? (
-              <label className="block text-xs font-medium text-muted">
-                Duration (minutes)
-                <input
-                  type="number"
-                  min={5}
-                  step={1}
-                  className={`${detailInputClass} mt-1`}
-                  inputMode="numeric"
-                  value={detailDurationMin}
-                  onChange={(e) => setDetailDurationMin(e.target.value)}
-                />
-                <span className="mt-1 block text-[10px] text-muted/90">
-                  Starts {formatPlan24Clock(new Date(detailEv.start_at))} · end updates from duration
-                </span>
-              </label>
-            ) : null}
-            <div className="text-xs text-muted">
-              {detailEv.role_name ? `Role: ${detailEv.role_name}` : 'Unassigned'} · {detailEv.source === 'ad_hoc' ? 'Ad hoc' : 'Scheduled'}
-            </div>
-            {detailEv.linked_issue_id ? (
+            {isDdsUi ? (
+              <>
+                <label className="block text-xs font-medium text-muted">
+                  Comment
+                  <textarea
+                    className={`${detailInputClass} mt-1 min-h-[5rem] py-2`}
+                    value={detailEv.comment ?? ''}
+                    onChange={(e) => setDetailEv({ ...detailEv, comment: e.target.value })}
+                    placeholder="Optional note"
+                  />
+                </label>
+                <label className="block text-xs font-medium text-muted">
+                  Duration (minutes)
+                  <input
+                    type="number"
+                    min={5}
+                    step={1}
+                    className={`${detailInputClass} mt-1`}
+                    inputMode="numeric"
+                    value={detailDurationMin}
+                    onChange={(e) => setDetailDurationMin(e.target.value)}
+                  />
+                  <span className="mt-1 block text-[10px] text-muted/90">
+                    Starts {formatPlan24Clock(new Date(detailEv.start_at))} · end updates from duration
+                  </span>
+                </label>
+                <label className="block text-xs font-medium text-muted">
+                  Status
+                  <select
+                    className={`${detailInputClass} mt-1`}
+                    value={detailEv.status === 'scheduled' ? 'in_progress' : detailEv.status}
+                    onChange={(e) =>
+                      setDetailEv({
+                        ...detailEv,
+                        status: e.target.value as Plan24EventRow['status'],
+                      })
+                    }
+                  >
+                    <option value="in_progress">In process</option>
+                    <option value="complete">Complete</option>
+                    <option value="not_required">Not required</option>
+                  </select>
+                </label>
+                <div className="text-xs text-muted">
+                  {detailEv.role_name ? `Role: ${detailEv.role_name}` : 'Unassigned'} · Owner:{' '}
+                  {ddsOwnerLabel || '—'} · {detailEv.source === 'ad_hoc' ? 'Ad hoc' : 'Scheduled'}
+                </div>
+              </>
+            ) : (
+              <>
+                {!detailEv.event_type || String(detailEv.event_type).toLowerCase() === 'check' ? (
+                  <label className="block text-xs font-medium text-muted">
+                    Duration (minutes)
+                    <input
+                      type="number"
+                      min={5}
+                      step={1}
+                      className={`${detailInputClass} mt-1`}
+                      inputMode="numeric"
+                      value={detailDurationMin}
+                      onChange={(e) => setDetailDurationMin(e.target.value)}
+                    />
+                    <span className="mt-1 block text-[10px] text-muted/90">
+                      Starts {formatPlan24Clock(new Date(detailEv.start_at))} · end updates from duration
+                    </span>
+                  </label>
+                ) : null}
+                <div className="text-xs text-muted">
+                  {detailEv.role_name ? `Role: ${detailEv.role_name}` : 'Unassigned'} ·{' '}
+                  {detailEv.source === 'ad_hoc' ? 'Ad hoc' : 'Scheduled'}
+                </div>
+                {detailEv.linked_issue_id ? (
+                  <div className="rounded-lg border border-border bg-surface-raised/40 px-2.5 py-2 text-xs text-muted">
+                    Linked issue: {detailEv.linked_issue_kind ?? 'issue'} · {detailEv.linked_issue_id}
+                  </div>
+                ) : null}
+                {detailEv.event_type === 'cil_check' && cellId ? (
+                  <Plan24CilRoutePanel
+                    event={detailEv}
+                    cellId={cellId}
+                    subs={detailSubs}
+                    onSubsChange={setDetailSubs}
+                    onMarkFullComplete={() => void markComplete()}
+                    routeSubmitting={detailCompleting}
+                    onOpenDefectForTask={openRaiseIssueForCilTask}
+                  />
+                ) : detailEv.event_type === 'cl_check' || detailEv.event_type === 'quality_check' ? (
+                  <Plan24ClQualityRoutePanel
+                    variant={detailEv.event_type === 'cl_check' ? 'cl' : 'quality'}
+                    event={detailEv}
+                    subs={detailSubs}
+                    onSubsChange={setDetailSubs}
+                    onMarkFullComplete={() => void markComplete()}
+                    routeSubmitting={detailCompleting}
+                    onOpenIssueForTask={openRaiseIssueForMeasuredTask}
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    <span className="text-xs font-semibold text-fg/80">Sub-tasks</span>
+                    {detailSubs.map((s, idx) => (
+                      <label key={s.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={s.done}
+                          onChange={() => {
+                            const next = [...detailSubs]
+                            next[idx] = { ...s, done: !s.done }
+                            setDetailSubs(next)
+                          }}
+                        />
+                        <input
+                          className={`${detailInputClass} flex-1 py-1.5`}
+                          value={s.label}
+                          onChange={(e) => {
+                            const next = [...detailSubs]
+                            next[idx] = { ...s, label: e.target.value }
+                            setDetailSubs(next)
+                          }}
+                        />
+                      </label>
+                    ))}
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-accent hover:underline"
+                      onClick={() =>
+                        setDetailSubs((prev) => [...prev, { id: crypto.randomUUID(), label: 'New step', done: false }])
+                      }
+                    >
+                      + Add sub-task
+                    </button>
+                  </div>
+                )}
+                {isAdmin ? (
+                  <label className="flex items-center gap-2 text-xs text-muted">
+                    <input type="checkbox" checked={detailOverride} onChange={(e) => setDetailOverride(e.target.checked)} />
+                    Admin: complete without all sub-tasks
+                  </label>
+                ) : null}
+              </>
+            )}
+            {isDdsUi && detailEv.linked_issue_id ? (
               <div className="rounded-lg border border-border bg-surface-raised/40 px-2.5 py-2 text-xs text-muted">
                 Linked issue: {detailEv.linked_issue_kind ?? 'issue'} · {detailEv.linked_issue_id}
               </div>
             ) : null}
-            {detailEv.event_type === 'cil_check' && cellId ? (
-              <Plan24CilRoutePanel
-                event={detailEv}
-                cellId={cellId}
-                subs={detailSubs}
-                onSubsChange={setDetailSubs}
-                onMarkFullComplete={() => void markComplete()}
-                routeSubmitting={detailCompleting}
-                onOpenDefectForTask={openRaiseIssueForCilTask}
-              />
-            ) : detailEv.event_type === 'cl_check' || detailEv.event_type === 'quality_check' ? (
-              <Plan24ClQualityRoutePanel
-                variant={detailEv.event_type === 'cl_check' ? 'cl' : 'quality'}
-                event={detailEv}
-                subs={detailSubs}
-                onSubsChange={setDetailSubs}
-                onMarkFullComplete={() => void markComplete()}
-                routeSubmitting={detailCompleting}
-                onOpenIssueForTask={openRaiseIssueForMeasuredTask}
-              />
-            ) : (
-              <div className="space-y-2">
-                <span className="text-xs font-semibold text-fg/80">Sub-tasks</span>
-                {detailSubs.map((s, idx) => (
-                  <label key={s.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={s.done}
-                      onChange={() => {
-                        const next = [...detailSubs]
-                        next[idx] = { ...s, done: !s.done }
-                        setDetailSubs(next)
-                      }}
-                    />
-                    <input
-                      className={`${detailInputClass} flex-1 py-1.5`}
-                      value={s.label}
-                      onChange={(e) => {
-                        const next = [...detailSubs]
-                        next[idx] = { ...s, label: e.target.value }
-                        setDetailSubs(next)
-                      }}
-                    />
-                  </label>
-                ))}
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-accent hover:underline"
-                  onClick={() =>
-                    setDetailSubs((prev) => [...prev, { id: crypto.randomUUID(), label: 'New step', done: false }])
-                  }
-                >
-                  + Add sub-task
-                </button>
-              </div>
-            )}
-            {isAdmin ? (
-              <label className="flex items-center gap-2 text-xs text-muted">
-                <input type="checkbox" checked={detailOverride} onChange={(e) => setDetailOverride(e.target.checked)} />
-                Admin: complete without all sub-tasks
-              </label>
-            ) : null}
             <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-              {detailEv.event_type !== 'cil_check' &&
-              detailEv.event_type !== 'cl_check' &&
-              detailEv.event_type !== 'quality_check' ? (
+              {isDdsUi ? (
+                <button type="button" className={detailSaveButtonClass} onClick={() => void saveDdsDetail()}>
+                  Save
+                </button>
+              ) : detailEv.event_type !== 'cil_check' &&
+                detailEv.event_type !== 'cl_check' &&
+                detailEv.event_type !== 'quality_check' ? (
                 <>
                   <button type="button" className={detailSaveButtonClass} onClick={() => void saveDetail()}>
                     Save

@@ -21,12 +21,18 @@ function sortGroups<T extends { sort_order: number; name: string }>(rows: T[]): 
   return [...rows].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
 }
 
-function isShiftDdsPath(pathname: string): boolean {
-  return pathname.endsWith('/shift-dds') || pathname.includes('/dds-process/shift-dds')
+/** Day + shift strip in the scope bar (Shift DDS and Line DDS share roster shell). */
+function isDdsDayShiftShellPath(pathname: string): boolean {
+  return (
+    pathname.endsWith('/shift-dds') ||
+    pathname.includes('/dds-process/shift-dds') ||
+    pathname.endsWith('/line-dds') ||
+    pathname.includes('/dds-process/line-dds')
+  )
 }
 
 type Ctx = {
-  /** True when the DDS Shift DDS screen is active (scope bar shows day + shift). */
+  /** True when Shift DDS or Line DDS is active (scope bar shows day + shift). */
   routeActive: boolean
   planDate: string
   setPlanDate: (ymd: string) => void
@@ -46,7 +52,7 @@ const ShiftDdsShellContext = createContext<Ctx | undefined>(undefined)
 
 export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
   const location = useLocation()
-  const routeActive = isShiftDdsPath(location.pathname)
+  const routeActive = isDdsDayShiftShellPath(location.pathname)
 
   const { status: scopeStatus, cellId } = usePlan24Workspace()
 

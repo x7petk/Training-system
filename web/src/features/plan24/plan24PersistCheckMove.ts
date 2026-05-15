@@ -1,5 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isPlan24DdsAction } from './plan24DdsUtils'
 import type { Plan24EventRow } from './plan24Types'
+
+export type Plan24PersistMoveOpts = {
+  /** When moving a `dds_action` to another role, the person on that role for this shift. */
+  ddsTargetPersonId?: string | null
+}
 
 /**
  * Persist drag move: optional suppression row (so materialize does not refill the vacated
@@ -12,6 +18,7 @@ export async function plan24PersistCheckMove(
   startAt: Date,
   endAt: Date,
   roleName: string,
+  opts?: Plan24PersistMoveOpts,
 ): Promise<string | null> {
   const normalizeRole = (v: string | null | undefined) => (v ?? '').trim().toLowerCase()
   const oldStart = new Date(ev.start_at)
@@ -47,11 +54,29 @@ export async function plan24PersistCheckMove(
   }
 
   const nextRole = roleName.trim() === '' ? null : roleName.trim()
+
+  if (isPlan24DdsAction(ev)) {
+    if (!nextRole) {
+      return 'DDS actions must stay on a role column (pick a role that has someone assigned for this shift).'
+    }
+    if (roleChanged) {
+      const pid = opts?.ddsTargetPersonId ?? null
+      if (!pid) {
+        return 'That role has no one assigned for this shift, so DDS actions cannot be moved there.'
+      }
+    }
+  }
+
   const payload: Record<string, unknown> = {
     start_at: nextStartAt.toISOString(),
     end_at: nextEndAt.toISOString(),
     role_name: nextRole,
   }
+
+  if (isPlan24DdsAction(ev) && nextRole && roleChanged && opts?.ddsTargetPersonId) {
+    payload.assigned_person_id = opts.ddsTargetPersonId
+  }
+
   if (detachedFromSchedule) {
     payload.source = 'ad_hoc'
     payload.schedule_id = null

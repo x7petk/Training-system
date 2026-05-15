@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   Layers,
+  ListTodo,
   ListTree,
   RefreshCw,
   ShieldCheck,
@@ -52,6 +53,7 @@ export function DdsProcessLayout() {
         }
         navItems={[
           { to: '/dds-process/plan-24', label: 'Plan 24', icon: CalendarDays, end: true },
+          { to: '/dds-process/dds-actions', label: 'DDS actions', icon: ListTodo, end: true },
           { to: '/dds-process/p2p', label: 'P2P', icon: UsersRound, end: true },
           { to: '/dds-process/p2p-summary', label: 'P2P Summary', icon: Table2, end: true },
           { to: '/dds-process/shift-dds', label: 'Shift DDS', icon: Clock, end: true },

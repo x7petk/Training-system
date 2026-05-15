@@ -20,7 +20,8 @@ import type {
   Plan24RosterRow,
 } from './plan24Types'
 import { buildDefaultViewPrefs, loadViewPrefs, mergeViewPrefs, plan24NormalizedEventType, type Plan24ViewPrefs } from './plan24ViewPrefs'
-import { plan24PersistCheckMove } from './plan24PersistCheckMove'
+import { plan24PersistCheckMove, type Plan24PersistMoveOpts } from './plan24PersistCheckMove'
+import { isPlan24DdsAction, plan24EventGridRoleKey } from './plan24DdsUtils'
 
 const inputClass =
   'w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2'
@@ -69,9 +70,11 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
   const [viewPrefs, setViewPrefs] = useState<Plan24ViewPrefs>(() => buildDefaultViewPrefs([]))
 
   const [adhocOpen, setAdhocOpen] = useState(false)
+  const [adhocKind, setAdhocKind] = useState<'check' | 'dds_action'>('check')
   const [adhocRole, setAdhocRole] = useState<string>('')
   const [adhocStart, setAdhocStart] = useState<Date | null>(null)
   const [adhocTitle, setAdhocTitle] = useState('Check')
+  const [adhocComment, setAdhocComment] = useState('')
   const [adhocEndMin, setAdhocEndMin] = useState('30')
 
   const [detailEv, setDetailEv] = useState<Plan24EventRow | null>(null)
@@ -260,6 +263,11 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
     [activeRoles, personIdByRole, peopleById],
   )
 
+  const resolveGridRoleKey = useCallback(
+    (ev: Plan24EventRow) => plan24EventGridRoleKey(ev, activeRoles, personIdByRole),
+    [activeRoles, personIdByRole],
+  )
+
   const rosterRoleLowerSet = useMemo(
     () => new Set(activeRoles.map((r) => r.name.trim().toLowerCase())),
     [activeRoles],
@@ -267,11 +275,11 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
 
   const eventRoleMatchesRosterColumn = useCallback(
     (e: Plan24EventRow) => {
-      const rn = (e.role_name ?? '').trim()
-      if (!rn) return false
-      return rosterRoleLowerSet.has(rn.toLowerCase())
+      const eff = plan24EventGridRoleKey(e, activeRoles, personIdByRole).trim()
+      if (!eff) return false
+      return rosterRoleLowerSet.has(eff.toLowerCase())
     },
-    [rosterRoleLowerSet],
+    [rosterRoleLowerSet, activeRoles, personIdByRole],
   )
 
   const gridPlacedEvents = useMemo(
@@ -288,12 +296,12 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
     (e: Plan24EventRow) => {
       const tk = plan24NormalizedEventType(e.event_type)
       if (viewPrefs.eventTypes[tk] === false) return false
-      const rn = (e.role_name ?? '').trim()
+      const rn = plan24EventGridRoleKey(e, activeRoles, personIdByRole).trim()
       if (!rn) return true
       if (viewPrefs.roles[rn] === false) return false
       return true
     },
-    [viewPrefs],
+    [viewPrefs, activeRoles, personIdByRole],
   )
 
   const gridPlacedEventsView = useMemo(
@@ -330,13 +338,21 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
   const onBackgroundClick = useCallback((roleName: string, startAt: Date) => {
     setAdhocRole(roleName)
     setAdhocStart(startAt)
+    setAdhocKind('check')
     setAdhocTitle('Check')
+    setAdhocComment('')
     setAdhocEndMin('30')
     setAdhocOpen(true)
   }, [])
 
   const saveAdhoc = useCallback(async () => {
     if (!cellId || !rosterId || !adhocStart || !user?.id) return
+    const isDds = adhocKind === 'dds_action'
+    const personId = personIdByRole.get(adhocRole) ?? null
+    if (isDds && !personId) {
+      setLoadErr('Assign a person to this role before creating a DDS action for this shift.')
+      return
+    }
     const dur = Math.max(5, Number(adhocEndMin) || 30)
     const end = addMinutes(adhocStart, dur)
     setBusy(true)
@@ -347,13 +363,15 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
       shift_kind: shiftKind,
       role_name: adhocRole,
       schedule_role_name: adhocRole || '',
-      title: adhocTitle.trim() || 'Check',
-      event_type: 'check',
+      title: adhocTitle.trim() || (isDds ? 'DDS action' : 'Check'),
+      event_type: isDds ? 'dds_action' : 'check',
       source: 'ad_hoc',
       start_at: adhocStart.toISOString(),
       end_at: end.toISOString(),
-      status: 'scheduled',
+      status: isDds ? 'in_progress' : 'scheduled',
       sub_tasks: [],
+      assigned_person_id: isDds ? personId : null,
+      comment: isDds ? (adhocComment.trim() || null) : null,
       created_by: user.id,
     })
     setBusy(false)
@@ -362,15 +380,35 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
       setAdhocOpen(false)
       void refresh()
     }
-  }, [cellId, rosterId, planDate, shiftKind, adhocStart, adhocRole, adhocTitle, adhocEndMin, user, refresh])
+  }, [
+    cellId,
+    rosterId,
+    planDate,
+    shiftKind,
+    adhocStart,
+    adhocRole,
+    adhocTitle,
+    adhocComment,
+    adhocEndMin,
+    adhocKind,
+    personIdByRole,
+    user,
+    refresh,
+  ])
 
   const onEventMove = useCallback(
     async (eventId: string, startAt: Date, endAt: Date, roleName: string) => {
       const ev = events.find((x) => x.id === eventId)
       if (!ev) return
-      const err = await plan24PersistCheckMove(supabase, ev, eventId, startAt, endAt, roleName)
+      const persistOpts: Plan24PersistMoveOpts | undefined = isPlan24DdsAction(ev)
+        ? { ddsTargetPersonId: personIdByRole.get(roleName.trim()) ?? null }
+        : undefined
+      const err = await plan24PersistCheckMove(supabase, ev, eventId, startAt, endAt, roleName, persistOpts)
       if (err) setLoadErr(err)
       else {
+        const rn = roleName.trim()
+        const nextPerson =
+          isPlan24DdsAction(ev) && rn ? (personIdByRole.get(rn) ?? null) : ev.assigned_person_id
         setEvents((prev) =>
           prev.map((row) =>
             row.id === eventId
@@ -378,7 +416,8 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
                   ...row,
                   start_at: startAt.toISOString(),
                   end_at: endAt.toISOString(),
-                  role_name: roleName.trim() === '' ? null : roleName.trim(),
+                  role_name: rn === '' ? null : rn,
+                  assigned_person_id: isPlan24DdsAction(row) ? nextPerson : row.assigned_person_id,
                   source: row.schedule_id ? 'ad_hoc' : row.source,
                   schedule_id: row.schedule_id ? null : row.schedule_id,
                   schedule_occurrence_at: row.schedule_id ? null : row.schedule_occurrence_at,
@@ -391,7 +430,7 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
         void refresh()
       }
     },
-    [events, refresh],
+    [events, refresh, personIdByRole],
   )
 
   const onRoleHeaderClick = useCallback(
@@ -411,9 +450,15 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
       if (!ev) return
       const dur = minutesBetween(new Date(ev.start_at), new Date(ev.end_at))
       const endAt = addMinutes(startAt, Math.max(5, dur))
-      const err = await plan24PersistCheckMove(supabase, ev, eventId, startAt, endAt, roleName)
+      const persistOpts: Plan24PersistMoveOpts | undefined = isPlan24DdsAction(ev)
+        ? { ddsTargetPersonId: personIdByRole.get(roleName.trim()) ?? null }
+        : undefined
+      const err = await plan24PersistCheckMove(supabase, ev, eventId, startAt, endAt, roleName, persistOpts)
       if (err) setLoadErr(err)
       else {
+        const rn = roleName.trim()
+        const nextPerson =
+          isPlan24DdsAction(ev) && rn ? (personIdByRole.get(rn) ?? null) : ev.assigned_person_id
         setEvents((prev) =>
           prev.map((row) =>
             row.id === eventId
@@ -421,7 +466,8 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
                   ...row,
                   start_at: startAt.toISOString(),
                   end_at: endAt.toISOString(),
-                  role_name: roleName.trim() === '' ? null : roleName.trim(),
+                  role_name: rn === '' ? null : rn,
+                  assigned_person_id: isPlan24DdsAction(row) ? nextPerson : row.assigned_person_id,
                   source: row.schedule_id ? 'ad_hoc' : row.source,
                   schedule_id: row.schedule_id ? null : row.schedule_id,
                   schedule_occurrence_at: row.schedule_id ? null : row.schedule_occurrence_at,
@@ -434,7 +480,7 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
         void refresh()
       }
     },
-    [events, refresh],
+    [events, refresh, personIdByRole],
   )
 
   const filteredPickPeople = useMemo(() => {
@@ -495,6 +541,7 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
               windowEnd={windowBounds.end}
               roles={roleColsView}
               events={gridPlacedEventsView}
+              gridRoleKey={resolveGridRoleKey}
               onBackgroundClick={onBackgroundClick}
               onEventClick={(ev) => setDetailEv(ev)}
               onEventMove={onEventMove}
@@ -582,15 +629,59 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
               }}
             >
               <h2 id="plan24-emb-adhoc-title" className="font-display text-lg font-semibold">
-                Ad hoc check
+                New plan event
               </h2>
               <p className="text-xs text-muted">
                 Role <strong className="text-fg">{adhocRole}</strong> · starts {adhocStart ? formatPlan24Clock(adhocStart) : '—'}
               </p>
+              <div className="flex flex-wrap gap-3 text-xs font-medium text-muted">
+                <label className="inline-flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="emb-adhoc-kind"
+                    checked={adhocKind === 'check'}
+                    onChange={() => {
+                      setAdhocKind('check')
+                      setAdhocComment('')
+                      setAdhocTitle((t) => (t === 'DDS action' ? 'Check' : t))
+                    }}
+                  />
+                  Check
+                </label>
+                <label className="inline-flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="emb-adhoc-kind"
+                    checked={adhocKind === 'dds_action'}
+                    onChange={() => {
+                      setAdhocKind('dds_action')
+                      setAdhocTitle((t) => (t === 'Check' ? 'DDS action' : t))
+                    }}
+                  />
+                  DDS action
+                </label>
+              </div>
+              {adhocKind === 'dds_action' && !(personIdByRole.get(adhocRole) ?? null) ? (
+                <p className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-950 dark:text-amber-100">
+                  Assign a person to this role before creating a DDS action.
+                </p>
+              ) : null}
               <label className="block text-xs font-medium text-muted">
                 Title
                 <input className={`${inputClass} mt-1`} value={adhocTitle} onChange={(e) => setAdhocTitle(e.target.value)} />
               </label>
+              {adhocKind === 'dds_action' ? (
+                <label className="block text-xs font-medium text-muted">
+                  Comment
+                  <textarea
+                    className={`${inputClass} mt-1 min-h-[5rem] py-2`}
+                    value={adhocComment}
+                    onChange={(e) => setAdhocComment(e.target.value)}
+                    placeholder="Optional details"
+                    rows={3}
+                  />
+                </label>
+              ) : null}
               <label className="block text-xs font-medium text-muted">
                 Duration (minutes)
                 <input
@@ -612,7 +703,7 @@ export function Plan24EmbeddedPanel({ cellId, planDate, shiftKind }: Plan24Embed
                 </button>
                 <button
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || (adhocKind === 'dds_action' && !(personIdByRole.get(adhocRole) ?? null))}
                   className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   Create

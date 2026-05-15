@@ -47,6 +47,7 @@ const SosReportPage = lazy(() => import('./pages/ObsReportPage').then((m) => ({ 
 import { RttSystemsSectionPage } from './pages/RttSystemsSectionPage'
 
 const Plan24Page = lazy(() => import('./pages/Plan24Page').then((m) => ({ default: m.Plan24Page })))
+const DdsActionsPage = lazy(() => import('./pages/DdsActionsPage').then((m) => ({ default: m.DdsActionsPage })))
 const DdsProcessAdminLayout = lazy(() =>
   import('./components/DdsProcessAdminLayout').then((m) => ({ default: m.DdsProcessAdminLayout })),
 )
@@ -66,6 +67,7 @@ const DdsP2pSummaryPage = lazy(() =>
   import('./pages/DdsP2pSummaryPage').then((m) => ({ default: m.DdsP2pSummaryPage })),
 )
 const ShiftDdsPage = lazy(() => import('./pages/ShiftDdsPage').then((m) => ({ default: m.ShiftDdsPage })))
+const LineDdsPage = lazy(() => import('./pages/LineDdsPage').then((m) => ({ default: m.LineDdsPage })))
 
 const RttSystemsUserGuidePage = lazy(() =>
   import('./pages/RttSystemsUserGuidePage').then((m) => ({ default: m.RttSystemsUserGuidePage })),
@@ -209,6 +211,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="plan-24" replace />} />
             <Route path="plan-24" element={<Plan24Page />} />
+            <Route path="dds-actions" element={<DdsActionsPage />} />
             <Route path="my-plan" element={<RttSystemsSectionPage title="My Plan" />} />
             <Route path="list-view" element={<RttChecksListViewPage />} />
             <Route path="deviations" element={<DeviationsPage />} />
@@ -258,11 +261,12 @@ export default function App() {
           >
             <Route index element={<Navigate to="plan-24" replace />} />
             <Route path="plan-24" element={<Plan24Page />} />
+            <Route path="dds-actions" element={<DdsActionsPage />} />
             <Route path="p2p" element={<DdsP2pPage />} />
             <Route path="p2p-summary" element={<DdsP2pSummaryPage />} />
             <Route path="shift-dds" element={<ShiftDdsPage />} />
             <Route path="line-compliance" element={<DdsPlaceholderPage title="Line compliance" />} />
-            <Route path="line-dds" element={<DdsPlaceholderPage title="Line DDS" />} />
+            <Route path="line-dds" element={<LineDdsPage />} />
             <Route path="plant-dds" element={<DdsPlaceholderPage title="Plant DDS" />} />
             <Route path="site-compliance" element={<DdsPlaceholderPage title="Site compliance" />} />
             <Route path="site-dds" element={<DdsPlaceholderPage title="Site DDS" />} />
@@ -296,6 +300,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="plan-24" replace />} />
             <Route path="plan-24" element={<Plan24Page />} />
+            <Route path="dds-actions" element={<DdsActionsPage />} />
             <Route path="ips" element={<ProblemSolvePlaceholderPage title="IPS" />} />
             <Route path="ups" element={<ProblemSolvePlaceholderPage title="UPS" />} />
             <Route path="w-w" element={<ProblemSolvePlaceholderPage title="W-W" />} />

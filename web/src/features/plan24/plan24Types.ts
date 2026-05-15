@@ -25,7 +25,9 @@ export type Plan24EventRow = {
   source: 'scheduled' | 'ad_hoc'
   start_at: string
   end_at: string
-  status: 'scheduled' | 'in_progress' | 'complete'
+  status: 'scheduled' | 'in_progress' | 'complete' | 'not_required'
+  /** Free-text note for DDS actions (`event_type = dds_action`). */
+  comment?: string | null
   sub_tasks: unknown
   opened_at: string | null
   completed_at: string | null

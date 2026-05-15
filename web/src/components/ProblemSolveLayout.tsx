@@ -5,6 +5,7 @@ import {
   HelpCircle,
   LayoutDashboard,
   Lightbulb,
+  ListTodo,
   ScanSearch,
   ShieldCheck,
   Sparkles,
@@ -39,6 +40,7 @@ export function ProblemSolveLayout() {
         }
         navItems={[
           { to: '/problem-solve/plan-24', label: 'Plan 24', icon: CalendarDays, end: true },
+          { to: '/problem-solve/dds-actions', label: 'DDS actions', icon: ListTodo, end: true },
           { to: '/problem-solve/ips', label: 'IPS', icon: Sparkles, end: true },
           { to: '/problem-solve/ups', label: 'UPS', icon: TrendingUp, end: true },
           { to: '/problem-solve/w-w', label: 'W-W', icon: HelpCircle, end: true },

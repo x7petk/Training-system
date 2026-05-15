@@ -1,11 +1,13 @@
 import { Building2, ChevronLeft, ChevronRight, Factory, LayoutGrid } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
 import { usePlan24Workspace } from './Plan24WorkspaceContext'
 import { useShiftDdsShellOptional } from '../dds/ShiftDdsShellContext'
 import { supabaseProjectRef } from '../../lib/supabase'
 
 export function Plan24ScopeBar() {
+  const location = useLocation()
   const shiftDds = useShiftDdsShellOptional()
-  const onShiftDds = Boolean(shiftDds?.routeActive)
+  const onDdsDayShiftShell = Boolean(shiftDds?.routeActive)
 
   const { status, error, sites, plants, cells, siteId, plantId, cellId, setSiteId, setPlantId, setCellId } =
     usePlan24Workspace()
@@ -41,7 +43,10 @@ export function Plan24ScopeBar() {
     )
   }
 
-  const showShiftDdsStrip = onShiftDds && shiftDds && cellId
+  const showDdsDayShiftStrip = onDdsDayShiftShell && shiftDds && cellId
+  const p = location.pathname
+  const ddsDayShiftLabel =
+    p.endsWith('/line-dds') || p.includes('/dds-process/line-dds') ? 'Line DDS' : 'Shift DDS'
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-border-strong bg-surface px-3 py-2 shadow-sm sm:px-4">
@@ -99,10 +104,10 @@ export function Plan24ScopeBar() {
           </select>
         </label>
 
-        {showShiftDdsStrip ? (
+        {showDdsDayShiftStrip ? (
           <>
             <span className="hidden h-6 w-px shrink-0 bg-border/80 sm:block" aria-hidden />
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/50">Shift DDS</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/50">{ddsDayShiftLabel}</span>
             <div className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-border bg-surface-raised/50 p-0.5">
               <button
                 type="button"
@@ -156,7 +161,7 @@ export function Plan24ScopeBar() {
 
         {!cellId ? (
           <span className="text-xs text-amber-700 dark:text-amber-200">
-            {onShiftDds ? 'Select a cell for Shift DDS.' : 'Select a cell to use Plan 24.'}
+            {onDdsDayShiftShell ? `Select a cell for ${ddsDayShiftLabel}.` : 'Select a cell to use Plan 24.'}
           </span>
         ) : null}
       </div>
