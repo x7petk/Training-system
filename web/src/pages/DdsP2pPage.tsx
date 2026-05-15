@@ -9,6 +9,7 @@ import { ddsP2pQuestionKey } from '../features/dds/ddsP2pQuestionKey'
 import { labelForDdsP2pResponseKind, type DdsP2pResponseKind } from '../features/dds/ddsP2pResponseKind'
 import { DdsP2pPlanPanel } from '../features/dds/DdsP2pPlanPanel'
 import { refreshKpiP2pRollups } from '../features/dds/ddsKpiP2pRollup'
+import { dispatchDdsP2pKpiRollupDone } from '../features/dds/ddsP2pKpiRollupEvents'
 import { ddsErr, ddsHint, ddsInput, ddsSection, ddsSelect, ddsStack } from '../features/dds/ddsAdminCompactClasses'
 
 type KpiGroup = { id: string; name: string; sort_order: number }
@@ -463,6 +464,7 @@ export function DdsP2pPage() {
         shiftKind,
         updatedBy: user.id,
       })
+      dispatchDdsP2pKpiRollupDone({ masterCellId: cellId, planDate, shiftKind })
     } catch (rollupErr) {
       setError(rollupErr instanceof Error ? rollupErr.message : 'KPI rollup failed')
     }

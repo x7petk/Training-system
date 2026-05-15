@@ -7,6 +7,7 @@ import { evaluateKpiBlock, parseDdsKpiScoring, scoringHint, scoringTargetNumbers
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
 import { parseDdsP2pKpiBreakdown, type DdsP2pKpiBreakdownItem } from './ddsKpiP2pRollup'
+import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
 
 type KpiGroup = { id: string; name: string; sort_order: number }
 
@@ -144,6 +145,13 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    return subscribeDdsP2pKpiRollupDone((d) => {
+      if (d.masterCellId !== cellId || d.planDate !== planDate || d.shiftKind !== shiftKind) return
+      void load()
+    })
+  }, [cellId, planDate, shiftKind, load])
 
   useEffect(() => {
     setDetailPop(null)

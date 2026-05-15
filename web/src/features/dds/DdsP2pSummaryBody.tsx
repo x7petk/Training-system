@@ -22,6 +22,7 @@ import {
   saveP2pSummaryViewPrefs,
   type DdsP2pSummaryViewPrefs,
 } from './ddsP2pSummaryViewPrefs'
+import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
 import { ddsErr } from './ddsAdminCompactClasses'
 
 export type DdsP2pSummaryShiftRow = { kind: string; display_name: string | null; sort_order: number }
@@ -353,6 +354,13 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
   useEffect(() => {
     void loadMatrix()
   }, [loadMatrix])
+
+  useEffect(() => {
+    return subscribeDdsP2pKpiRollupDone((d) => {
+      if (d.masterCellId !== cellId || d.planDate !== planDate || d.shiftKind !== shiftKind) return
+      void loadMatrix()
+    })
+  }, [cellId, planDate, shiftKind, loadMatrix])
 
   useEffect(() => {
     setDetailPop(null)
