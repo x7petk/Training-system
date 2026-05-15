@@ -295,7 +295,7 @@ export function DdsP2pPage() {
   }, [loadQuestions])
 
   const loadAudits = useCallback(async () => {
-    if (!cellId || !roleId || !user?.id || !shiftKind) {
+    if (!cellId || !roleId || !shiftKind) {
       setAudits([])
       return
     }
@@ -306,7 +306,6 @@ export function DdsP2pPage() {
       .eq('plan_date', planDate)
       .eq('shift_kind', shiftKind)
       .eq('roster_role_id', roleId)
-      .eq('submitted_by', user.id)
       .order('submitted_at', { ascending: false })
     if (qErr) {
       setError(qErr.message)
@@ -315,7 +314,7 @@ export function DdsP2pPage() {
     const list = (data ?? []) as AuditHead[]
     setAudits(list)
     setRevisionIx(0)
-  }, [cellId, planDate, shiftKind, roleId, user])
+  }, [cellId, planDate, shiftKind, roleId])
 
   useEffect(() => {
     void loadAudits()
