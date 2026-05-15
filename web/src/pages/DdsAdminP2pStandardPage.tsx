@@ -33,7 +33,10 @@ type QuestionRow = {
   sort_order: number
   response_kind: string
   target_number: number | string | null
+  linked_kpi_id: string | null
 }
+
+type KpiOption = { id: string; label: string; kpi_group_id: string; sort_order: number }
 
 function parseTargetNumber(raw: string): number | null {
   const t = raw.trim().replace(',', '.')
@@ -57,14 +60,29 @@ export function DdsAdminP2pStandardPage() {
   const [groupId, setGroupId] = useState('')
   const [questions, setQuestions] = useState<QuestionRow[]>([])
   const [qDrafts, setQDrafts] = useState<
-    Record<string, { prompt: string; response_kind: DdsP2pResponseKind; targetText: string }>
+    Record<string, { prompt: string; response_kind: DdsP2pResponseKind; targetText: string; linkedKpiId: string }>
   >({})
+  const [kpiOptions, setKpiOptions] = useState<KpiOption[]>([])
   const [loadingQs, setLoadingQs] = useState(false)
   const [newPrompt, setNewPrompt] = useState('')
   const [newKind, setNewKind] = useState<DdsP2pResponseKind>('yes_no')
   const [newTargetText, setNewTargetText] = useState('')
+  const [newLinkedKpiId, setNewLinkedKpiId] = useState('')
   const [qSavingId, setQSavingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const loadKpis = useCallback(async () => {
+    const { data, error: kErr } = await supabase
+      .from('dds_kpis')
+      .select('id, label, kpi_group_id, sort_order')
+      .order('sort_order', { ascending: true })
+      .order('label', { ascending: true })
+    if (kErr) {
+      setError(kErr.message)
+      return
+    }
+    setKpiOptions((data ?? []) as KpiOption[])
+  }, [])
 
   const loadGroups = useCallback(async () => {
     setLoadingGroups(true)
@@ -97,7 +115,7 @@ export function DdsAdminP2pStandardPage() {
     setError(null)
     const { data, error: qErr } = await supabase
       .from('dds_p2p_standard_questions')
-      .select('id, kpi_group_id, prompt, sort_order, response_kind, target_number')
+      .select('id, kpi_group_id, prompt, sort_order, response_kind, target_number, linked_kpi_id')
       .eq('kpi_group_id', gid)
       .order('sort_order', { ascending: true })
       .order('prompt', { ascending: true })
@@ -108,13 +126,14 @@ export function DdsAdminP2pStandardPage() {
     }
     const list = (data ?? []) as QuestionRow[]
     setQuestions(list)
-    const next: Record<string, { prompt: string; response_kind: DdsP2pResponseKind; targetText: string }> = {}
+    const next: Record<string, { prompt: string; response_kind: DdsP2pResponseKind; targetText: string; linkedKpiId: string }> = {}
     for (const q of list) {
       const kind = isDdsP2pResponseKind(q.response_kind) ? q.response_kind : 'yes_no'
       next[q.id] = {
         prompt: q.prompt,
         response_kind: kind,
         targetText: kind === 'number_with_target' ? targetToInputValue(q.target_number) : '',
+        linkedKpiId: q.linked_kpi_id ?? '',
       }
     }
     setQDrafts(next)
@@ -122,7 +141,8 @@ export function DdsAdminP2pStandardPage() {
 
   useEffect(() => {
     void loadGroups()
-  }, [loadGroups])
+    void loadKpis()
+  }, [loadGroups, loadKpis])
 
   useEffect(() => {
     void loadQuestions(groupId)
@@ -163,6 +183,7 @@ export function DdsAdminP2pStandardPage() {
       response_kind: payload.response_kind,
       target_number: payload.target_number,
       sort_order: nextOrder,
+      linked_kpi_id: newKind === 'yes_no' && newLinkedKpiId ? newLinkedKpiId : null,
     })
     if (insErr) {
       setError(insErr.message)
@@ -171,6 +192,7 @@ export function DdsAdminP2pStandardPage() {
     setNewPrompt('')
     setNewKind('yes_no')
     setNewTargetText('')
+    setNewLinkedKpiId('')
     await loadQuestions(groupId)
   }
 
@@ -190,6 +212,7 @@ export function DdsAdminP2pStandardPage() {
         prompt: payload.prompt,
         response_kind: payload.response_kind,
         target_number: payload.target_number,
+        linked_kpi_id: d.response_kind === 'yes_no' && d.linkedKpiId ? d.linkedKpiId : null,
       })
       .eq('id', id)
     setQSavingId(null)
@@ -283,7 +306,11 @@ export function DdsAdminP2pStandardPage() {
                 id="p2p-new-q-kind"
                 className={ddsSelect}
                 value={newKind}
-                onChange={(e) => setNewKind(e.target.value as DdsP2pResponseKind)}
+                onChange={(e) => {
+                  const kind = e.target.value as DdsP2pResponseKind
+                  setNewKind(kind)
+                  if (kind !== 'yes_no') setNewLinkedKpiId('')
+                }}
               >
                 {DDS_P2P_RESPONSE_KINDS.map((k) => (
                   <option key={k.value} value={k.value}>
@@ -305,6 +332,32 @@ export function DdsAdminP2pStandardPage() {
                   inputMode="decimal"
                   placeholder="e.g. 100"
                 />
+              </div>
+            ) : null}
+            {newKind === 'yes_no' ? (
+              <div className="sm:col-span-2">
+                <label htmlFor="p2p-new-q-kpi" className="text-[10px] font-medium text-muted">
+                  Roll up to KPI when answer is No (optional)
+                </label>
+                <select
+                  id="p2p-new-q-kpi"
+                  className={ddsSelect}
+                  value={newLinkedKpiId}
+                  onChange={(e) => setNewLinkedKpiId(e.target.value)}
+                >
+                  <option value="">None</option>
+                  {groups.map((g) => (
+                    <optgroup key={g.id} label={g.name}>
+                      {kpiOptions
+                        .filter((k) => k.kpi_group_id === g.id)
+                        .map((k) => (
+                          <option key={k.id} value={k.id}>
+                            {k.label}
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
+                </select>
               </div>
             ) : null}
           </div>
@@ -365,6 +418,7 @@ export function DdsAdminP2pStandardPage() {
                                 ...d,
                                 response_kind: kind,
                                 targetText: kind === 'number_with_target' ? d.targetText : '',
+                                linkedKpiId: kind === 'yes_no' ? d.linkedKpiId : '',
                               },
                             }))
                           }}
@@ -393,6 +447,37 @@ export function DdsAdminP2pStandardPage() {
                             }
                             inputMode="decimal"
                           />
+                        </div>
+                      ) : null}
+                      {d.response_kind === 'yes_no' ? (
+                        <div className="sm:col-span-2 lg:col-span-3">
+                          <label className="text-[10px] font-medium text-muted" htmlFor={`p2p-q-kpi-${row.id}`}>
+                            Roll up to KPI when answer is No (optional)
+                          </label>
+                          <select
+                            id={`p2p-q-kpi-${row.id}`}
+                            className={ddsSelect}
+                            value={d.linkedKpiId}
+                            onChange={(e) =>
+                              setQDrafts((prev) => ({
+                                ...prev,
+                                [row.id]: { ...d, linkedKpiId: e.target.value },
+                              }))
+                            }
+                          >
+                            <option value="">None</option>
+                            {groups.map((g) => (
+                              <optgroup key={g.id} label={g.name}>
+                                {kpiOptions
+                                  .filter((k) => k.kpi_group_id === g.id)
+                                  .map((k) => (
+                                    <option key={k.id} value={k.id}>
+                                      {k.label}
+                                    </option>
+                                  ))}
+                              </optgroup>
+                            ))}
+                          </select>
                         </div>
                       ) : null}
                       <div className="flex items-end gap-1.5 sm:col-span-2 lg:col-span-1 lg:justify-end">

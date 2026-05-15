@@ -66,5 +66,5 @@ function runSupabase(args) {
 }
 
 runSupabase(['link', '--project-ref', PROJECT_REF, '-p', dbPassword, '--yes'])
-runSupabase(['db', 'push', '--linked', '--yes'])
+runSupabase(['db', 'push', '--linked', '--yes', '--include-all'])
 console.log('OK: db push complete.')

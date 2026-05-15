@@ -8,6 +8,7 @@ import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { ddsP2pQuestionKey } from '../features/dds/ddsP2pQuestionKey'
 import { labelForDdsP2pResponseKind, type DdsP2pResponseKind } from '../features/dds/ddsP2pResponseKind'
 import { DdsP2pPlanPanel } from '../features/dds/DdsP2pPlanPanel'
+import { refreshKpiP2pRollups } from '../features/dds/ddsKpiP2pRollup'
 import { ddsErr, ddsHint, ddsInput, ddsSection, ddsSelect, ddsStack } from '../features/dds/ddsAdminCompactClasses'
 
 type KpiGroup = { id: string; name: string; sort_order: number }
@@ -24,9 +25,10 @@ type P2pQuestion = {
   prompt: string
   responseKind: DdsP2pResponseKind
   targetNumber: number | null
+  linkedKpiId: string | null
 }
 
-type FormAns = { yesNo: boolean | null; num: string; comment: string }
+type FormAns = { yesNo: boolean | null; num: string; comment: string; kpiIncidentNum: string; kpiIncidentComment: string }
 
 type AuditHead = { id: string; submitted_at: string; sheet_comment: string | null }
 
@@ -37,7 +39,7 @@ function sortGroups<T extends { sort_order: number; name: string }>(rows: T[]): 
 function emptyForm(questions: P2pQuestion[]): Record<string, FormAns> {
   const m: Record<string, FormAns> = {}
   for (const q of questions) {
-    m[q.key] = { yesNo: null, num: '', comment: '' }
+    m[q.key] = { yesNo: null, num: '', comment: '', kpiIncidentNum: '', kpiIncidentComment: '' }
   }
   return m
 }
@@ -211,12 +213,15 @@ export function DdsP2pPage() {
     const [grpRes, stdRes, softRes] = await Promise.all([
       supabase.from('dds_kpi_groups').select('id, name, sort_order').order('sort_order').order('name'),
       stdIds.length
-        ? supabase.from('dds_p2p_standard_questions').select('id, kpi_group_id, prompt, sort_order, response_kind, target_number').in('id', stdIds)
+        ? supabase
+            .from('dds_p2p_standard_questions')
+            .select('id, kpi_group_id, prompt, sort_order, response_kind, target_number, linked_kpi_id')
+            .in('id', stdIds)
         : Promise.resolve({ data: [], error: null }),
       softIds.length
         ? supabase
             .from('dds_p2p_cell_soft_point_questions')
-            .select('id, kpi_group_id, prompt, sort_order, response_kind, target_number')
+            .select('id, kpi_group_id, prompt, sort_order, response_kind, target_number, linked_kpi_id')
             .eq('master_cell_id', cellId)
             .in('id', softIds)
         : Promise.resolve({ data: [], error: null }),
@@ -235,6 +240,7 @@ export function DdsP2pPage() {
       sort_order: number
       response_kind: string
       target_number: number | string | null
+      linked_kpi_id: string | null
     }[]
     const softRows = (softRes.data ?? []) as typeof stdRows
     const stdSet = new Set(stdIds)
@@ -259,6 +265,7 @@ export function DdsP2pPage() {
           prompt: q.prompt,
           responseKind: rk,
           targetNumber: Number.isFinite(tn as number) ? (tn as number) : null,
+          linkedKpiId: q.linked_kpi_id ?? null,
         })
       }
       for (const q of softs) {
@@ -272,6 +279,7 @@ export function DdsP2pPage() {
           prompt: q.prompt,
           responseKind: rk,
           targetNumber: Number.isFinite(tn as number) ? (tn as number) : null,
+          linkedKpiId: q.linked_kpi_id ?? null,
         })
       }
     }
@@ -320,7 +328,9 @@ export function DdsP2pPage() {
     }
     const { data: ans, error: e } = await supabase
       .from('dds_p2p_audit_answers')
-      .select('question_kind, standard_question_id, soft_question_id, answer_yes_no, answer_number, question_comment')
+      .select(
+        'question_kind, standard_question_id, soft_question_id, answer_yes_no, answer_number, question_comment, kpi_link_value, kpi_link_comment',
+      )
       .eq('audit_id', auditId)
     if (e) {
       setError(e.message)
@@ -336,6 +346,8 @@ export function DdsP2pPage() {
         yesNo: typeof row.answer_yes_no === 'boolean' ? row.answer_yes_no : null,
         num: row.answer_number != null ? String(row.answer_number) : '',
         comment: row.question_comment ?? '',
+        kpiIncidentNum: row.kpi_link_value != null && row.kpi_link_value !== '' ? String(row.kpi_link_value) : '',
+        kpiIncidentComment: (row.kpi_link_comment as string | null) ?? '',
       }
     }
     setForm(next)
@@ -369,6 +381,17 @@ export function DdsP2pPage() {
           return
         }
       }
+      if (q.responseKind === 'yes_no' && q.linkedKpiId && f.yesNo === false) {
+        const kn = Number(String(f.kpiIncidentNum ?? '').trim().replace(',', '.'))
+        if (!Number.isFinite(kn) || kn < 0) {
+          setError(`Enter a non‑negative incident count for: ${q.prompt.slice(0, 40)}…`)
+          return
+        }
+        if (!String(f.kpiIncidentComment ?? '').trim()) {
+          setError(`Add a KPI comment for: ${q.prompt.slice(0, 40)}…`)
+          return
+        }
+      }
     }
     setSaving(true)
     setError(null)
@@ -393,6 +416,8 @@ export function DdsP2pPage() {
     for (const q of questions) {
       const f = form[q.key]!
       if (q.responseKind === 'yes_no') {
+        const linkNo = Boolean(q.linkedKpiId) && f.yesNo === false
+        const kn = linkNo ? Number(String(f.kpiIncidentNum).trim().replace(',', '.')) : null
         const { error: ansErr } = await supabase.from('dds_p2p_audit_answers').insert({
           audit_id: auditId,
           question_kind: q.source,
@@ -401,6 +426,8 @@ export function DdsP2pPage() {
           answer_yes_no: f.yesNo,
           answer_number: null,
           question_comment: f.comment.trim() || null,
+          kpi_link_value: linkNo && kn != null && Number.isFinite(kn) ? kn : null,
+          kpi_link_comment: linkNo ? f.kpiIncidentComment.trim() || null : null,
         })
         if (ansErr) {
           setSaving(false)
@@ -417,6 +444,8 @@ export function DdsP2pPage() {
           answer_yes_no: null,
           answer_number: n,
           question_comment: f.comment.trim() || null,
+          kpi_link_value: null,
+          kpi_link_comment: null,
         })
         if (ansErr) {
           setSaving(false)
@@ -424,6 +453,16 @@ export function DdsP2pPage() {
           return
         }
       }
+    }
+    try {
+      await refreshKpiP2pRollups(supabase, {
+        masterCellId: cellId,
+        planDate,
+        shiftKind,
+        updatedBy: user.id,
+      })
+    } catch (rollupErr) {
+      setError(rollupErr instanceof Error ? rollupErr.message : 'KPI rollup failed')
     }
     setSaving(false)
     await loadAudits()
@@ -502,7 +541,13 @@ export function DdsP2pPage() {
                     </div>
                     <ul className="mt-1 space-y-1.5">
                       {g.items.map((q) => {
-                        const f = form[q.key] ?? { yesNo: null, num: '', comment: '' }
+                        const f = form[q.key] ?? {
+                          yesNo: null,
+                          num: '',
+                          comment: '',
+                          kpiIncidentNum: '',
+                          kpiIncidentComment: '',
+                        }
                         const kindHint =
                           q.responseKind === 'yes_no'
                             ? null
@@ -529,7 +574,10 @@ export function DdsP2pPage() {
                                     type="button"
                                     disabled={readOnlyRevision}
                                     onClick={() =>
-                                      setForm((prev) => ({ ...prev, [q.key]: { ...f, yesNo: true } }))
+                                      setForm((prev) => ({
+                                        ...prev,
+                                        [q.key]: { ...f, yesNo: true, kpiIncidentNum: '', kpiIncidentComment: '' },
+                                      }))
                                     }
                                     className={`h-6 min-w-[2.35rem] rounded px-2 text-[11px] font-semibold transition-colors disabled:opacity-50 ${
                                       f.yesNo === true
@@ -570,6 +618,47 @@ export function DdsP2pPage() {
                                 <span className="shrink-0 text-[10px] text-muted">{kindHint}</span>
                               ) : null}
                             </div>
+                            {q.responseKind === 'yes_no' && q.linkedKpiId && f.yesNo === false ? (
+                              <div className="mt-1 space-y-1 rounded-md border border-amber-600/35 bg-amber-500/10 px-1.5 py-1 dark:bg-amber-950/25">
+                                <p className="text-[9px] font-medium text-amber-950 dark:text-amber-100/90">
+                                  Linked KPI: enter incident count and a short comment (rolled up across roles for this
+                                  shift).
+                                </p>
+                                <div className="flex flex-wrap items-end gap-2">
+                                  <label className="flex min-w-[5rem] flex-col gap-0.5">
+                                    <span className="text-[9px] text-muted">Count</span>
+                                    <input
+                                      className={`${compactControl} w-[4.5rem] text-right tabular-nums`}
+                                      inputMode="numeric"
+                                      placeholder="0"
+                                      disabled={readOnlyRevision}
+                                      value={f.kpiIncidentNum}
+                                      onChange={(e) =>
+                                        setForm((prev) => ({
+                                          ...prev,
+                                          [q.key]: { ...f, kpiIncidentNum: e.target.value },
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                  <label className="min-w-0 flex-1 basis-[12rem]">
+                                    <span className="text-[9px] text-muted">KPI comment</span>
+                                    <input
+                                      className="mt-0.5 w-full rounded-md border border-border/80 bg-surface px-1.5 py-0.5 text-[11px] outline-none ring-accent/30 focus:border-accent/50 focus:ring-1"
+                                      disabled={readOnlyRevision}
+                                      value={f.kpiIncidentComment}
+                                      onChange={(e) =>
+                                        setForm((prev) => ({
+                                          ...prev,
+                                          [q.key]: { ...f, kpiIncidentComment: e.target.value },
+                                        }))
+                                      }
+                                      placeholder="What happened?"
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            ) : null}
                             <textarea
                               className="p2p-auto-comment mt-0.5 w-full resize-none overflow-hidden rounded-md border border-border/80 bg-surface px-1.5 py-0.5 text-[11px] leading-snug outline-none ring-accent/30 focus:border-accent/50 focus:ring-1"
                               rows={1}

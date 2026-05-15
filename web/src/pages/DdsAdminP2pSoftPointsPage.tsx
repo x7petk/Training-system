@@ -32,6 +32,7 @@ type StdQuestion = {
   response_kind: string
   target_number: number | string | null
   sort_order: number
+  linked_kpi_id: string | null
 }
 
 type KpiGroupRow = {
@@ -48,7 +49,10 @@ type CellQuestionRow = {
   response_kind: string
   target_number: number | string | null
   sort_order: number
+  linked_kpi_id: string | null
 }
+
+type KpiOption = { id: string; label: string; kpi_group_id: string; sort_order: number }
 
 function parseTargetNumber(raw: string): number | null {
   const t = raw.trim().replace(',', '.')
@@ -75,11 +79,14 @@ export function DdsAdminP2pSoftPointsPage() {
   const [cellQuestions, setCellQuestions] = useState<CellQuestionRow[]>([])
   const [loadingCellQs, setLoadingCellQs] = useState(false)
   const [qDrafts, setQDrafts] = useState<
-    Record<string, { prompt: string; response_kind: DdsP2pResponseKind; targetText: string }>
+    Record<string, { prompt: string; response_kind: DdsP2pResponseKind; targetText: string; linkedKpiId: string }>
   >({})
+  const [kpiOptions, setKpiOptions] = useState<KpiOption[]>([])
+  const [kpiLabels, setKpiLabels] = useState<Record<string, string>>({})
   const [newPrompt, setNewPrompt] = useState('')
   const [newKind, setNewKind] = useState<DdsP2pResponseKind>('yes_no')
   const [newTargetText, setNewTargetText] = useState('')
+  const [newLinkedKpiId, setNewLinkedKpiId] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -88,7 +95,7 @@ export function DdsAdminP2pSoftPointsPage() {
     setError(null)
     const { data: qs, error: qErr } = await supabase
       .from('dds_p2p_standard_questions')
-      .select('id, kpi_group_id, prompt, response_kind, target_number, sort_order')
+      .select('id, kpi_group_id, prompt, response_kind, target_number, sort_order, linked_kpi_id')
       .order('sort_order', { ascending: true })
       .order('prompt', { ascending: true })
     if (qErr) {
@@ -116,6 +123,23 @@ export function DdsAdminP2pSoftPointsPage() {
     }
     setGroupNames(map)
     setLoadingStd(false)
+  }, [])
+
+  const loadKpiOptions = useCallback(async () => {
+    const { data, error: kErr } = await supabase
+      .from('dds_kpis')
+      .select('id, label, kpi_group_id, sort_order')
+      .order('sort_order', { ascending: true })
+      .order('label', { ascending: true })
+    if (kErr) {
+      setError(kErr.message)
+      return
+    }
+    const list = (data ?? []) as KpiOption[]
+    setKpiOptions(list)
+    const labels: Record<string, string> = {}
+    for (const k of list) labels[k.id] = k.label
+    setKpiLabels(labels)
   }, [])
 
   const loadKpiGroups = useCallback(async () => {
@@ -149,7 +173,7 @@ export function DdsAdminP2pSoftPointsPage() {
     setError(null)
     const { data, error: qErr } = await supabase
       .from('dds_p2p_cell_soft_point_questions')
-      .select('id, master_cell_id, kpi_group_id, prompt, response_kind, target_number, sort_order')
+      .select('id, master_cell_id, kpi_group_id, prompt, response_kind, target_number, sort_order, linked_kpi_id')
       .eq('master_cell_id', cid)
       .eq('kpi_group_id', gid)
       .order('sort_order', { ascending: true })
@@ -161,13 +185,14 @@ export function DdsAdminP2pSoftPointsPage() {
     }
     const list = (data ?? []) as CellQuestionRow[]
     setCellQuestions(list)
-    const next: Record<string, { prompt: string; response_kind: DdsP2pResponseKind; targetText: string }> = {}
+    const next: Record<string, { prompt: string; response_kind: DdsP2pResponseKind; targetText: string; linkedKpiId: string }> = {}
     for (const q of list) {
       const kind = isDdsP2pResponseKind(q.response_kind) ? q.response_kind : 'yes_no'
       next[q.id] = {
         prompt: q.prompt,
         response_kind: kind,
         targetText: kind === 'number_with_target' ? targetToInputValue(q.target_number) : '',
+        linkedKpiId: q.linked_kpi_id ?? '',
       }
     }
     setQDrafts(next)
@@ -176,7 +201,8 @@ export function DdsAdminP2pSoftPointsPage() {
   useEffect(() => {
     void loadGlobalStandard()
     void loadKpiGroups()
-  }, [loadGlobalStandard, loadKpiGroups])
+    void loadKpiOptions()
+  }, [loadGlobalStandard, loadKpiGroups, loadKpiOptions])
 
   useEffect(() => {
     if (scopeStatus !== 'ready' || !cellId || !groupId) {
@@ -233,6 +259,7 @@ export function DdsAdminP2pSoftPointsPage() {
       response_kind: payload.response_kind,
       target_number: payload.target_number,
       sort_order: nextOrder,
+      linked_kpi_id: newKind === 'yes_no' && newLinkedKpiId ? newLinkedKpiId : null,
     })
     if (insErr) {
       setError(insErr.message)
@@ -241,6 +268,7 @@ export function DdsAdminP2pSoftPointsPage() {
     setNewPrompt('')
     setNewKind('yes_no')
     setNewTargetText('')
+    setNewLinkedKpiId('')
     await loadCellQuestions(cellId, groupId)
   }
 
@@ -260,6 +288,7 @@ export function DdsAdminP2pSoftPointsPage() {
         prompt: payload.prompt,
         response_kind: payload.response_kind,
         target_number: payload.target_number,
+        linked_kpi_id: d.response_kind === 'yes_no' && d.linkedKpiId ? d.linkedKpiId : null,
       })
       .eq('id', id)
     setSavingId(null)
@@ -324,6 +353,12 @@ export function DdsAdminP2pSoftPointsPage() {
                         {q.response_kind === 'number_with_target' && q.target_number != null
                           ? ` · target ${q.target_number}`
                           : null}
+                        {q.linked_kpi_id ? (
+                          <span className="text-fg/80">
+                            {' '}
+                            · KPI link: {kpiLabels[q.linked_kpi_id] ?? q.linked_kpi_id}
+                          </span>
+                        ) : null}
                       </p>
                     </li>
                   ))}
@@ -402,7 +437,11 @@ export function DdsAdminP2pSoftPointsPage() {
                       id="cell-soft-new-kind"
                       className={ddsSelect}
                       value={newKind}
-                      onChange={(e) => setNewKind(e.target.value as DdsP2pResponseKind)}
+                      onChange={(e) => {
+                        const kind = e.target.value as DdsP2pResponseKind
+                        setNewKind(kind)
+                        if (kind !== 'yes_no') setNewLinkedKpiId('')
+                      }}
                     >
                       {DDS_P2P_RESPONSE_KINDS.map((k) => (
                         <option key={k.value} value={k.value}>
@@ -424,6 +463,32 @@ export function DdsAdminP2pSoftPointsPage() {
                         inputMode="decimal"
                         placeholder="e.g. 100"
                       />
+                    </div>
+                  ) : null}
+                  {newKind === 'yes_no' ? (
+                    <div className="sm:col-span-2">
+                      <label htmlFor="cell-soft-new-kpi" className="text-[10px] font-medium text-muted">
+                        Roll up to KPI when answer is No (optional)
+                      </label>
+                      <select
+                        id="cell-soft-new-kpi"
+                        className={ddsSelect}
+                        value={newLinkedKpiId}
+                        onChange={(e) => setNewLinkedKpiId(e.target.value)}
+                      >
+                        <option value="">None</option>
+                        {kpiGroups.map((g) => (
+                          <optgroup key={g.id} label={g.name}>
+                            {kpiOptions
+                              .filter((k) => k.kpi_group_id === g.id)
+                              .map((k) => (
+                                <option key={k.id} value={k.id}>
+                                  {k.label}
+                                </option>
+                              ))}
+                          </optgroup>
+                        ))}
+                      </select>
                     </div>
                   ) : null}
                 </div>
@@ -484,6 +549,7 @@ export function DdsAdminP2pSoftPointsPage() {
                                       ...d,
                                       response_kind: kind,
                                       targetText: kind === 'number_with_target' ? d.targetText : '',
+                                      linkedKpiId: kind === 'yes_no' ? d.linkedKpiId : '',
                                     },
                                   }))
                                 }}
@@ -512,6 +578,37 @@ export function DdsAdminP2pSoftPointsPage() {
                                   }
                                   inputMode="decimal"
                                 />
+                              </div>
+                            ) : null}
+                            {d.response_kind === 'yes_no' ? (
+                              <div className="sm:col-span-2 lg:col-span-3">
+                                <label className="text-[10px] font-medium text-muted" htmlFor={`cell-soft-kpi-${row.id}`}>
+                                  Roll up to KPI when answer is No (optional)
+                                </label>
+                                <select
+                                  id={`cell-soft-kpi-${row.id}`}
+                                  className={ddsSelect}
+                                  value={d.linkedKpiId}
+                                  onChange={(e) =>
+                                    setQDrafts((prev) => ({
+                                      ...prev,
+                                      [row.id]: { ...d, linkedKpiId: e.target.value },
+                                    }))
+                                  }
+                                >
+                                  <option value="">None</option>
+                                  {kpiGroups.map((g) => (
+                                    <optgroup key={g.id} label={g.name}>
+                                      {kpiOptions
+                                        .filter((k) => k.kpi_group_id === g.id)
+                                        .map((k) => (
+                                          <option key={k.id} value={k.id}>
+                                            {k.label}
+                                          </option>
+                                        ))}
+                                    </optgroup>
+                                  ))}
+                                </select>
                               </div>
                             ) : null}
                             <div className="flex items-end gap-1.5 sm:col-span-2 lg:col-span-1 lg:justify-end">

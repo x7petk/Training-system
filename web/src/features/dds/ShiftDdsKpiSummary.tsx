@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Loader2, MessageSquare } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import type { DdsKpiScoring } from './ddsKpiScoring'
 import { evaluateKpiBlock, parseDdsKpiScoring, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
+import { parseDdsP2pKpiBreakdown, type DdsP2pKpiBreakdownItem } from './ddsKpiP2pRollup'
 
 type KpiGroup = { id: string; name: string; sort_order: number }
 
@@ -23,6 +24,7 @@ type EntryRow = {
   kpi_id: string
   value_numeric: number | null
   comment: string | null
+  p2p_breakdown: unknown
 }
 
 type Props = {
@@ -37,6 +39,13 @@ function blockClasses(tone: 'neutral' | 'good' | 'bad'): string {
   return 'border-sky-600/45 bg-sky-600/12 text-sky-950 dark:bg-sky-900/35 dark:text-sky-50'
 }
 
+function placeDetailPanel(anchor: HTMLElement, maxW: number): { top: number; left: number; maxW: number } {
+  const rect = anchor.getBoundingClientRect()
+  const w = typeof window !== 'undefined' ? window.innerWidth : 400
+  const left = Math.max(8, Math.min(rect.left, w - maxW - 8))
+  return { top: rect.bottom + 6, left, maxW }
+}
+
 export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
   const { user } = useAuth()
   const [groups, setGroups] = useState<KpiGroup[]>([])
@@ -49,8 +58,17 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
     valueStr: string
     comment: string
     entryId: string | null
+    hadP2pBreakdown: boolean
   } | null>(null)
   const [saving, setSaving] = useState(false)
+  const [detailPop, setDetailPop] = useState<{
+    top: number
+    left: number
+    maxW: number
+    text: string
+    breakdown: DdsP2pKpiBreakdownItem[]
+  } | null>(null)
+  const detailPanelRef = useRef<HTMLDivElement | null>(null)
 
   const load = useCallback(async () => {
     if (!cellId || !planDate || !shiftKind) {
@@ -72,7 +90,7 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
         .order('label'),
       supabase
         .from('dds_kpi_cell_entries')
-        .select('id, kpi_id, value_numeric, comment')
+        .select('id, kpi_id, value_numeric, comment, p2p_breakdown')
         .eq('master_cell_id', cellId)
         .eq('plan_date', planDate)
         .eq('shift_kind', shiftKind),
@@ -112,7 +130,13 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
     const em: Record<string, EntryRow> = {}
     for (const row of eRes.data ?? []) {
       const r = row as EntryRow & { kpi_id: string }
-      em[r.kpi_id] = { id: r.id, kpi_id: r.kpi_id, value_numeric: r.value_numeric, comment: r.comment }
+      em[r.kpi_id] = {
+        id: r.id,
+        kpi_id: r.kpi_id,
+        value_numeric: r.value_numeric,
+        comment: r.comment,
+        p2p_breakdown: r.p2p_breakdown,
+      }
     }
     setEntries(em)
   }, [cellId, planDate, shiftKind])
@@ -120,6 +144,28 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    setDetailPop(null)
+  }, [cellId, planDate, shiftKind])
+
+  useLayoutEffect(() => {
+    if (!detailPop) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (detailPanelRef.current?.contains(t)) return
+      setDetailPop(null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDetailPop(null)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [detailPop])
 
   const kpisByGroup = useMemo(() => {
     const m = new Map<string, KpiDef[]>()
@@ -139,13 +185,16 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
   )
 
   function openModal(kpi: KpiDef) {
+    setDetailPop(null)
     const e = entries[kpi.id]
     const v = e?.value_numeric
+    const b = parseDdsP2pKpiBreakdown(e?.p2p_breakdown)
     setModal({
       kpi,
       valueStr: v != null && Number.isFinite(v) ? String(v) : '',
       comment: e?.comment ?? '',
       entryId: e?.id ?? null,
+      hadP2pBreakdown: b.length > 0,
     })
   }
 
@@ -163,6 +212,7 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
         shift_kind: shiftKind,
         value_numeric,
         comment: modal.comment.trim() || null,
+        p2p_breakdown: null,
         updated_by: user?.id ?? null,
       },
       { onConflict: 'master_cell_id,kpi_id,plan_date,shift_kind' },
@@ -213,25 +263,96 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
                 const targetLine = scoringTargetNumbersOnly(kpi.scoring)
                 const valueLabel =
                   val != null && Number.isFinite(val) ? formatKpiValueWithUnit(val, kpi.unit) : '—'
+                const cmt = e?.comment?.trim() ?? ''
+                const breakdown = parseDdsP2pKpiBreakdown(e?.p2p_breakdown)
+                const hasCmt = Boolean(cmt)
+                const hasP2pDetail = breakdown.length > 0
                 return (
-                  <button
+                  <div
                     key={kpi.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
+                    className={`flex min-w-[4.75rem] max-w-[8rem] cursor-pointer flex-col rounded-md border px-1.5 py-1 text-left shadow-sm outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-2 ${blockClasses(tone)}`}
+                    aria-label={`${kpi.label}, edit KPI value`}
                     onClick={() => openModal(kpi)}
-                    className={`flex min-w-[4.75rem] max-w-[7.5rem] flex-col rounded-md border px-1.5 py-1 text-left shadow-sm transition hover:brightness-[1.02] ${blockClasses(tone)}`}
+                    onKeyDown={(ev) => {
+                      if (ev.key === 'Enter' || ev.key === ' ') {
+                        ev.preventDefault()
+                        openModal(kpi)
+                      }
+                    }}
                   >
                     <span className="text-[9px] font-medium leading-tight text-fg/90 line-clamp-2">{kpi.label}</span>
-                    <span className="mt-0.5 text-sm font-semibold tabular-nums leading-none text-fg">{valueLabel}</span>
-                    {targetLine ? (
-                      <span className="mt-0.5 text-[8px] font-medium tabular-nums leading-none text-fg/60">{targetLine}</span>
-                    ) : null}
-                  </button>
+                    <div className="mt-0.5 flex min-h-[1.25rem] items-end justify-between gap-0.5">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-sm font-semibold tabular-nums leading-none text-fg">{valueLabel}</span>
+                        {targetLine ? (
+                          <span className="mt-0.5 block text-[8px] font-medium tabular-nums leading-none text-fg/60">
+                            {targetLine}
+                          </span>
+                        ) : null}
+                      </div>
+                      {hasCmt || hasP2pDetail ? (
+                        <button
+                          type="button"
+                          className="-m-0.5 inline-flex shrink-0 rounded p-0.5 text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
+                          aria-label={hasP2pDetail ? 'Show P2P role comments' : 'Show KPI comment'}
+                          onClick={(clickEv) => {
+                            clickEv.stopPropagation()
+                            const pos = placeDetailPanel(clickEv.currentTarget, 280)
+                            setDetailPop({
+                              ...pos,
+                              text: cmt,
+                              breakdown,
+                            })
+                          }}
+                        >
+                          <MessageSquare className="size-3 shrink-0 text-accent" aria-hidden />
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                 )
               })}
             </div>
           </div>
         )
       })}
+
+      {detailPop ? (
+        <div
+          ref={detailPanelRef}
+          role="dialog"
+          aria-modal="false"
+          aria-label="KPI details"
+          className="fixed z-[68] max-h-[min(50vh,20rem)] overflow-y-auto rounded-lg border border-border-strong bg-surface px-3 py-2 text-xs shadow-xl"
+          style={{ top: detailPop.top, left: detailPop.left, maxWidth: detailPop.maxW, width: detailPop.maxW }}
+        >
+          {detailPop.breakdown.length > 0 ? (
+            <div className="mb-2">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">P2P by role</div>
+              <ul className="space-y-1.5 leading-snug">
+                {detailPop.breakdown.map((b, i) => (
+                  <li key={`${b.roster_role_id}-${b.question_key}-${i}`} className="text-fg">
+                    <span className="font-semibold text-fg">{b.role_name}</span>
+                    {b.prompt ? <span className="text-muted"> · {b.prompt}</span> : null}
+                    <span className="tabular-nums text-fg/90"> · {b.value}</span>
+                    {b.comment ? <span className="text-fg/85"> — {b.comment}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {detailPop.text ? (
+            <div>
+              {detailPop.breakdown.length > 0 ? (
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Comment</div>
+              ) : null}
+              <div className="whitespace-pre-wrap break-words leading-snug text-fg">{detailPop.text}</div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {modal ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4" role="presentation">
@@ -247,6 +368,12 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind }: Props) {
             <p className="mt-1 text-[11px] text-muted">
               Manual value for this cell, date, and shift. {scoringHint(modal.kpi.scoring)}
             </p>
+            {modal.hadP2pBreakdown ? (
+              <p className="mt-2 rounded-lg border border-amber-600/35 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-950 dark:bg-amber-950/25 dark:text-amber-100/90">
+                Saving replaces the automatic P2P rollup for this KPI with your manual value and clears per-role P2P
+                lines.
+              </p>
+            ) : null}
             <label className="mt-4 block text-xs font-medium text-muted">
               Value
               {modal.kpi.unit !== 'none' ? (
