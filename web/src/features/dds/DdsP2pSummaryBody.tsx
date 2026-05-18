@@ -102,6 +102,8 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
   const [matrixQuestions, setMatrixQuestions] = useState<MatrixQuestion[]>([])
   const [cells, setCells] = useState<Record<string, Record<string, CellSnapshot>>>({})
   const [sheetCommentByRoleId, setSheetCommentByRoleId] = useState<Record<string, string>>({})
+  /** Roles with a P2P audit submitted for this cell, date, and shift. */
+  const [submittedRoleIds, setSubmittedRoleIds] = useState<Set<string>>(() => new Set())
 
   const [detailPop, setDetailPop] = useState<{
     top: number
@@ -144,6 +146,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
       setMatrixQuestions([])
       setCells({})
       setSheetCommentByRoleId({})
+      setSubmittedRoleIds(new Set())
       setMatrixLoading(false)
       return
     }
@@ -178,6 +181,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
       setMatrixQuestions([])
       setCells({})
       setSheetCommentByRoleId({})
+      setSubmittedRoleIds(new Set())
       syncPrefsKeys([])
       setMatrixLoading(false)
       return
@@ -295,6 +299,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
       if (t) sheetMap[rid] = t
     }
     setSheetCommentByRoleId(sheetMap)
+    setSubmittedRoleIds(new Set(latestByRole.keys()))
 
     const nextCells: Record<string, Record<string, CellSnapshot>> = {}
     for (const rid of roleIdsForCell) {
@@ -394,6 +399,9 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
 
   useImperativeHandle(ref, () => ({ openPrefs }), [openPrefs])
 
+  const roleColSubmittedClass =
+    'shadow-[inset_0_0_0_2px_rgba(5,150,105,0.55)] bg-emerald-500/[0.07] dark:shadow-[inset_0_0_0_2px_rgba(52,211,153,0.45)] dark:bg-emerald-500/[0.12]'
+
   const prefsHint =
     prefsHelpStandalone ? (
       <p className="mt-1">Open view preferences and enable at least one role and one question.</p>
@@ -436,12 +444,13 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
       ) : (
         <>
           <p className="text-[10px] leading-snug text-muted">
-            Latest P2P submit per role for this date and shift. Blank = not answered yet · <span className="text-fg/70">N/A</span> = not assigned
-            to that role · <span className="font-semibold text-emerald-600">Y</span> / <span className="font-semibold text-rose-600">N</span> in
-            question rows = yes / no answers. <strong className="font-medium text-fg/80">Overall comment</strong> row:{' '}
+            Latest P2P submit per role for this date and shift. Columns with a{' '}
+            <span className="font-medium text-emerald-700 dark:text-emerald-400">green frame</span> = form submitted for that role; no frame = not
+            submitted yet. Blank = not answered · <span className="text-fg/70">N/A</span> = not assigned to that role ·{' '}
+            <span className="font-semibold text-emerald-600">Y</span> / <span className="font-semibold text-rose-600">N</span> in question rows =
+            yes / no. <strong className="font-medium text-fg/80">Overall comment</strong> row:{' '}
             <span className="font-semibold text-emerald-600">Y</span> = no overall comment,{' '}
-            <span className="font-semibold text-rose-600">N</span> = has overall comment (open the icon to read it). Click outside the pop-up to
-            close.
+            <span className="font-semibold text-rose-600">N</span> = has overall comment (open the icon to read it).
           </p>
           <div className="mt-2 min-h-0 flex-1 overflow-auto rounded-lg border border-border/70">
             <table className="w-max min-w-full border-collapse text-left text-[11px]">
@@ -453,11 +462,21 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                   >
                     Question
                   </th>
-                  {roleCols.map((r) => (
-                    <th key={r.id} className="min-w-[4.5rem] whitespace-nowrap px-1.5 py-1.5 text-center font-semibold text-fg" scope="col">
-                      {r.name}
-                    </th>
-                  ))}
+                  {roleCols.map((r) => {
+                    const submitted = submittedRoleIds.has(r.id)
+                    return (
+                      <th
+                        key={r.id}
+                        className={`min-w-[4.5rem] whitespace-nowrap px-1.5 py-1.5 text-center font-semibold text-fg ${
+                          submitted ? roleColSubmittedClass : ''
+                        }`}
+                        scope="col"
+                        title={submitted ? 'P2P submitted for this role' : 'P2P not submitted yet'}
+                      >
+                        {r.name}
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -472,9 +491,14 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                       <span className="text-fg">{q.prompt}</span>
                     </th>
                     {roleCols.map((r) => {
+                      const submitted = submittedRoleIds.has(r.id)
+                      const colClass = submitted ? roleColSubmittedClass : ''
                       if (!q.roleIds.has(r.id)) {
                         return (
-                          <td key={r.id} className="border-l border-border/40 px-1 py-1 text-center align-middle text-[10px] text-muted">
+                          <td
+                            key={r.id}
+                            className={`border-l border-border/40 px-1 py-1 text-center align-middle text-[10px] text-muted ${colClass}`}
+                          >
                             N/A
                           </td>
                         )
@@ -496,7 +520,10 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                         main = <span className="tabular-nums text-fg">{formatNum(snap.num)}</span>
                       }
                       return (
-                        <td key={r.id} className="border-l border-border/40 px-0.5 py-0.5 text-center align-middle">
+                        <td
+                          key={r.id}
+                          className={`border-l border-border/40 px-0.5 py-0.5 text-center align-middle ${colClass}`}
+                        >
                           <div className="inline-flex min-h-[1.75rem] min-w-[3.25rem] items-center justify-center gap-0.5 rounded-md px-1 py-0.5">
                             <span className="tabular-nums">{main}</span>
                             <button
@@ -531,8 +558,13 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                   {roleCols.map((r) => {
                     const sheet = sheetCommentByRoleId[r.id]?.trim() ?? ''
                     const hasSheet = Boolean(sheet)
+                    const submitted = submittedRoleIds.has(r.id)
+                    const colClass = submitted ? roleColSubmittedClass : ''
                     return (
-                      <td key={r.id} className="border-l border-border/40 px-0.5 py-0.5 text-center align-middle">
+                      <td
+                        key={r.id}
+                        className={`border-l border-border/40 px-0.5 py-0.5 text-center align-middle ${colClass}`}
+                      >
                         <div className="inline-flex min-h-[1.75rem] min-w-[3.25rem] items-center justify-center gap-0.5 rounded-md px-1 py-0.5">
                           {hasSheet ? (
                             <span className="font-bold text-rose-600">N</span>

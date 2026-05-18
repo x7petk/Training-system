@@ -1,8 +1,7 @@
-import { Building2, ChevronLeft, ChevronRight, Factory, LayoutGrid } from 'lucide-react'
+import { Building2, ChevronLeft, ChevronRight, Factory, LayoutGrid, Plus } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { usePlan24Workspace } from './Plan24WorkspaceContext'
 import { useShiftDdsShellOptional } from '../dds/ShiftDdsShellContext'
-import { supabaseProjectRef } from '../../lib/supabase'
 
 export function Plan24ScopeBar() {
   const location = useLocation()
@@ -45,8 +44,15 @@ export function Plan24ScopeBar() {
 
   const showDdsDayShiftStrip = onDdsDayShiftShell && shiftDds && cellId
   const p = location.pathname
+  const onWdsPage = p.endsWith('/wds') || p.includes('/dds-process/wds')
   const ddsDayShiftLabel =
-    p.endsWith('/line-dds') || p.includes('/dds-process/line-dds') ? 'Line DDS' : 'Shift DDS'
+    p.endsWith('/site-dds') || p.includes('/dds-process/site-dds')
+      ? 'Site DDS'
+      : p.endsWith('/plant-dds') || p.includes('/dds-process/plant-dds')
+        ? 'Plant DDS'
+        : p.endsWith('/line-dds') || p.includes('/dds-process/line-dds')
+          ? 'Line DDS'
+          : 'Shift DDS'
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-border-strong bg-surface px-3 py-2 shadow-sm sm:px-4">
@@ -164,20 +170,20 @@ export function Plan24ScopeBar() {
             {onDdsDayShiftShell ? `Select a cell for ${ddsDayShiftLabel}.` : 'Select a cell to use Plan 24.'}
           </span>
         ) : null}
+        {onWdsPage ? (
+          <button
+            type="button"
+            className="ml-auto inline-flex h-8 items-center justify-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-semibold hover:bg-black/[0.04] disabled:opacity-40 dark:hover:bg-white/[0.06]"
+            disabled={!cellId}
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('dds-wds-add-column'))
+            }}
+          >
+            <Plus className="size-3.5" aria-hidden />
+            Add
+          </button>
+        ) : null}
       </div>
-      {import.meta.env.DEV && supabaseProjectRef ? (
-        <p className="mt-1.5 border-t border-border/50 pt-1.5 text-[10px] leading-snug text-muted">
-          Dev: Supabase <code className="rounded bg-black/[0.04] px-1 font-mono text-[9px] text-fg/85 dark:bg-white/[0.06]">{supabaseProjectRef}</code>
-          {cellId ? (
-            <>
-              {' '}
-              · cell <code className="rounded bg-black/[0.04] px-1 font-mono text-[9px] text-fg/85 dark:bg-white/[0.06]">{cellId}</code>
-            </>
-          ) : null}
-          . Match Vercel&apos;s <code className="font-mono text-[9px]">VITE_SUPABASE_URL</code> for prod parity; site/plant/cell
-          are saved per host (localhost vs deployment pick different defaults unless you align them).
-        </p>
-      ) : null}
     </div>
   )
 }

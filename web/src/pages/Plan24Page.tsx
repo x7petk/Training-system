@@ -44,6 +44,13 @@ import {
 } from '../features/plan24/plan24ViewPrefs'
 import { plan24PersistCheckMove, type Plan24PersistMoveOpts } from '../features/plan24/plan24PersistCheckMove'
 import { isPlan24DdsAction, plan24EventGridRoleKey } from '../features/plan24/plan24DdsUtils'
+import { DdsActionSurfacesField } from '../features/dds/DdsActionSurfacesField'
+import {
+  DDS_ACTION_UI_SURFACE_KEYS,
+  normalizeDdsActionSurfacesForSave,
+  type DdsActionUiSurfaceKey,
+} from '../features/dds/ddsActionSurfaces'
+import { MIN_PLAN_YMD, clampPlanDateYmd, plan24MaxVisibleYmd } from '../features/plan24/plan24DateBounds'
 
 const inputClass =
   'w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2'
@@ -69,7 +76,6 @@ const PLAN24_TASKS_PANEL_H_KEY = 'rtt-systems.plan24.tasksPanelHeight.v1'
 const TASK_PANEL_MIN_PX = 140
 const TASK_PANEL_DEFAULT_PX = 260
 const TASK_PANEL_MAX_PX = 640
-const PLAN24_VISIBLE_DAYS_AHEAD = 90
 
 function clampTaskPanelHeight(px: number, viewportH: number): number {
   const cap = Math.floor(Math.min(TASK_PANEL_MAX_PX, viewportH * 0.68))
@@ -124,6 +130,7 @@ export function Plan24Page() {
   const [adhocTitle, setAdhocTitle] = useState('Check')
   const [adhocComment, setAdhocComment] = useState('')
   const [adhocEndMin, setAdhocEndMin] = useState('30')
+  const [adhocDdsSurfaces, setAdhocDdsSurfaces] = useState<DdsActionUiSurfaceKey[]>(() => [...DDS_ACTION_UI_SURFACE_KEYS])
 
   const [detailEv, setDetailEv] = useState<Plan24EventRow | null>(null)
 
@@ -136,18 +143,9 @@ export function Plan24Page() {
   const [loading, setLoading] = useState(false)
   const dateInputRef = useRef<HTMLInputElement | null>(null)
   const todayYmd = localYMD(new Date())
-  const maxVisibleYmd = useMemo(() => {
-    const d = new Date(todayYmd + 'T12:00:00')
-    d.setDate(d.getDate() + (PLAN24_VISIBLE_DAYS_AHEAD - 1))
-    return localYMD(d)
-  }, [todayYmd])
+  const maxVisibleYmd = useMemo(() => plan24MaxVisibleYmd(todayYmd), [todayYmd])
   const clampPlanDate = useCallback(
-    (raw: string) => {
-      if (!raw) return todayYmd
-      if (raw < todayYmd) return todayYmd
-      if (raw > maxVisibleYmd) return maxVisibleYmd
-      return raw
-    },
+    (raw: string) => clampPlanDateYmd(raw, maxVisibleYmd, todayYmd),
     [todayYmd, maxVisibleYmd],
   )
 
@@ -519,6 +517,7 @@ export function Plan24Page() {
     setAdhocTitle('Check')
     setAdhocComment('')
     setAdhocEndMin('30')
+    setAdhocDdsSurfaces([...DDS_ACTION_UI_SURFACE_KEYS])
     setAdhocOpen(true)
   }, [])
 
@@ -530,9 +529,17 @@ export function Plan24Page() {
       setLoadErr('Assign a person to this role before creating a DDS action for this shift.')
       return
     }
+    if (isDds) {
+      const surf = normalizeDdsActionSurfacesForSave(adhocDdsSurfaces)
+      if (surf.length === 0) {
+        setLoadErr('Select at least one DDS page (Line, Plant, or Site).')
+        return
+      }
+    }
     const dur = Math.max(5, Number(adhocEndMin) || 30)
     const end = addMinutes(adhocStart, dur)
     setBusy(true)
+    const surf = isDds ? normalizeDdsActionSurfacesForSave(adhocDdsSurfaces) : []
     const { error } = await supabase.from('plan24_events').insert({
       master_cell_id: cellId,
       roster_id: rosterId,
@@ -549,6 +556,7 @@ export function Plan24Page() {
       sub_tasks: [],
       assigned_person_id: isDds ? personId : null,
       comment: isDds ? (adhocComment.trim() || null) : null,
+      ...(isDds && surf.length > 0 ? { dds_display_surfaces: surf } : {}),
       created_by: user.id,
     })
     setBusy(false)
@@ -568,6 +576,7 @@ export function Plan24Page() {
     adhocComment,
     adhocEndMin,
     adhocKind,
+    adhocDdsSurfaces,
     personIdByRole,
     user,
     refresh,
@@ -822,7 +831,7 @@ export function Plan24Page() {
             type="date"
             className="max-w-[9.5rem] rounded-lg border-0 bg-transparent px-1 py-0.5 text-xs font-medium text-fg outline-none sm:text-sm"
             value={planDate}
-            min={todayYmd}
+            min={MIN_PLAN_YMD}
             max={maxVisibleYmd}
             onChange={(e) => setPlanDate(clampPlanDate(e.target.value))}
             aria-label="Plan date"
@@ -1312,6 +1321,7 @@ export function Plan24Page() {
                     onChange={() => {
                       setAdhocKind('dds_action')
                       setAdhocTitle((t) => (t === 'Check' ? 'DDS action' : t))
+                      setAdhocDdsSurfaces([...DDS_ACTION_UI_SURFACE_KEYS])
                     }}
                   />
                   DDS action
@@ -1338,6 +1348,14 @@ export function Plan24Page() {
                   />
                 </label>
               ) : null}
+              {adhocKind === 'dds_action' ? (
+                <DdsActionSurfacesField
+                  idPrefix="plan24-adhoc"
+                  selected={adhocDdsSurfaces}
+                  onChange={setAdhocDdsSurfaces}
+                  disabled={busy}
+                />
+              ) : null}
               <label className="block text-xs font-medium text-muted">
                 Duration (minutes)
                 <input
@@ -1359,7 +1377,12 @@ export function Plan24Page() {
                 </button>
                 <button
                   type="submit"
-                  disabled={busy || (adhocKind === 'dds_action' && !(personIdByRole.get(adhocRole) ?? null))}
+                  disabled={
+                    busy ||
+                    (adhocKind === 'dds_action' && !(personIdByRole.get(adhocRole) ?? null)) ||
+                    (adhocKind === 'dds_action' &&
+                      normalizeDdsActionSurfacesForSave(adhocDdsSurfaces).length === 0)
+                  }
                   className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   Create

@@ -3,6 +3,13 @@ import { CalendarRange, ChevronLeft, ChevronRight, LayoutList, Loader2, Plus, Ro
 import { supabase } from '../lib/supabase'
 import { localYMD } from '../lib/dueDateUtils'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
+import { DdsActionSurfacesField } from '../features/dds/DdsActionSurfacesField'
+import {
+  DDS_ACTION_UI_SURFACE_KEYS,
+  formatDdsActionSurfacesSummary,
+  normalizeDdsActionSurfacesForSave,
+  type DdsActionUiSurfaceKey,
+} from '../features/dds/ddsActionSurfaces'
 import {
   addMinutes,
   formatPlan24Clock,
@@ -15,7 +22,8 @@ import { Plan24EventDetailModal } from '../features/plan24/Plan24EventDetailModa
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
-const PLAN24_VISIBLE_DAYS_AHEAD = 90
+import { MIN_PLAN_YMD, clampPlanDateYmd, plan24MaxVisibleYmd } from '../features/plan24/plan24DateBounds'
+
 const ROW_H = 40
 
 function personLabel(p: {
@@ -72,19 +80,10 @@ export function DdsActionsPage() {
   const { user, isAdmin } = useAuth()
 
   const todayYmd = localYMD(new Date())
-  const maxVisibleYmd = useMemo(() => {
-    const d = new Date(todayYmd + 'T12:00:00')
-    d.setDate(d.getDate() + (PLAN24_VISIBLE_DAYS_AHEAD - 1))
-    return localYMD(d)
-  }, [todayYmd])
+  const maxVisibleYmd = useMemo(() => plan24MaxVisibleYmd(todayYmd), [todayYmd])
 
   const clamp = useCallback(
-    (raw: string) => {
-      if (!raw) return todayYmd
-      if (raw < todayYmd) return todayYmd
-      if (raw > maxVisibleYmd) return maxVisibleYmd
-      return raw
-    },
+    (raw: string) => clampPlanDateYmd(raw, maxVisibleYmd, todayYmd),
     [todayYmd, maxVisibleYmd],
   )
 
@@ -115,6 +114,7 @@ export function DdsActionsPage() {
   const [createTitle, setCreateTitle] = useState('DDS action')
   const [createComment, setCreateComment] = useState('')
   const [createEndMin, setCreateEndMin] = useState('30')
+  const [createSurfaces, setCreateSurfaces] = useState<DdsActionUiSurfaceKey[]>(() => [...DDS_ACTION_UI_SURFACE_KEYS])
 
   const weekFrom = useMemo(() => mondayOfWeekYmd(weekAnchor), [weekAnchor])
   const weekTo = useMemo(() => addDaysYmd(weekFrom, 6), [weekFrom])
@@ -283,6 +283,7 @@ export function DdsActionsPage() {
     setCreateTitle('DDS action')
     setCreateComment('')
     setCreateEndMin('30')
+    setCreateSurfaces([...DDS_ACTION_UI_SURFACE_KEYS])
     setCreateOpen(true)
   }, [roster, user, view, planDate, shiftKind, todayYmd, clamp, shifts])
 
@@ -310,6 +311,11 @@ export function DdsActionsPage() {
       setLoadErr('Duration is too long for the time remaining in this shift.')
       return
     }
+    const surf = normalizeDdsActionSurfacesForSave(createSurfaces)
+    if (surf.length === 0) {
+      setLoadErr('Select at least one DDS page (Line, Plant, or Site).')
+      return
+    }
     setCreateBusy(true)
     const { error } = await supabase.from('plan24_events').insert({
       master_cell_id: cellId,
@@ -327,6 +333,7 @@ export function DdsActionsPage() {
       sub_tasks: [],
       assigned_person_id: pid,
       comment: createComment.trim() || null,
+      dds_display_surfaces: surf,
       created_by: user.id,
     })
     setCreateBusy(false)
@@ -348,6 +355,7 @@ export function DdsActionsPage() {
     createEndMin,
     createTitle,
     createComment,
+    createSurfaces,
     refresh,
   ])
 
@@ -437,7 +445,7 @@ export function DdsActionsPage() {
                 type="date"
                 className="max-w-[9.5rem] rounded-lg border-0 bg-transparent px-1 py-0.5 text-xs font-medium text-fg outline-none sm:text-sm"
                 value={planDate}
-                min={todayYmd}
+                min={MIN_PLAN_YMD}
                 max={maxVisibleYmd}
                 onChange={(e) => setPlanDate(clamp(e.target.value))}
                 aria-label="Plan date"
@@ -523,7 +531,7 @@ export function DdsActionsPage() {
                 type="date"
                 className="rounded-lg border border-border bg-surface px-2 py-1 text-fg"
                 value={customFrom}
-                min={todayYmd}
+                min={MIN_PLAN_YMD}
                 max={maxVisibleYmd}
                 onChange={(e) => setCustomFrom(clamp(e.target.value))}
               />
@@ -534,7 +542,7 @@ export function DdsActionsPage() {
                 type="date"
                 className="rounded-lg border border-border bg-surface px-2 py-1 text-fg"
                 value={customTo}
-                min={todayYmd}
+                min={MIN_PLAN_YMD}
                 max={maxVisibleYmd}
                 onChange={(e) => setCustomTo(clamp(e.target.value))}
               />
@@ -662,13 +670,14 @@ export function DdsActionsPage() {
                   <th className="px-3 py-2">Title</th>
                   <th className="px-3 py-2">Owner</th>
                   <th className="px-3 py-2">Role</th>
+                  <th className="px-3 py-2">DDS pages</th>
                   <th className="px-3 py-2">Comment</th>
                 </tr>
               </thead>
               <tbody>
                 {listEvents.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-3 py-6 text-center text-sm text-muted">
+                    <td colSpan={11} className="px-3 py-6 text-center text-sm text-muted">
                       No DDS actions in this range.
                     </td>
                   </tr>
@@ -707,6 +716,7 @@ export function DdsActionsPage() {
                           {owner ? personLabel(owner) : '—'}
                         </td>
                         <td className="px-3 py-2 text-xs">{ev.role_name ?? '—'}</td>
+                        <td className="px-3 py-2 text-xs text-muted">{formatDdsActionSurfacesSummary(ev)}</td>
                         <td className="max-w-xs truncate px-3 py-2 text-xs text-muted">{ev.comment ?? ''}</td>
                       </tr>
                     )
@@ -745,7 +755,7 @@ export function DdsActionsPage() {
                   type="date"
                   className={`${inputClass} mt-1`}
                   value={createPlanDate}
-                  min={todayYmd}
+                  min={MIN_PLAN_YMD}
                   max={maxVisibleYmd}
                   onChange={(e) => setCreatePlanDate(clamp(e.target.value))}
                 />
@@ -824,6 +834,12 @@ export function DdsActionsPage() {
                   onChange={(e) => setCreateEndMin(e.target.value)}
                 />
               </label>
+              <DdsActionSurfacesField
+                idPrefix="dds-actions-create"
+                selected={createSurfaces}
+                onChange={setCreateSurfaces}
+                disabled={createBusy}
+              />
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -838,7 +854,8 @@ export function DdsActionsPage() {
                     createBusy ||
                     shifts.length === 0 ||
                     !createOwnerPersonId.trim() ||
-                    !createStartLocal.trim()
+                    !createStartLocal.trim() ||
+                    normalizeDdsActionSurfacesForSave(createSurfaces).length === 0
                   }
                   className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >

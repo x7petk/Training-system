@@ -4,6 +4,16 @@ import { Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { DDS_KPI_POINT_KINDS, type DdsKpiPointKind, isDdsKpiPointKind } from '../features/dds/ddsKpiPointKinds'
 import {
+  DDS_KPI_METRIC_SCOPE_OPTIONS,
+  type DdsKpiMetricScope,
+  parseDdsKpiMetricScope,
+} from '../features/dds/ddsKpiDdsSetupSurfaces'
+import {
+  DDS_KPI_SITE_PRESENTATION_OPTIONS,
+  parseDdsKpiSitePresentation,
+  type DdsKpiSitePresentationMode,
+} from '../features/dds/ddsKpiSitePresentation'
+import {
   DDS_KPI_METRIC_SURFACE_OPTIONS,
   type DdsKpiMetricSurfaceKey,
   metricSurfacesFromRow,
@@ -40,6 +50,8 @@ type KpiRow = {
   label: string
   sort_order: number
   point_kind: string
+  metric_scope: string
+  site_dds_presentation: string | null
   unit: string | null
   display_sections: string[] | null
   scoring: unknown
@@ -48,6 +60,8 @@ type KpiRow = {
 type KpiDraft = {
   label: string
   point_kind: DdsKpiPointKind
+  metric_scope: DdsKpiMetricScope
+  site_dds_presentation: DdsKpiSitePresentationMode | null
   unit: DdsKpiUnit
   sections: DdsKpiMetricSurfaceKey[]
   scoring: DdsKpiScoring
@@ -57,6 +71,8 @@ function defaultScoringForKind(kind: DdsKpiScoring['kind']): DdsKpiScoring {
   switch (kind) {
     case 'no_target':
       return { kind: 'no_target' }
+    case 'pass_fail':
+      return { kind: 'pass_fail' }
     case 'min_red':
       return { kind: 'min_red', target: 0 }
     case 'max_red':
@@ -85,6 +101,7 @@ export function DdsAdminKpisPage() {
   const [error, setError] = useState<string | null>(null)
   const [newLabel, setNewLabel] = useState('')
   const [newKind, setNewKind] = useState<DdsKpiPointKind>('hard_point')
+  const [newMetricScope, setNewMetricScope] = useState<DdsKpiMetricScope>('cell')
   const [newUnit, setNewUnit] = useState<DdsKpiUnit>('none')
   const [drafts, setDrafts] = useState<Record<string, KpiDraft>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -120,7 +137,7 @@ export function DdsAdminKpisPage() {
     setError(null)
     const { data, error: qErr } = await supabase
       .from('dds_kpis')
-      .select('id, kpi_group_id, label, sort_order, point_kind, unit, display_sections, scoring')
+      .select('id, kpi_group_id, label, sort_order, point_kind, metric_scope, site_dds_presentation, unit, display_sections, scoring')
       .eq('kpi_group_id', gid)
       .order('sort_order', { ascending: true })
       .order('label', { ascending: true })
@@ -137,6 +154,8 @@ export function DdsAdminKpisPage() {
       next[r.id] = {
         label: r.label,
         point_kind: kind,
+        metric_scope: parseDdsKpiMetricScope(r.metric_scope),
+        site_dds_presentation: parseDdsKpiSitePresentation(r.site_dds_presentation),
         unit: parseDdsKpiUnit(r.unit),
         sections: metricSurfacesFromRow(r.display_sections),
         scoring: parseDdsKpiScoring(r.scoring),
@@ -163,6 +182,7 @@ export function DdsAdminKpisPage() {
       label,
       sort_order: nextOrder,
       point_kind: newKind,
+      metric_scope: newMetricScope,
       unit: newUnit,
       display_sections: [],
       scoring: { kind: 'no_target' },
@@ -173,6 +193,7 @@ export function DdsAdminKpisPage() {
     }
     setNewLabel('')
     setNewKind('hard_point')
+    setNewMetricScope('cell')
     setNewUnit('none')
     await loadKpis(groupId)
   }
@@ -189,6 +210,8 @@ export function DdsAdminKpisPage() {
       .update({
         label,
         point_kind: d.point_kind,
+        metric_scope: d.metric_scope,
+        site_dds_presentation: d.site_dds_presentation,
         unit: d.unit,
         display_sections: d.sections,
         scoring: d.scoring,
@@ -238,6 +261,13 @@ export function DdsAdminKpisPage() {
     switch (s.kind) {
       case 'no_target':
         return <p className="text-[10px] text-muted">Blocks stay blue until a value is entered; no pass/fail colouring from target.</p>
+      case 'pass_fail':
+        return (
+          <p className="text-[10px] text-muted">
+            Enter <strong className="text-fg/90">1</strong> for pass (green) and <strong className="text-fg/90">0</strong> for fail (red). Any
+            other number stays blue until you use 0 or 1.
+          </p>
+        )
       case 'min_red':
         return num('Target (below = red)', s.target, (n) => setDraft(id, { scoring: { kind: 'min_red', target: n } }))
       case 'max_red':
@@ -319,8 +349,8 @@ export function DdsAdminKpisPage() {
 
       <section className={ddsSection}>
         <h2 className={ddsH2}>New KPI</h2>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="min-w-0 sm:col-span-2">
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_6rem_6rem_6.5rem_6.5rem]">
+          <div className="min-w-0 sm:col-span-2 lg:col-span-1">
             <label htmlFor="dds-kpi-new-label" className="text-[10px] font-medium text-muted">
               Label
             </label>
@@ -367,6 +397,23 @@ export function DdsAdminKpisPage() {
               ))}
             </select>
           </div>
+          <div className="min-w-0">
+            <label htmlFor="dds-kpi-new-scope" className="text-[10px] font-medium text-muted">
+              Level
+            </label>
+            <select
+              id="dds-kpi-new-scope"
+              className={ddsSelect}
+              value={newMetricScope}
+              onChange={(e) => setNewMetricScope(e.target.value as DdsKpiMetricScope)}
+            >
+              {DDS_KPI_METRIC_SCOPE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <button type="button" className={`${ddsBtn} mt-2`} disabled={!newLabel.trim() || !groupId} onClick={() => void addKpi()}>
           <Plus className="size-3.5" aria-hidden />
@@ -389,7 +436,7 @@ export function DdsAdminKpisPage() {
               if (!d) return null
               return (
                 <li key={row.id} className={ddsInset}>
-                  <div className="grid gap-2 lg:grid-cols-[1fr_7.5rem_7.5rem_auto] lg:items-end">
+                  <div className="grid gap-2 lg:grid-cols-[1fr_6.5rem_6.5rem_6.5rem_auto] lg:items-end">
                     <div className="min-w-0">
                       <label className="text-[10px] font-medium text-muted" htmlFor={`dds-kpi-label-${row.id}`}>
                         Label
@@ -435,6 +482,23 @@ export function DdsAdminKpisPage() {
                         ))}
                       </select>
                     </div>
+                    <div className="min-w-0">
+                      <label className="text-[10px] font-medium text-muted" htmlFor={`dds-kpi-scope-${row.id}`}>
+                        Level
+                      </label>
+                      <select
+                        id={`dds-kpi-scope-${row.id}`}
+                        className={ddsSelect}
+                        value={d.metric_scope}
+                        onChange={(e) => setDraft(row.id, { metric_scope: e.target.value as DdsKpiMetricScope })}
+                      >
+                        {DDS_KPI_METRIC_SCOPE_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="flex gap-1.5 lg:justify-end">
                       <button
                         type="button"
@@ -448,6 +512,29 @@ export function DdsAdminKpisPage() {
                         <Trash2 className="size-3.5" aria-hidden />
                       </button>
                     </div>
+                  </div>
+
+                  <div className="mt-3 border-t border-border/50 pt-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Site DDS presentation</p>
+                    <p className="mt-0.5 text-[10px] text-muted">
+                      Per cell = one tile per cell on Site DDS. Consolidated = one site tile (rollup from cells; manual
+                      site value overrides).
+                    </p>
+                    <select
+                      className={`${ddsSelect} mt-1.5 max-w-md`}
+                      value={d.site_dds_presentation ?? ''}
+                      onChange={(e) =>
+                        setDraft(row.id, {
+                          site_dds_presentation: parseDdsKpiSitePresentation(e.target.value || null),
+                        })
+                      }
+                    >
+                      {DDS_KPI_SITE_PRESENTATION_OPTIONS.map((o) => (
+                        <option key={o.value || 'per-cell'} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="mt-3 border-t border-border/50 pt-3">

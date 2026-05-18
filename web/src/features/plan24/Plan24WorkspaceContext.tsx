@@ -26,7 +26,10 @@ type Ctx = {
   error: string | null
   sites: MasterSite[]
   plants: MasterPlant[]
+  /** Cells in the selected plant. */
   cells: MasterCell[]
+  /** All cells under the selected site (all plants). */
+  siteCells: MasterCell[]
   siteId: string
   plantId: string
   cellId: string
@@ -156,6 +159,11 @@ export function Plan24WorkspaceProvider({ children }: { children: ReactNode }) {
     [allCells, plantId],
   )
 
+  const siteCells = useMemo(() => {
+    const plantIds = new Set(plants.map((p) => p.id))
+    return sortMaster(allCells.filter((cell) => plantIds.has(cell.plant_id)))
+  }, [allCells, plants])
+
   useEffect(() => {
     if (status !== 'ready' || !siteId) return
     if (plants.length && !plants.some((p) => p.id === plantId)) {
@@ -196,6 +204,7 @@ export function Plan24WorkspaceProvider({ children }: { children: ReactNode }) {
       sites,
       plants,
       cells,
+      siteCells,
       siteId,
       plantId,
       cellId,
@@ -204,7 +213,7 @@ export function Plan24WorkspaceProvider({ children }: { children: ReactNode }) {
       setCellId,
       resolveMasterCellScope,
     }),
-    [status, error, sites, plants, cells, siteId, plantId, cellId, setSiteId, setPlantId, setCellId, resolveMasterCellScope],
+    [status, error, sites, plants, cells, siteCells, siteId, plantId, cellId, setSiteId, setPlantId, setCellId, resolveMasterCellScope],
   )
 
   return <Plan24WorkspaceContext.Provider value={value}>{children}</Plan24WorkspaceContext.Provider>

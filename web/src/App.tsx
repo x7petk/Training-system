@@ -55,6 +55,9 @@ const DdsAdminKpiGroupsPage = lazy(() =>
   import('./pages/DdsAdminKpiGroupsPage').then((m) => ({ default: m.DdsAdminKpiGroupsPage })),
 )
 const DdsAdminKpisPage = lazy(() => import('./pages/DdsAdminKpisPage').then((m) => ({ default: m.DdsAdminKpisPage })))
+const DdsAdminKpiSetupPage = lazy(() =>
+  import('./pages/DdsAdminKpiSetupPage').then((m) => ({ default: m.DdsAdminKpiSetupPage })),
+)
 const DdsAdminP2pStandardPage = lazy(() =>
   import('./pages/DdsAdminP2pStandardPage').then((m) => ({ default: m.DdsAdminP2pStandardPage })),
 )
@@ -68,6 +71,22 @@ const DdsP2pSummaryPage = lazy(() =>
 )
 const ShiftDdsPage = lazy(() => import('./pages/ShiftDdsPage').then((m) => ({ default: m.ShiftDdsPage })))
 const LineDdsPage = lazy(() => import('./pages/LineDdsPage').then((m) => ({ default: m.LineDdsPage })))
+const PlantDdsPage = lazy(() => import('./pages/PlantDdsPage').then((m) => ({ default: m.PlantDdsPage })))
+const SiteDdsPage = lazy(() => import('./pages/SiteDdsPage').then((m) => ({ default: m.SiteDdsPage })))
+const DdsAdminRewardRecognitionPage = lazy(() =>
+  import('./pages/DdsAdminRewardRecognitionPage').then((m) => ({ default: m.DdsAdminRewardRecognitionPage })),
+)
+const DdsAdminTopLossesPage = lazy(() =>
+  import('./pages/DdsAdminTopLossesPage').then((m) => ({ default: m.DdsAdminTopLossesPage })),
+)
+const EPlanPage = lazy(() => import('./pages/EPlanPage').then((m) => ({ default: m.EPlanPage })))
+const DdsAdminEPlanSetupPage = lazy(() =>
+  import('./pages/DdsAdminEPlanSetupPage').then((m) => ({ default: m.DdsAdminEPlanSetupPage })),
+)
+const WdsPage = lazy(() => import('./pages/WdsPage').then((m) => ({ default: m.WdsPage })))
+const DdsAdminWdsKpisPage = lazy(() =>
+  import('./pages/DdsAdminWdsKpisPage').then((m) => ({ default: m.DdsAdminWdsKpisPage })),
+)
 
 const RttSystemsUserGuidePage = lazy(() =>
   import('./pages/RttSystemsUserGuidePage').then((m) => ({ default: m.RttSystemsUserGuidePage })),
@@ -267,11 +286,11 @@ export default function App() {
             <Route path="shift-dds" element={<ShiftDdsPage />} />
             <Route path="line-compliance" element={<DdsPlaceholderPage title="Line compliance" />} />
             <Route path="line-dds" element={<LineDdsPage />} />
-            <Route path="plant-dds" element={<DdsPlaceholderPage title="Plant DDS" />} />
+            <Route path="plant-dds" element={<PlantDdsPage />} />
             <Route path="site-compliance" element={<DdsPlaceholderPage title="Site compliance" />} />
-            <Route path="site-dds" element={<DdsPlaceholderPage title="Site DDS" />} />
-            <Route path="wds" element={<DdsPlaceholderPage title="WDS" />} />
-            <Route path="e-plan" element={<DdsPlaceholderPage title="e-plan" />} />
+            <Route path="site-dds" element={<SiteDdsPage />} />
+            <Route path="wds" element={<WdsPage />} />
+            <Route path="e-plan" element={<EPlanPage />} />
             <Route path="pdca" element={<DdsPlaceholderPage title="PDCA" />} />
             <Route
               path="admin"
@@ -284,9 +303,14 @@ export default function App() {
               <Route index element={<Navigate to="kpi-groups" replace />} />
               <Route path="kpi-groups" element={<DdsAdminKpiGroupsPage />} />
               <Route path="kpis" element={<DdsAdminKpisPage />} />
+              <Route path="kpi-setup" element={<DdsAdminKpiSetupPage />} />
               <Route path="p2p-standard" element={<DdsAdminP2pStandardPage />} />
               <Route path="p2p-soft-points" element={<DdsAdminP2pSoftPointsPage />} />
               <Route path="p2p-setup" element={<DdsP2pSetupPage />} />
+              <Route path="reward-recognition" element={<DdsAdminRewardRecognitionPage />} />
+              <Route path="top-losses" element={<DdsAdminTopLossesPage />} />
+              <Route path="e-plan-setup" element={<DdsAdminEPlanSetupPage />} />
+              <Route path="wds-kpis" element={<DdsAdminWdsKpisPage />} />
             </Route>
           </Route>
 

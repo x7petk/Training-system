@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, Settings2 } from 'lucide-react'
+import { Loader2, Plus, Settings2 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { Plan24EmbeddedPanel } from '../features/plan24/Plan24EmbeddedPanel'
 import { DdsP2pSummaryBody, type DdsP2pSummaryBodyHandle } from '../features/dds/DdsP2pSummaryBody'
+import {
+  DdsRewardRecognitionPanel,
+  type DdsRewardRecognitionPanelHandle,
+} from '../features/dds/DdsRewardRecognitionPanel'
 import { ShiftDdsKpiSummary } from '../features/dds/ShiftDdsKpiSummary'
 import { useShiftDdsShell } from '../features/dds/ShiftDdsShellContext'
 import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClasses'
@@ -14,6 +18,7 @@ export function ShiftDdsPage() {
   const { status: scopeStatus, error: scopeError, cellId } = usePlan24Workspace()
   const { user } = useAuth()
   const summaryBodyRef = useRef<DdsP2pSummaryBodyHandle>(null)
+  const rewardRecognitionPanelRef = useRef<DdsRewardRecognitionPanelHandle>(null)
 
   const { planDate, shiftKind, shifts, roles, shellLoading, rosterError } = useShiftDdsShell()
 
@@ -101,27 +106,33 @@ export function ShiftDdsPage() {
             )}
           </section>
 
-          <section className={`${ddsSection} shrink-0 flex flex-col`}>
-            <h2 className="border-b border-border/60 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-              Reward and recognition
-            </h2>
-            <p className="mt-2 text-[11px] text-muted">Requirements coming later.</p>
-            <div className="mt-2 overflow-hidden rounded-lg border border-border/70">
-              <table className="w-full border-collapse text-left text-[11px]">
-                <thead>
-                  <tr className="border-b border-border bg-surface-raised/50">
-                    <th className="px-2 py-1.5 font-medium text-muted">Name</th>
-                    <th className="px-2 py-1.5 font-medium text-muted">Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td colSpan={2} className="px-2 py-8 text-center text-muted">
-                      Placeholder
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+          <section className={`${ddsSection} flex max-h-56 shrink-0 flex-col overflow-hidden sm:max-h-64`}>
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 pb-1.5">
+              <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Reward and recognition
+              </h2>
+              {!shellLoading && shiftKind ? (
+                <button
+                  type="button"
+                  disabled={!user}
+                  title={user ? 'Add reward & recognition entry' : 'Sign in to add entries'}
+                  onClick={() => rewardRecognitionPanelRef.current?.openCreate()}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/80 bg-surface px-2 py-0.5 text-[10px] font-semibold text-fg shadow-sm hover:bg-surface-raised/80 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Plus className="size-3" aria-hidden />
+                  Add
+                </button>
+              ) : null}
+            </div>
+            <div className="min-h-0 flex-1">
+              <DdsRewardRecognitionPanel
+                ref={rewardRecognitionPanelRef}
+                cellId={cellId}
+                planDate={planDate}
+                shiftKind={shiftKind ?? ''}
+                surface="shift-dds"
+                shellLoading={shellLoading}
+              />
             </div>
           </section>
         </div>

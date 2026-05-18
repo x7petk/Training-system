@@ -11,28 +11,30 @@ import {
 import { useLocation } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { addDays, localYMD } from '../../lib/dueDateUtils'
+import { MIN_PLAN_YMD, PLAN24_VISIBLE_DAYS_AHEAD } from '../plan24/plan24DateBounds'
 import { usePlan24Workspace } from '../plan24/Plan24WorkspaceContext'
 import type { DdsP2pSummaryRosterRole, DdsP2pSummaryShiftRow } from './DdsP2pSummaryBody'
-
-const MIN_PLAN_YMD = '2000-01-01'
-const VISIBLE_DAYS_AHEAD = 90
 
 function sortGroups<T extends { sort_order: number; name: string }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
 }
 
-/** Day + shift strip in the scope bar (Shift DDS and Line DDS share roster shell). */
+/** Day + shift strip in the scope bar (Shift / Line / Plant DDS share roster shell). */
 function isDdsDayShiftShellPath(pathname: string): boolean {
   return (
     pathname.endsWith('/shift-dds') ||
     pathname.includes('/dds-process/shift-dds') ||
     pathname.endsWith('/line-dds') ||
-    pathname.includes('/dds-process/line-dds')
+    pathname.includes('/dds-process/line-dds') ||
+    pathname.endsWith('/plant-dds') ||
+    pathname.includes('/dds-process/plant-dds') ||
+    pathname.endsWith('/site-dds') ||
+    pathname.includes('/dds-process/site-dds')
   )
 }
 
 type Ctx = {
-  /** True when Shift DDS or Line DDS is active (scope bar shows day + shift). */
+  /** True when Shift / Line / Plant / Site DDS is active (scope bar shows day + shift). */
   routeActive: boolean
   planDate: string
   setPlanDate: (ymd: string) => void
@@ -58,7 +60,7 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
 
   const todayYmd = useMemo(() => localYMD(new Date()), [])
   const maxPlanYmd = useMemo(
-    () => localYMD(addDays(new Date(todayYmd + 'T12:00:00'), VISIBLE_DAYS_AHEAD - 1)),
+    () => localYMD(addDays(new Date(todayYmd + 'T12:00:00'), PLAN24_VISIBLE_DAYS_AHEAD - 1)),
     [todayYmd],
   )
 

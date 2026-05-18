@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, Plus } from 'lucide-react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { localYMD } from '../../lib/dueDateUtils'
@@ -13,9 +13,17 @@ import {
 } from '../plan24/plan24ShiftUtils'
 import type { Plan24EventRow, Plan24RosterRow } from '../plan24/plan24Types'
 import { Plan24EventDetailModal } from '../plan24/Plan24EventDetailModal'
+import {
+  ddsActionShowsOnUiSurface,
+  normalizeDdsActionSurfacesForSave,
+  type DdsActionUiSurfaceKey,
+} from './ddsActionSurfaces'
 
-const PLAN24_VISIBLE_DAYS_AHEAD = 90
-const ROW_H = 40
+export type { DdsActionUiSurfaceKey }
+import { DdsActionSurfacesField } from './DdsActionSurfacesField'
+import { MIN_PLAN_YMD, clampPlanDateYmd, plan24MaxVisibleYmd } from '../plan24/plan24DateBounds'
+
+const ROW_H = 28
 
 function personLabel(p: {
   id: string
@@ -51,33 +59,49 @@ function statusSelectClass(status: string): string {
   return 'border-orange-600/50 bg-orange-500/15 text-orange-950 dark:text-orange-100'
 }
 
+export type LineDdsActionsPanelHandle = {
+  openCreate: () => void
+}
+
 export type LineDdsActionsPanelProps = {
   cellId: string
   planDate: string
   shiftKind: string
+  /** Which DDS page lists these actions (default Line DDS). */
+  uiSurface?: DdsActionUiSurfaceKey
+  /** Plant / Site roll-up: no create; optional hide when empty. */
+  readOnly?: boolean
+  hideWhenEmpty?: boolean
+  onVisibleChange?: (visible: boolean) => void
+  /** After a new action is saved (e.g. refresh plant/site roll-up lists). */
+  onCreated?: () => void
 }
 
 /**
- * DDS actions for the scoped plan date and shift (Line DDS planned-actions column).
+ * DDS actions for the scoped plan date and shift (timeline + owner + status).
  */
-export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActionsPanelProps) {
+export const LineDdsActionsPanel = forwardRef<LineDdsActionsPanelHandle, LineDdsActionsPanelProps>(
+  function LineDdsActionsPanel(
+    {
+      cellId,
+      planDate,
+      shiftKind,
+      uiSurface = 'line-dds',
+      readOnly = false,
+      hideWhenEmpty = false,
+      onVisibleChange,
+      onCreated,
+    },
+    ref,
+  ) {
   const navigate = useNavigate()
   const { user, isAdmin } = useAuth()
 
   const todayYmd = localYMD(new Date())
-  const maxVisibleYmd = useMemo(() => {
-    const d = new Date(todayYmd + 'T12:00:00')
-    d.setDate(d.getDate() + (PLAN24_VISIBLE_DAYS_AHEAD - 1))
-    return localYMD(d)
-  }, [todayYmd])
+  const maxVisibleYmd = useMemo(() => plan24MaxVisibleYmd(todayYmd), [todayYmd])
 
   const clamp = useCallback(
-    (raw: string) => {
-      if (!raw) return todayYmd
-      if (raw < todayYmd) return todayYmd
-      if (raw > maxVisibleYmd) return maxVisibleYmd
-      return raw
-    },
+    (raw: string) => clampPlanDateYmd(raw, maxVisibleYmd, todayYmd),
     [todayYmd, maxVisibleYmd],
   )
 
@@ -101,6 +125,7 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
   const [createTitle, setCreateTitle] = useState('DDS action')
   const [createComment, setCreateComment] = useState('')
   const [createEndMin, setCreateEndMin] = useState('30')
+  const [createSurfaces, setCreateSurfaces] = useState<DdsActionUiSurfaceKey[]>([uiSurface])
 
   const windowBounds = useMemo(
     () => shiftWindowBounds(planDate, shiftKind, shifts),
@@ -186,6 +211,17 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
     return copy
   }, [events])
 
+  const visibleEvents = useMemo(
+    () => sortedDayEvents.filter((ev) => ddsActionShowsOnUiSurface(ev, uiSurface)),
+    [sortedDayEvents, uiSurface],
+  )
+
+  useEffect(() => {
+    if (!onVisibleChange) return
+    if (loading) return
+    onVisibleChange(visibleEvents.length > 0)
+  }, [loading, visibleEvents.length, onVisibleChange])
+
   const totalMin = useMemo(
     () => Math.max(15, minutesBetween(windowBounds.start, windowBounds.end)),
     [windowBounds],
@@ -219,7 +255,7 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
   }, [createOpen, createPlanDate, createShiftKind, shifts])
 
   const openCreate = useCallback(() => {
-    if (!roster || !user) return
+    if (readOnly || !roster || !user) return
     const sk =
       shifts.length === 0
         ? shiftKind
@@ -234,8 +270,11 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
     setCreateTitle('DDS action')
     setCreateComment('')
     setCreateEndMin('30')
+    setCreateSurfaces([uiSurface])
     setCreateOpen(true)
-  }, [roster, user, planDate, shiftKind, shifts])
+  }, [readOnly, roster, user, planDate, shiftKind, shifts, uiSurface])
+
+  useImperativeHandle(ref, () => ({ openCreate }), [openCreate])
 
   const saveCreate = useCallback(async () => {
     if (!cellId || !roster || !user?.id) return
@@ -261,6 +300,11 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
       setLoadErr('Duration is too long for the time remaining in this shift.')
       return
     }
+    const surf = normalizeDdsActionSurfacesForSave(createSurfaces)
+    if (surf.length === 0) {
+      setLoadErr('Select at least one DDS page (Line, Plant, or Site).')
+      return
+    }
     setCreateBusy(true)
     const { error } = await supabase.from('plan24_events').insert({
       master_cell_id: cellId,
@@ -278,6 +322,7 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
       sub_tasks: [],
       assigned_person_id: pid,
       comment: createComment.trim() || null,
+      dds_display_surfaces: surf,
       created_by: user.id,
     })
     setCreateBusy(false)
@@ -286,6 +331,7 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
       setCreateOpen(false)
       setSuccessMsg('DDS action created.')
       void refresh()
+      onCreated?.()
     }
   }, [
     cellId,
@@ -299,7 +345,9 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
     createEndMin,
     createTitle,
     createComment,
+    createSurfaces,
     refresh,
+    onCreated,
   ])
 
   async function updateStatus(id: string, status: Plan24EventRow['status']) {
@@ -321,54 +369,42 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
     return <p className="text-[11px] text-muted">Select a shift in the scope bar to load DDS actions.</p>
   }
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        {loading ? (
-          <span className="inline-flex items-center gap-1 text-[11px] text-muted" role="status">
-            <Loader2 className="size-3.5 animate-spin" aria-hidden />
-            Loading
-          </span>
-        ) : null}
-        <div className="min-w-0 flex-1" />
-        {roster && user ? (
-          <button
-            type="button"
-            onClick={() => openCreate()}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-surface px-2.5 py-1 text-[11px] font-semibold text-fg shadow-sm hover:bg-surface-raised/80"
-          >
-            <Plus className="size-3.5" aria-hidden />
-            New action
-          </button>
-        ) : null}
-      </div>
+  if (hideWhenEmpty && !loading && roster && visibleEvents.length === 0) {
+    return null
+  }
 
+  const shiftLabel = (shifts.find((s) => s.kind === shiftKind)?.display_name?.trim() || shiftKind).replace(/_/g, ' ')
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-1">
       {loadErr ? (
-        <div className="shrink-0 rounded-lg border border-danger/35 bg-danger/10 px-2 py-1.5 text-[11px] text-danger" role="alert">
+        <div className="shrink-0 rounded-md border border-danger/35 bg-danger/10 px-2 py-1 text-[10px] text-danger" role="alert">
           {loadErr}
         </div>
       ) : null}
       {successMsg ? (
-        <div className="shrink-0 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-900 dark:text-emerald-100">
+        <div className="shrink-0 rounded-md border border-emerald-500/35 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-900 dark:text-emerald-100">
           {successMsg}
         </div>
       ) : null}
 
       {!roster ? (
-        <p className="shrink-0 text-[11px] text-muted">No active Plan 24 roster for this cell.</p>
+        <p className="shrink-0 text-[10px] text-muted">No active Plan 24 roster for this cell.</p>
       ) : shifts.length === 0 ? (
-        <p className="shrink-0 text-[11px] text-muted">No shifts configured on the roster.</p>
+        <p className="shrink-0 text-[10px] text-muted">No shifts configured on the roster.</p>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-surface p-2">
-          <p className="mb-2 text-[10px] text-muted">
-            {planDate} · {shiftKind.replace(/_/g, ' ')} · {formatPlan24Clock(windowBounds.start)}–
-            {formatPlan24Clock(windowBounds.end)}
-          </p>
-          <div className="space-y-1">
-            {sortedDayEvents.length === 0 ? (
-              <p className="text-xs text-muted">No DDS actions for this day and shift.</p>
+        <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border/80 bg-surface p-1.5">
+          <div className="mb-1 flex items-center justify-between gap-2 text-[9px] leading-tight text-muted">
+            <span className="min-w-0 truncate" title={`${planDate} · ${shiftLabel}`}>
+              {shiftLabel} · {formatPlan24Clock(windowBounds.start)}–{formatPlan24Clock(windowBounds.end)}
+            </span>
+            {loading ? <Loader2 className="size-3 shrink-0 animate-spin opacity-70" aria-label="Loading" /> : <span className="w-3 shrink-0" aria-hidden />}
+          </div>
+          <div className="space-y-0.5">
+            {visibleEvents.length === 0 ? (
+              <p className="py-0.5 text-[10px] text-muted">No DDS actions for this shift.</p>
             ) : (
-              sortedDayEvents.map((ev) => {
+              visibleEvents.map((ev) => {
                 const start = new Date(ev.start_at)
                 const end = new Date(ev.end_at)
                 const startMin = Math.max(0, minutesBetween(windowBounds.start, start))
@@ -380,26 +416,26 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
                 return (
                   <div
                     key={ev.id}
-                    className="flex items-stretch gap-2 rounded-xl border border-border bg-canvas/40 py-1 pl-2 pr-1"
+                    className="flex items-center gap-1 rounded-md border border-border/70 bg-canvas/30 py-px pl-1 pr-0.5"
                     style={{ minHeight: ROW_H }}
                   >
-                    <div className="flex w-36 min-w-0 shrink-0 flex-col justify-center text-[10px] leading-tight">
-                      <span className="truncate font-semibold text-fg">{ev.title}</span>
-                      <span className="truncate text-muted">{ownerLab}</span>
+                    <div className="flex w-[5rem] min-w-0 shrink-0 flex-col justify-center gap-px leading-tight">
+                      <span className="truncate text-[10px] font-semibold leading-none text-fg">{ev.title}</span>
+                      <span className="truncate text-[8px] leading-none text-muted">{ownerLab}</span>
                     </div>
-                    <div className="relative min-h-[32px] min-w-0 flex-1 rounded-lg bg-surface-raised/30">
-                      <div className="pointer-events-none absolute inset-0 rounded-lg bg-[repeating-linear-gradient(to_right,transparent_0,transparent_calc(100%/24-1px),rgba(0,0,0,0.06)_calc(100%/24-1px),rgba(0,0,0,0.06)_calc(100%/24))]" />
+                    <div className="relative h-6 min-w-0 flex-1 rounded bg-surface-raised/35">
+                      <div className="pointer-events-none absolute inset-0 rounded bg-[repeating-linear-gradient(to_right,transparent_0,transparent_calc(100%/24-1px),rgba(0,0,0,0.05)_calc(100%/24-1px),rgba(0,0,0,0.05)_calc(100%/24))]" />
                       <button
                         type="button"
-                        title="Open details"
-                        className={`absolute top-1 bottom-1 min-w-[6px] rounded-md border text-left text-[10px] font-medium leading-none shadow-sm transition hover:brightness-105 ${
+                        title={`${ev.title} · ${formatPlan24Clock(start)}–${formatPlan24Clock(end)}`}
+                        className={`absolute inset-y-px min-w-[5px] rounded-sm border text-left font-medium leading-none shadow-sm transition hover:brightness-105 ${
                           ev.status === 'complete'
                             ? 'border-emerald-800/50 bg-emerald-600 text-emerald-50'
                             : ev.status === 'not_required'
                               ? 'border-zinc-500/50 bg-zinc-400 text-zinc-950'
                               : 'border-orange-800/50 bg-orange-500 text-orange-950'
                         }`}
-                        style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 0.8)}%` }}
+                        style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 0.65)}%` }}
                         onClick={() => setDetailEv(ev)}
                       >
                         <span className="sr-only">
@@ -407,10 +443,10 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
                         </span>
                       </button>
                     </div>
-                    <div className="flex w-[6.5rem] shrink-0 flex-col justify-center gap-1">
+                    <div className="flex w-[4.85rem] shrink-0 justify-end">
                       <select
                         aria-label={`Status for ${ev.title}`}
-                        className={`w-full rounded-lg border px-1 py-0.5 text-[9px] font-semibold outline-none ${statusSelectClass(ev.status)}`}
+                        className={`max-w-full rounded border px-0.5 py-px text-[8px] font-semibold leading-tight outline-none ${statusSelectClass(ev.status)}`}
                         value={ev.status === 'scheduled' ? 'in_progress' : ev.status}
                         onChange={(e) => void updateStatus(ev.id, e.target.value as Plan24EventRow['status'])}
                       >
@@ -427,7 +463,7 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
         </div>
       )}
 
-      {createOpen && roster ? (
+      {createOpen && roster && !readOnly ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation">
           <div
             className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border-strong bg-surface p-5 shadow-xl"
@@ -454,7 +490,7 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
                   type="date"
                   className={`${inputClass} mt-1`}
                   value={createPlanDate}
-                  min={todayYmd}
+                  min={MIN_PLAN_YMD}
                   max={maxVisibleYmd}
                   onChange={(e) => setCreatePlanDate(clamp(e.target.value))}
                 />
@@ -530,6 +566,12 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
                   onChange={(e) => setCreateEndMin(e.target.value)}
                 />
               </label>
+              <DdsActionSurfacesField
+                idPrefix={`${uiSurface}-create`}
+                selected={createSurfaces}
+                onChange={setCreateSurfaces}
+                disabled={createBusy}
+              />
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -544,7 +586,8 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
                     createBusy ||
                     shifts.length === 0 ||
                     !createOwnerPersonId.trim() ||
-                    !createStartLocal.trim()
+                    !createStartLocal.trim() ||
+                    normalizeDdsActionSurfacesForSave(createSurfaces).length === 0
                   }
                   className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
@@ -575,4 +618,4 @@ export function LineDdsActionsPanel({ cellId, planDate, shiftKind }: LineDdsActi
       ) : null}
     </div>
   )
-}
+})

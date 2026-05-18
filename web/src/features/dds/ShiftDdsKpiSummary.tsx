@@ -8,9 +8,13 @@ import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
 import { parseDdsP2pKpiBreakdown, type DdsP2pKpiBreakdownItem } from './ddsKpiP2pRollup'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
-import type { DdsKpiDisplaySectionKey } from './ddsKpiDisplaySections'
+import {
+  DDS_KPI_DDS_SETUP_SURFACE_LABELS,
+  type DdsKpiDdsSetupSurfaceKey,
+  kpiShowsOnDdsSurface,
+} from './ddsKpiDdsSetupSurfaces'
 
-type KpiShellSurface = Extract<DdsKpiDisplaySectionKey, 'shift-dds' | 'line-dds'>
+type KpiShellSurface = DdsKpiDdsSetupSurfaceKey
 
 type KpiGroup = { id: string; name: string; sort_order: number }
 
@@ -19,6 +23,8 @@ type KpiDef = {
   kpi_group_id: string
   label: string
   sort_order: number
+  point_kind: string
+  display_sections: string[] | null
   unit: DdsKpiUnit
   scoring: DdsKpiScoring
 }
@@ -37,6 +43,20 @@ type Props = {
   shiftKind: string
   /** Admin KPI display surface: Shift DDS vs Line DDS metrics. */
   kpiSurface?: KpiShellSurface
+  /** Narrower KPI tiles for Line DDS sidebar. */
+  compact?: boolean
+  /** Smallest tiles for Site DDS multi-cell roll-up. */
+  dense?: boolean
+  /** Roll-up panels: render nothing when no KPIs match this surface (no group headers). */
+  hideWhenEmpty?: boolean
+  /** Optional cell title shown above KPI groups (Site / Plant roll-up). */
+  cellBanner?: string
+  /** Fired after load when `hideWhenEmpty` — whether any KPIs are shown. */
+  onVisibleChange?: (visible: boolean) => void
+  /** Site DDS: hide KPIs with consolidated site presentation. */
+  excludeKpiIds?: Set<string>
+  /** Site DDS: only render this KPI group (when set). */
+  groupId?: string
 }
 
 function blockClasses(tone: 'neutral' | 'good' | 'bad'): string {
@@ -52,10 +72,23 @@ function placeDetailPanel(anchor: HTMLElement, maxW: number): { top: number; lef
   return { top: rect.bottom + 6, left, maxW }
 }
 
-export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = 'shift-dds' }: Props) {
+export function ShiftDdsKpiSummary({
+  cellId,
+  planDate,
+  shiftKind,
+  kpiSurface = 'shift-dds',
+  compact,
+  dense,
+  hideWhenEmpty,
+  cellBanner,
+  onVisibleChange,
+  excludeKpiIds,
+  groupId,
+}: Props) {
+  const tileCompact = compact || dense
   const { user } = useAuth()
   const kpiEditTitleId = useId()
-  const surfaceLabel = kpiSurface === 'line-dds' ? 'Line DDS' : 'Shift DDS'
+  const surfaceLabel = DDS_KPI_DDS_SETUP_SURFACE_LABELS[kpiSurface]
   const [groups, setGroups] = useState<KpiGroup[]>([])
   const [kpis, setKpis] = useState<KpiDef[]>([])
   const [entries, setEntries] = useState<Record<string, EntryRow>>({})
@@ -88,12 +121,11 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = '
     }
     setLoading(true)
     setError(null)
-    const [gRes, kRes, eRes] = await Promise.all([
+    const [gRes, kRes, eRes, oRes] = await Promise.all([
       supabase.from('dds_kpi_groups').select('id, name, sort_order').order('sort_order').order('name'),
       supabase
         .from('dds_kpis')
-        .select('id, kpi_group_id, label, sort_order, unit, display_sections, scoring')
-        .contains('display_sections', [kpiSurface])
+        .select('id, kpi_group_id, label, sort_order, point_kind, unit, display_sections, scoring')
         .order('sort_order')
         .order('label'),
       supabase
@@ -102,6 +134,7 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = '
         .eq('master_cell_id', cellId)
         .eq('plan_date', planDate)
         .eq('shift_kind', shiftKind),
+      supabase.from('dds_kpi_cell_dds_display').select('kpi_id, surfaces').eq('master_cell_id', cellId),
     ])
     setLoading(false)
     if (gRes.error) {
@@ -116,21 +149,42 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = '
       setError(eRes.error.message)
       return
     }
+    if (oRes.error) {
+      setError(oRes.error.message)
+      return
+    }
+    const overrideBy = new Map<string, string[]>()
+    for (const row of (oRes.data ?? []) as { kpi_id: string; surfaces: string[] }[]) {
+      overrideBy.set(row.kpi_id, row.surfaces ?? [])
+    }
     setGroups((gRes.data ?? []) as KpiGroup[])
-    const kRows = (kRes.data ?? []) as {
+    const kRowsAll = (kRes.data ?? []) as {
       id: string
       kpi_group_id: string
       label: string
       sort_order: number
+      point_kind: string | null
       unit: string | null
+      display_sections: string[] | null
       scoring: unknown
     }[]
+    const kRows = kRowsAll.filter((r) => {
+      if (excludeKpiIds?.has(r.id)) return false
+      if (groupId && r.kpi_group_id !== groupId) return false
+      return kpiShowsOnDdsSurface(
+        { point_kind: r.point_kind, display_sections: r.display_sections },
+        kpiSurface,
+        overrideBy.has(r.id) ? overrideBy.get(r.id)! : null,
+      )
+    })
     setKpis(
       kRows.map((r) => ({
         id: r.id,
         kpi_group_id: r.kpi_group_id,
         label: r.label,
         sort_order: r.sort_order,
+        point_kind: String(r.point_kind ?? ''),
+        display_sections: r.display_sections,
         unit: parseDdsKpiUnit(r.unit),
         scoring: parseDdsKpiScoring(r.scoring),
       })),
@@ -147,7 +201,7 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = '
       }
     }
     setEntries(em)
-  }, [cellId, planDate, shiftKind, kpiSurface])
+  }, [cellId, planDate, shiftKind, kpiSurface, excludeKpiIds, groupId])
 
   useEffect(() => {
     void load()
@@ -163,6 +217,11 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = '
   useEffect(() => {
     setDetailPop(null)
   }, [cellId, planDate, shiftKind, kpiSurface])
+
+  useEffect(() => {
+    if (!hideWhenEmpty || loading) return
+    onVisibleChange?.(kpis.length > 0)
+  }, [hideWhenEmpty, loading, kpis.length, onVisibleChange])
 
   useLayoutEffect(() => {
     if (!detailPop) return
@@ -194,10 +253,10 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = '
     return m
   }, [kpis])
 
-  const sortedGroups = useMemo(
-    () => [...groups].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
-    [groups],
-  )
+  const sortedGroups = useMemo(() => {
+    const sorted = [...groups].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+    return sorted.filter((g) => (kpisByGroup.get(g.id) ?? []).length > 0)
+  }, [groups, kpisByGroup])
 
   function openModal(kpi: KpiDef) {
     setDetailPop(null)
@@ -254,24 +313,31 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = '
   }
 
   if (kpis.length === 0) {
+    if (hideWhenEmpty) return null
     return (
       <p className="text-[11px] leading-snug text-muted">
-        No KPIs are assigned to <strong className="text-fg/80">{surfaceLabel}</strong> yet. In{' '}
-        <strong className="text-fg/80">Admin → KPIs</strong>, tick &quot;{surfaceLabel}&quot; (and set scoring) for each
-        metric you want here.
+        No KPIs are assigned to <strong className="text-fg/80">{surfaceLabel}</strong> for this cell yet. Use{' '}
+        <strong className="text-fg/80">Admin → KPI set-up</strong> to choose which metrics appear on each DDS page, or{' '}
+        <strong className="text-fg/80">Admin → KPIs</strong> for global screen targets.
       </p>
     )
   }
 
-  return (
-    <div className="space-y-3">
+  const body = (
+    <div className={dense ? 'space-y-1' : 'space-y-3'}>
       {sortedGroups.map((g) => {
         const list = kpisByGroup.get(g.id) ?? []
         if (list.length === 0) return null
         return (
           <div key={g.id}>
-            <h3 className="mb-1.5 border-b border-border/60 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">{g.name}</h3>
-            <div className="flex flex-wrap gap-1.5">
+            <h3
+              className={`border-b border-border/60 font-semibold uppercase tracking-wide text-muted ${
+                dense ? 'mb-0.5 pb-px text-[8px]' : 'mb-1.5 pb-0.5 text-[10px]'
+              }`}
+            >
+              {g.name}
+            </h3>
+            <div className={`flex flex-wrap ${dense ? 'gap-0.5' : 'gap-1.5'}`}>
               {list.map((kpi) => {
                 const e = entries[kpi.id]
                 const val = e?.value_numeric ?? null
@@ -288,7 +354,13 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = '
                     key={kpi.id}
                     role="button"
                     tabIndex={0}
-                    className={`flex min-w-[4.75rem] max-w-[8rem] cursor-pointer flex-col rounded-md border px-1.5 py-1 text-left shadow-sm outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-2 ${blockClasses(tone)}`}
+                    className={`flex cursor-pointer flex-col rounded-md border text-left shadow-sm outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-2 ${
+                      dense
+                        ? 'min-w-[2.5rem] max-w-[4.25rem] px-1 py-0.5'
+                        : tileCompact
+                          ? 'min-w-[3.25rem] max-w-[5.75rem] px-1.5 py-1'
+                          : 'min-w-[4.75rem] max-w-[8rem] px-1.5 py-1'
+                    } ${blockClasses(tone)}`}
                     aria-label={`${kpi.label}, edit KPI value`}
                     onClick={() => openModal(kpi)}
                     onKeyDown={(ev) => {
@@ -298,10 +370,20 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = '
                       }
                     }}
                   >
-                    <span className="text-[9px] font-medium leading-tight text-fg/90 line-clamp-2">{kpi.label}</span>
-                    <div className="mt-0.5 flex min-h-[1.25rem] items-end justify-between gap-0.5">
+                    <span
+                      className={`font-medium leading-tight text-fg/90 line-clamp-2 ${dense ? 'text-[8px]' : 'text-[9px]'}`}
+                    >
+                      {kpi.label}
+                    </span>
+                    <div className={`flex items-end justify-between gap-0.5 ${dense ? 'mt-px min-h-[1rem]' : 'mt-0.5 min-h-[1.25rem]'}`}>
                       <div className="min-w-0 flex-1">
-                        <span className="text-sm font-semibold tabular-nums leading-none text-fg">{valueLabel}</span>
+                        <span
+                          className={`font-semibold tabular-nums leading-none text-fg ${
+                            dense ? 'text-[10px]' : tileCompact ? 'text-xs' : 'text-sm'
+                          }`}
+                        >
+                          {valueLabel}
+                        </span>
                         {targetLine ? (
                           <span className="mt-0.5 block text-[8px] font-medium tabular-nums leading-none text-fg/60">
                             {targetLine}
@@ -436,4 +518,17 @@ export function ShiftDdsKpiSummary({ cellId, planDate, shiftKind, kpiSurface = '
       ) : null}
     </div>
   )
+
+  if (cellBanner) {
+    return (
+      <div className="rounded border border-border/50 bg-canvas/15 p-1">
+        <h3 className="mb-0.5 truncate border-b border-border/40 pb-px text-[9px] font-semibold uppercase tracking-wide text-muted">
+          {cellBanner}
+        </h3>
+        {body}
+      </div>
+    )
+  }
+
+  return body
 }

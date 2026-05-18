@@ -5,6 +5,7 @@
 
 export type DdsKpiScoring =
   | { kind: 'no_target' }
+  | { kind: 'pass_fail' }
   | { kind: 'min_red'; target: number }
   | { kind: 'max_red'; target: number }
   | { kind: 'range_green'; min: number; max: number }
@@ -26,6 +27,8 @@ export function scoringTargetNumbersOnly(s: DdsKpiScoring): string {
   switch (s.kind) {
     case 'no_target':
       return ''
+    case 'pass_fail':
+      return '0 1'
     case 'min_red':
     case 'max_red':
       return fmtTarget(s.target)
@@ -45,6 +48,7 @@ export function parseDdsKpiScoring(raw: unknown): DdsKpiScoring {
   const o = raw as Record<string, unknown>
   const kind = o.kind
   if (kind === 'no_target') return { kind: 'no_target' }
+  if (kind === 'pass_fail') return { kind: 'pass_fail' }
   if (kind === 'min_red' && typeof o.target === 'number' && Number.isFinite(o.target)) return { kind: 'min_red', target: o.target }
   if (kind === 'max_red' && typeof o.target === 'number' && Number.isFinite(o.target)) return { kind: 'max_red', target: o.target }
   if (
@@ -76,8 +80,6 @@ export function parseDdsKpiScoring(raw: unknown): DdsKpiScoring {
   ) {
     return { kind: 'symmetric_pct', target: o.target, tolerancePct: o.tolerancePct }
   }
-  // Legacy pass_fail removed — treat as no target.
-  if (kind === 'pass_fail') return { kind: 'no_target' }
   return DEFAULT_SCORING
 }
 
@@ -85,6 +87,8 @@ export function scoringHint(s: DdsKpiScoring): string {
   switch (s.kind) {
     case 'no_target':
       return 'No target'
+    case 'pass_fail':
+      return '1 pass · 0 fail'
     case 'min_red':
       return `≥ ${s.target} ok`
     case 'max_red':
@@ -107,6 +111,10 @@ export function evaluateKpiBlock(value: number | null | undefined, s: DdsKpiScor
   switch (s.kind) {
     case 'no_target':
       return 'neutral'
+    case 'pass_fail':
+      if (v === 1) return 'good'
+      if (v === 0) return 'bad'
+      return 'neutral'
     case 'min_red':
       return v < s.target ? 'bad' : 'good'
     case 'max_red':
@@ -126,6 +134,7 @@ export function evaluateKpiBlock(value: number | null | undefined, s: DdsKpiScor
 
 export const DDS_KPI_SCORING_KIND_OPTIONS: { value: DdsKpiScoring['kind']; label: string }[] = [
   { value: 'no_target', label: 'No target (blue)' },
+  { value: 'pass_fail', label: 'Pass / fail (1 = green, 0 = red)' },
   { value: 'min_red', label: 'Below target = red' },
   { value: 'max_red', label: 'Above target = red' },
   { value: 'range_green', label: 'Inside min–max = green' },

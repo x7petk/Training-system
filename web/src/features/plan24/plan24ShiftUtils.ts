@@ -1,3 +1,5 @@
+import { localYMD } from '../../lib/dueDateUtils'
+
 /** Parse Postgres `time` / ISO time fragment to hours and minutes. */
 export function parseLocalTimeParts(s: string): { h: number; m: number } {
   const m = /^(\d{1,2}):(\d{2})(?::\d{2})?/.exec(s.trim())
@@ -6,6 +8,29 @@ export function parseLocalTimeParts(s: string): { h: number; m: number } {
 }
 
 export type ShiftRow = { kind: string; start_local: string; end_local: string; display_name?: string | null }
+
+export type ShiftNavRow = { kind: string; sort_order?: number }
+
+export function shiftsBySortOrder<T extends ShiftNavRow>(shifts: T[]): T[] {
+  return [...shifts].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+}
+
+/** Next roster shift after `shiftKind` on `planDateYmd`; wraps to the first shift on the following calendar day. */
+export function resolveNextShift(
+  planDateYmd: string,
+  shiftKind: string,
+  shifts: ShiftNavRow[],
+): { planDate: string; shiftKind: string } {
+  const sorted = shiftsBySortOrder(shifts)
+  if (sorted.length === 0) return { planDate: planDateYmd, shiftKind }
+  const idx = sorted.findIndex((s) => s.kind === shiftKind)
+  if (idx >= 0 && idx < sorted.length - 1) {
+    return { planDate: planDateYmd, shiftKind: sorted[idx + 1]!.kind }
+  }
+  const d = parseYmdLocal(planDateYmd)
+  d.setDate(d.getDate() + 1)
+  return { planDate: localYMD(d), shiftKind: sorted[0]!.kind }
+}
 
 /**
  * Shift window in browser-local time. Night (e.g. 17:00–05:00) spans to the next calendar day (D1, D14).

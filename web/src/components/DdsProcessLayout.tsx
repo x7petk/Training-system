@@ -29,7 +29,9 @@ export function DdsProcessLayout() {
   const location = useLocation()
   const inAdminSection = location.pathname.startsWith(adminBasePath)
   const adminNeedsScope =
-    location.pathname.includes('/admin/p2p-soft-points') || location.pathname.includes('/admin/p2p-setup')
+    location.pathname.includes('/admin/p2p-soft-points') ||
+    location.pathname.includes('/admin/p2p-setup') ||
+    location.pathname.includes('/admin/kpi-setup')
   const showPlan24Scope = !inAdminSection || adminNeedsScope
 
   return (
@@ -109,6 +111,18 @@ export function DdsProcessLayout() {
                     KPIs
                   </NavLink>
                   <NavLink
+                    to="/dds-process/admin/kpi-setup"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    KPI set-up
+                  </NavLink>
+                  <NavLink
                     to="/dds-process/admin/p2p-standard"
                     end
                     className={({ isActive }) =>
@@ -143,6 +157,54 @@ export function DdsProcessLayout() {
                     }
                   >
                     P2P set-up
+                  </NavLink>
+                  <NavLink
+                    to="/dds-process/admin/reward-recognition"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    Reward & recognition
+                  </NavLink>
+                  <NavLink
+                    to="/dds-process/admin/top-losses"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    Top losses
+                  </NavLink>
+                  <NavLink
+                    to="/dds-process/admin/e-plan-setup"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    e-Plan setup
+                  </NavLink>
+                  <NavLink
+                    to="/dds-process/admin/wds-kpis"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    WDS KPIs
                   </NavLink>
                 </>
               ) : null}

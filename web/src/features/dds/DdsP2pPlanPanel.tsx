@@ -10,6 +10,7 @@ import {
   addMinutes,
   minutesBetween,
   patternDayIndex,
+  resolveNextShift,
   shiftWindowBounds,
   type ShiftRow,
 } from '../plan24/plan24ShiftUtils'
@@ -82,6 +83,19 @@ export function DdsP2pPlanPanel({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [detailEv, setDetailEv] = useState<Plan24EventRow | null>(null)
   const [rolePersonSubtitle, setRolePersonSubtitle] = useState<string | undefined>(undefined)
+  const [shiftPlanView, setShiftPlanView] = useState<'my' | 'next'>('my')
+
+  useEffect(() => {
+    setShiftPlanView('my')
+  }, [cellId, planDate, shiftKind])
+
+  const nextShiftScope = useMemo(
+    () => resolveNextShift(planDate, shiftKind, shifts),
+    [planDate, shiftKind, shifts],
+  )
+
+  const viewPlanDate = shiftPlanView === 'next' ? nextShiftScope.planDate : planDate
+  const viewShiftKind = shiftPlanView === 'next' ? nextShiftScope.shiftKind : shiftKind
 
   const shiftRowsForBounds: ShiftRow[] = useMemo(
     () =>
@@ -95,8 +109,8 @@ export function DdsP2pPlanPanel({
   )
 
   const windowBounds = useMemo(
-    () => shiftWindowBounds(planDate, shiftKind, shiftRowsForBounds),
-    [planDate, shiftKind, shiftRowsForBounds],
+    () => shiftWindowBounds(viewPlanDate, viewShiftKind, shiftRowsForBounds),
+    [viewPlanDate, viewShiftKind, shiftRowsForBounds],
   )
 
   const roleCols = useMemo(
@@ -107,7 +121,7 @@ export function DdsP2pPlanPanel({
   useEffect(() => {
     let cancelled = false
     async function loadRolePersonSubtitle() {
-      if (!cellId || !rosterRoleId || !roleName.trim() || !shiftKind) {
+      if (!cellId || !rosterRoleId || !roleName.trim() || !viewShiftKind) {
         setRolePersonSubtitle(undefined)
         return
       }
@@ -135,8 +149,8 @@ export function DdsP2pPlanPanel({
           .from('plan24_role_day_assignments')
           .select('role_name, person_id')
           .eq('roster_id', rosterId)
-          .eq('plan_date', planDate)
-          .eq('shift_kind', shiftKind),
+          .eq('plan_date', viewPlanDate)
+          .eq('shift_kind', viewShiftKind),
         supabase.from('plan24_pattern_slots').select('pattern_day, shift_kind, team_id').eq('roster_id', rosterId),
         supabase.from('plan24_role_team_defaults').select('team_id, person_id').eq('role_id', rosterRoleId),
       ])
@@ -160,14 +174,14 @@ export function DdsP2pPlanPanel({
         personId = assignmentByRole.get(roleRow.name) ?? null
       } else {
         const plen = roster.pattern_length != null ? roster.pattern_length : 8
-        const patternDay = patternDayIndex(planDate, roster.pattern_start_date ?? null, plen)
-        const slot = patternSlots.find((p) => p.pattern_day === patternDay && p.shift_kind === shiftKind)
+        const patternDay = patternDayIndex(viewPlanDate, roster.pattern_start_date ?? null, plen)
+        const slot = patternSlots.find((p) => p.pattern_day === patternDay && p.shift_kind === viewShiftKind)
         const activeTeamId = slot?.team_id ?? null
         if (activeTeamId) {
           const d = roleTeamDefaults.find((x) => x.team_id === activeTeamId)
           personId = d?.person_id ?? null
         }
-        if (!personId) personId = legacyDefaultPersonId(roleRow, shiftKind)
+        if (!personId) personId = legacyDefaultPersonId(roleRow, viewShiftKind)
       }
 
       if (!personId) {
@@ -199,7 +213,7 @@ export function DdsP2pPlanPanel({
     return () => {
       cancelled = true
     }
-  }, [cellId, rosterRoleId, roleName, shiftKind, planDate])
+  }, [cellId, rosterRoleId, roleName, viewShiftKind, viewPlanDate])
 
   const refresh = useCallback(async () => {
     if (!cellId || !roleName) {
@@ -211,23 +225,23 @@ export function DdsP2pPlanPanel({
     await Promise.all([
       supabase.rpc('plan24_materialize_check_schedules', {
         p_master_cell_id: cellId,
-        p_from_date: planDate,
-        p_to_date: planDate,
+        p_from_date: viewPlanDate,
+        p_to_date: viewPlanDate,
       }),
       supabase.rpc('plan24_materialize_cl_check_schedules', {
         p_master_cell_id: cellId,
-        p_from_date: planDate,
-        p_to_date: planDate,
+        p_from_date: viewPlanDate,
+        p_to_date: viewPlanDate,
       }),
       supabase.rpc('plan24_materialize_cil_check_schedules', {
         p_master_cell_id: cellId,
-        p_from_date: planDate,
-        p_to_date: planDate,
+        p_from_date: viewPlanDate,
+        p_to_date: viewPlanDate,
       }),
       supabase.rpc('plan24_materialize_quality_check_schedules', {
         p_master_cell_id: cellId,
-        p_from_date: planDate,
-        p_to_date: planDate,
+        p_from_date: viewPlanDate,
+        p_to_date: viewPlanDate,
       }),
     ])
 
@@ -236,8 +250,8 @@ export function DdsP2pPlanPanel({
         .from('plan24_events')
         .select('*')
         .eq('master_cell_id', cellId)
-        .eq('plan_date', planDate)
-        .eq('shift_kind', shiftKind)
+        .eq('plan_date', viewPlanDate)
+        .eq('shift_kind', viewShiftKind)
         .is('deleted_at', null)
         .order('start_at'),
       supabase
@@ -262,7 +276,7 @@ export function DdsP2pPlanPanel({
     setEvents(evs.filter((e) => roleMatches(e.role_name, roleName)))
     const ts = (tRes.data ?? []) as Plan24TaskRow[]
     setTasks(ts.filter((t) => roleMatches(t.role_name, roleName)))
-  }, [cellId, planDate, shiftKind, roleName, userId, onError])
+  }, [cellId, viewPlanDate, viewShiftKind, roleName, userId, onError])
 
   useEffect(() => {
     void refresh()
@@ -358,21 +372,52 @@ export function DdsP2pPlanPanel({
     <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border bg-surface">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-2 py-1.5">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted">My plan</h2>
-        <div
-          className="flex h-4 w-[4.75rem] shrink-0 items-center justify-end text-[10px] text-muted"
-          aria-live="polite"
-          aria-busy={loading}
-        >
-          {loading ? (
-            <span className="inline-flex items-center gap-1">
-              <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />
-              <span className="whitespace-nowrap">Loading…</span>
-            </span>
-          ) : null}
+        <div className="flex shrink-0 items-center gap-1.5">
+          <div
+            className="flex items-center gap-0.5 rounded-md border border-border/80 bg-surface-raised/30 p-0.5"
+            role="group"
+            aria-label="Plan shift"
+          >
+            <button
+              type="button"
+              onClick={() => setShiftPlanView('my')}
+              className={`h-6 rounded px-2 text-[10px] font-semibold transition-colors ${
+                shiftPlanView === 'my'
+                  ? 'bg-accent text-accent-fg shadow-sm'
+                  : 'text-muted hover:bg-surface hover:text-fg'
+              }`}
+            >
+              My shift
+            </button>
+            <button
+              type="button"
+              onClick={() => setShiftPlanView('next')}
+              disabled={shifts.length === 0}
+              className={`h-6 rounded px-2 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
+                shiftPlanView === 'next'
+                  ? 'bg-accent text-accent-fg shadow-sm'
+                  : 'text-muted hover:bg-surface hover:text-fg'
+              }`}
+            >
+              Next shift
+            </button>
+          </div>
+          <div
+            className="flex h-4 min-w-[4.75rem] items-center justify-end text-[10px] text-muted"
+            aria-live="polite"
+            aria-busy={loading}
+          >
+            {loading ? (
+              <span className="inline-flex items-center gap-1">
+                <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />
+                <span className="whitespace-nowrap">Loading…</span>
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
-        {!shiftKind || shifts.length === 0 ? (
+        {!viewShiftKind || shifts.length === 0 ? (
           <p className="text-[11px] text-muted">Select a shift to show the Plan 24-style timeline.</p>
         ) : (
           <div className="flex min-h-[min(58dvh,480px)] min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-border/70 bg-surface-raised/20">

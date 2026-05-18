@@ -1,13 +1,24 @@
-import { Loader2 } from 'lucide-react'
+import { useRef } from 'react'
+import { Loader2, Plus } from 'lucide-react'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { ShiftDdsKpiSummary } from '../features/dds/ShiftDdsKpiSummary'
 import { useShiftDdsShell } from '../features/dds/ShiftDdsShellContext'
-import { LineDdsActionsPanel } from '../features/dds/LineDdsActionsPanel'
+import {
+  DdsRewardRecognitionPanel,
+  type DdsRewardRecognitionPanelHandle,
+} from '../features/dds/DdsRewardRecognitionPanel'
+import { DdsTopLossesPanel, type DdsTopLossesPanelHandle } from '../features/dds/DdsTopLossesPanel'
+import { LineDdsActionsPanel, type LineDdsActionsPanelHandle } from '../features/dds/LineDdsActionsPanel'
 import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClasses'
+import { useAuth } from '../hooks/useAuth'
 
 export function LineDdsPage() {
   const { status: scopeStatus, error: scopeError, cellId } = usePlan24Workspace()
   const { planDate, shiftKind, shellLoading, rosterError } = useShiftDdsShell()
+  const { user } = useAuth()
+  const plannedActionsPanelRef = useRef<LineDdsActionsPanelHandle>(null)
+  const rewardRecognitionPanelRef = useRef<DdsRewardRecognitionPanelHandle>(null)
+  const topLossesPanelRef = useRef<DdsTopLossesPanelHandle>(null)
 
   const error = rosterError
 
@@ -34,7 +45,7 @@ export function LineDdsPage() {
 
       {error ? <p className={`${ddsErr} shrink-0`}>{error}</p> : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,44%)_minmax(0,1fr)] lg:grid-rows-1 lg:items-stretch lg:gap-4">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(12rem,40%)_minmax(0,1fr)] lg:grid-rows-1 lg:items-stretch lg:gap-4">
         <section className={`${ddsSection} flex min-h-0 flex-1 flex-col overflow-hidden lg:min-h-0`}>
           <h2 className="shrink-0 border-b border-border/60 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
             KPI summary
@@ -53,27 +64,33 @@ export function LineDdsPage() {
         </section>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 lg:min-h-0">
-          <section className={`${ddsSection} flex max-h-44 shrink-0 flex-col overflow-hidden sm:max-h-52`}>
-            <h2 className="shrink-0 border-b border-border/60 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-              Top losses
-            </h2>
-            <p className="mt-2 shrink-0 text-[11px] text-muted">Placeholder — requirements coming later.</p>
-            <div className="mt-2 min-h-0 flex-1 overflow-auto rounded-lg border border-border/70">
-              <table className="w-full border-collapse text-left text-[11px]">
-                <thead>
-                  <tr className="border-b border-border bg-surface-raised/50">
-                    <th className="px-2 py-1.5 font-medium text-muted">Loss</th>
-                    <th className="px-2 py-1.5 font-medium text-muted">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td colSpan={2} className="px-2 py-6 text-center text-muted">
-                      —
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+          <section className={`${ddsSection} flex max-h-48 shrink-0 flex-col overflow-hidden sm:max-h-56`}>
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 pb-1.5">
+              <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Top losses
+              </h2>
+              {!shellLoading && shiftKind ? (
+                <button
+                  type="button"
+                  disabled={!user}
+                  title={user ? 'Add top loss entry' : 'Sign in to add entries'}
+                  onClick={() => topLossesPanelRef.current?.openCreate()}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/80 bg-surface px-2 py-0.5 text-[10px] font-semibold text-fg shadow-sm hover:bg-surface-raised/80 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Plus className="size-3" aria-hidden />
+                  Add
+                </button>
+              ) : null}
+            </div>
+            <div className="min-h-0 flex-1">
+              <DdsTopLossesPanel
+                ref={topLossesPanelRef}
+                cellId={cellId}
+                planDate={planDate}
+                shiftKind={shiftKind ?? ''}
+                surface="line-dds"
+                shellLoading={shellLoading}
+              />
             </div>
           </section>
 
@@ -81,41 +98,66 @@ export function LineDdsPage() {
             className={`${ddsSection} flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden`}
             aria-label="Planned DDS actions"
           >
-            <h2 className="shrink-0 border-b border-border/60 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-              Planned actions (DDS)
-            </h2>
-            <div className="mt-2 min-h-0 flex-1">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 pb-1.5">
+              <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Planned actions (DDS)
+              </h2>
+              {!shellLoading && shiftKind ? (
+                <button
+                  type="button"
+                  disabled={!user}
+                  title={user ? 'Create a DDS action' : 'Sign in to create actions'}
+                  onClick={() => plannedActionsPanelRef.current?.openCreate()}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/80 bg-surface px-2 py-0.5 text-[10px] font-semibold text-fg shadow-sm hover:bg-surface-raised/80 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Plus className="size-3" aria-hidden />
+                  New
+                </button>
+              ) : null}
+            </div>
+            <div className="min-h-0 flex-1">
               {shellLoading || !shiftKind ? (
                 <p className="text-[11px] text-muted" role="status">
                   {shellLoading ? 'Loading roster…' : 'Select a shift.'}
                 </p>
               ) : (
-                <LineDdsActionsPanel cellId={cellId} planDate={planDate} shiftKind={shiftKind} />
+                <LineDdsActionsPanel
+                  ref={plannedActionsPanelRef}
+                  cellId={cellId}
+                  planDate={planDate}
+                  shiftKind={shiftKind}
+                />
               )}
             </div>
           </section>
 
           <section className={`${ddsSection} flex max-h-44 shrink-0 flex-col overflow-hidden sm:max-h-52`}>
-            <h2 className="shrink-0 border-b border-border/60 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-              Reward and recognition
-            </h2>
-            <p className="mt-2 shrink-0 text-[11px] text-muted">Placeholder — requirements coming later.</p>
-            <div className="mt-2 min-h-0 flex-1 overflow-auto rounded-lg border border-border/70">
-              <table className="w-full border-collapse text-left text-[11px]">
-                <thead>
-                  <tr className="border-b border-border bg-surface-raised/50">
-                    <th className="px-2 py-1.5 font-medium text-muted">Name</th>
-                    <th className="px-2 py-1.5 font-medium text-muted">Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td colSpan={2} className="px-2 py-6 text-center text-muted">
-                      —
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 pb-1.5">
+              <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Reward and recognition
+              </h2>
+              {!shellLoading && shiftKind ? (
+                <button
+                  type="button"
+                  disabled={!user}
+                  title={user ? 'Add reward & recognition entry' : 'Sign in to add entries'}
+                  onClick={() => rewardRecognitionPanelRef.current?.openCreate()}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/80 bg-surface px-2 py-0.5 text-[10px] font-semibold text-fg shadow-sm hover:bg-surface-raised/80 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Plus className="size-3" aria-hidden />
+                  Add
+                </button>
+              ) : null}
+            </div>
+            <div className="min-h-0 flex-1">
+              <DdsRewardRecognitionPanel
+                ref={rewardRecognitionPanelRef}
+                cellId={cellId}
+                planDate={planDate}
+                shiftKind={shiftKind ?? ''}
+                surface="line-dds"
+                shellLoading={shellLoading}
+              />
             </div>
           </section>
         </div>

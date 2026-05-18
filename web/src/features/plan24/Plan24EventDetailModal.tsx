@@ -9,6 +9,12 @@ import { isPlan24DdsAction } from './plan24DdsUtils'
 import { parsePlan24SubTasks } from './plan24ParseSubTasks'
 import { addMinutes, formatPlan24Clock, minutesBetween } from './plan24ShiftUtils'
 import type { Plan24EventRow, Plan24SubTask } from './plan24Types'
+import { DdsActionSurfacesField } from '../dds/DdsActionSurfacesField'
+import {
+  ddsActionSurfacesForEditor,
+  normalizeDdsActionSurfacesForSave,
+  type DdsActionUiSurfaceKey,
+} from '../dds/ddsActionSurfaces'
 
 const inputClass =
   'w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2'
@@ -82,10 +88,14 @@ export function Plan24EventDetailModal({
   const [deleteComment, setDeleteComment] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [ddsOwnerLabel, setDdsOwnerLabel] = useState('')
+  const [ddsEditorSurfaces, setDdsEditorSurfaces] = useState<DdsActionUiSurfaceKey[]>(() =>
+    event && isPlan24DdsAction(event) ? ddsActionSurfacesForEditor(event.dds_display_surfaces) : [],
+  )
 
   useLayoutEffect(() => {
     if (!event) {
       setDetailEv(null)
+      setDdsEditorSurfaces([])
       return
     }
     setDetailEv(event)
@@ -94,6 +104,11 @@ export function Plan24EventDetailModal({
     setDetailCompleting(false)
     const dur = Math.max(5, Math.round(minutesBetween(new Date(event.start_at), new Date(event.end_at))))
     setDetailDurationMin(String(dur))
+    if (isPlan24DdsAction(event)) {
+      setDdsEditorSurfaces(ddsActionSurfacesForEditor(event.dds_display_surfaces))
+    } else {
+      setDdsEditorSurfaces([])
+    }
   }, [event])
 
   useEffect(() => {
@@ -267,6 +282,11 @@ export function Plan24EventDetailModal({
     if ((st === 'in_progress' || st === 'not_required') && !opened_at) {
       opened_at = new Date().toISOString()
     }
+    const surf = normalizeDdsActionSurfacesForSave(ddsEditorSurfaces)
+    if (surf.length === 0) {
+      onLoadErrorRef.current('Select at least one DDS page (Line, Plant, or Site).')
+      return
+    }
     const { error } = await supabase
       .from('plan24_events')
       .update({
@@ -279,6 +299,7 @@ export function Plan24EventDetailModal({
         opened_at,
         completed_at,
         completed_by,
+        dds_display_surfaces: surf,
       })
       .eq('id', detailEv.id)
     if (error) onLoadErrorRef.current(error.message)
@@ -286,7 +307,7 @@ export function Plan24EventDetailModal({
       onCloseRef.current()
       onSavedRef.current()
     }
-  }, [detailEv, detailDurationMin, windowEnd, userId])
+  }, [detailEv, detailDurationMin, windowEnd, userId, ddsEditorSurfaces])
 
   const markComplete = useCallback(async () => {
     if (!detailEv || !userId) return
@@ -640,6 +661,12 @@ export function Plan24EventDetailModal({
                     <option value="not_required">Not required</option>
                   </select>
                 </label>
+                <DdsActionSurfacesField
+                  idPrefix="plan24-dds-detail"
+                  className="rounded-lg border border-border/70 bg-canvas/30 px-2.5 py-2"
+                  selected={ddsEditorSurfaces}
+                  onChange={setDdsEditorSurfaces}
+                />
                 <div className="text-xs text-muted">
                   {detailEv.role_name ? `Role: ${detailEv.role_name}` : 'Unassigned'} · Owner:{' '}
                   {ddsOwnerLabel || '—'} · {detailEv.source === 'ad_hoc' ? 'Ad hoc' : 'Scheduled'}
@@ -744,7 +771,12 @@ export function Plan24EventDetailModal({
             ) : null}
             <div className="flex flex-wrap gap-2 border-t border-border pt-3">
               {isDdsUi ? (
-                <button type="button" className={detailSaveButtonClass} onClick={() => void saveDdsDetail()}>
+                <button
+                  type="button"
+                  className={detailSaveButtonClass}
+                  disabled={normalizeDdsActionSurfacesForSave(ddsEditorSurfaces).length === 0}
+                  onClick={() => void saveDdsDetail()}
+                >
                   Save
                 </button>
               ) : detailEv.event_type !== 'cil_check' &&

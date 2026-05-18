@@ -28,6 +28,11 @@ export type Plan24EventRow = {
   status: 'scheduled' | 'in_progress' | 'complete' | 'not_required'
   /** Free-text note for DDS actions (`event_type = dds_action`). */
   comment?: string | null
+  /**
+   * For `dds_action`: which DDS process pages list this row (`line-dds`, `plant-dds`, `site-dds`).
+   * Null or empty = legacy “all pages”.
+   */
+  dds_display_surfaces?: string[] | null
   sub_tasks: unknown
   opened_at: string | null
   completed_at: string | null
