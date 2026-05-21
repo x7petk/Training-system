@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ListFilter, MessageSquare, Trash2 } from 'lucide-react'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { supabase } from '../lib/supabase'
@@ -12,6 +12,10 @@ import {
   type WdsTrendDefRow,
   type WdsWeekSlot,
 } from '../features/dds/ddsWds'
+import { WdsTrendChart, wdsToneTextClass, type WdsTrendSeries } from '../features/dds/WdsTrendChart'
+import { buildWdsHcTrendSeries, type WdsHcRecordLite } from '../features/dds/wdsHcTrend'
+import { WdsHcTrendCell } from '../features/dds/WdsHcTrendCell'
+import { hcRagFromPercent, type HcRag } from '../features/health-checks/hcScore'
 import { ddsBtnDanger, ddsErr, ddsHint, ddsInput, ddsSelect, ddsStack } from '../features/dds/ddsAdminCompactClasses'
 
 type KpiDef = { id: string; scoring: unknown }
@@ -20,16 +24,9 @@ const ROWS = [
   { key: 'output', label: 'Output measure' },
   { key: 'in_a', label: 'In-process measure' },
   { key: 'in_b', label: 'In-process measure' },
-  { key: 'hc', label: 'Health check (placeholder)' },
+  { key: 'hc', label: 'Health check' },
   { key: 'actions', label: 'Actions (placeholder)' },
 ] as const
-
-type TrendSeries = {
-  valueByWeek: (number | null)[]
-  targetByWeek: (number | null)[]
-  toneByWeek: ('neutral' | 'good' | 'bad')[]
-  commentCountByWeek: number[]
-}
 
 const compactFmt = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
 const tickFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
@@ -44,178 +41,13 @@ type KpiEntry = {
   updated_at: string
 }
 
-function toneTextClass(tone: 'neutral' | 'good' | 'bad'): string {
-  if (tone === 'good') return 'text-emerald-700 dark:text-emerald-300'
-  if (tone === 'bad') return 'text-rose-700 dark:text-rose-300'
-  return 'text-sky-700 dark:text-sky-300'
-}
-
-function niceStep(raw: number): number {
-  if (!Number.isFinite(raw) || raw <= 0) return 1
-  const pow = Math.pow(10, Math.floor(Math.log10(raw)))
-  const n = raw / pow
-  if (n <= 1) return pow
-  if (n <= 2) return 2 * pow
-  if (n <= 5) return 5 * pow
-  return 10 * pow
-}
-
-function linePath(values: (number | null)[], xAt: (index: number) => number, yAt: (value: number) => number): string {
-  let d = ''
-  let penDown = false
-  for (let i = 0; i < values.length; i += 1) {
-    const v = values[i]
-    if (v == null || !Number.isFinite(v)) {
-      penDown = false
-      continue
-    }
-    const x = xAt(i)
-    const y = yAt(v)
-    d += `${penDown ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)} `
-    penDown = true
-  }
-  return d.trim()
-}
-
-function WdsTrendChart({
-  series,
-  weeks,
-  compact = true,
-  onChartClick,
-  onBarClick,
-}: {
-  series: TrendSeries
-  weeks: WdsWeekSlot[]
-  compact?: boolean
-  onChartClick?: () => void
-  onBarClick?: (weekIndex: number) => void
-}) {
-  const clipId = useId().replace(/:/g, '')
-  const width = compact ? 320 : 1080
-  const height = compact ? 86 : 560
-  const margin = compact ? { top: 6, right: 6, bottom: 14, left: 26 } : { top: 16, right: 20, bottom: 38, left: 58 }
-  const plotW = width - margin.left - margin.right
-  const plotH = height - margin.top - margin.bottom
-  const allVals = [...series.valueByWeek, ...series.targetByWeek].filter((v): v is number => v != null && Number.isFinite(v))
-  const fallbackMin = 0
-  const fallbackMax = 1
-  const rawMin = allVals.length > 0 ? Math.min(...allVals) : fallbackMin
-  const rawMax = allVals.length > 0 ? Math.max(...allVals) : fallbackMax
-  const spread = Math.max(1, Math.abs(rawMax - rawMin))
-  const paddedMin = rawMin - spread * 0.15
-  const paddedMax = rawMax + spread * 0.15
-  const step = niceStep((paddedMax - paddedMin) / 4)
-  const niceMin = Math.floor(paddedMin / step) * step
-  const niceMax = Math.ceil(paddedMax / step) * step
-  const yTicks = [niceMin, niceMin + (niceMax - niceMin) / 2, niceMax]
-  const xAt = (i: number) => margin.left + (i * plotW) / Math.max(1, weeks.length - 1)
-  const yAt = (v: number) => margin.top + ((niceMax - v) / Math.max(1e-9, niceMax - niceMin)) * plotH
-  const targetPath = linePath(series.targetByWeek, xAt, yAt)
-  const baselineValue = niceMin <= 0 && niceMax >= 0 ? 0 : niceMin
-  const yBase = yAt(baselineValue)
-  const barBand = plotW / Math.max(1, weeks.length)
-  const baseBarW = Math.max(3, Math.min(compact ? 12 : 20, barBand * 0.58))
-  const barW = compact ? baseBarW : Math.min(40, baseBarW * 2)
-
-  return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      className={`${compact ? 'h-[5.25rem]' : 'h-full min-h-[22rem]'} w-full rounded border border-border/70 bg-surface-raised/20`}
-      onClick={onChartClick}
-    >
-      <defs>
-        <clipPath id={`clip-${clipId}`}>
-          <rect x={margin.left} y={margin.top} width={plotW} height={plotH} />
-        </clipPath>
-      </defs>
-
-      {yTicks.map((t) => (
-        <g key={`y-${t}`}>
-          <line x1={margin.left} y1={yAt(t)} x2={margin.left + plotW} y2={yAt(t)} stroke="currentColor" opacity="0.1" />
-          <text x={margin.left - (compact ? 4 : 8)} y={yAt(t) + 3} textAnchor="end" className={`fill-muted ${compact ? 'text-[7px]' : 'text-[11px]'}`}>
-            {tickFmt.format(t)}
-          </text>
-        </g>
-      ))}
-
-      {weeks.map((w, i) => (
-        <g key={`${w.startYmd}-x`}>
-          <line x1={xAt(i)} y1={margin.top} x2={xAt(i)} y2={margin.top + plotH} stroke="currentColor" opacity={i % 3 === 0 ? 0.06 : 0.02} />
-          {compact ? i === 0 || i === Math.floor((weeks.length - 1) / 2) || i === weeks.length - 1 : i % 2 === 0 || i === weeks.length - 1 ? (
-            <text x={xAt(i)} y={height - (compact ? 4 : 10)} textAnchor="middle" className={`fill-muted ${compact ? 'text-[7px]' : 'text-[10px]'}`}>
-              {w.shortLabel}
-            </text>
-          ) : null}
-        </g>
-      ))}
-
-      <g clipPath={`url(#clip-${clipId})`}>
-        {series.valueByWeek.map((v, i) => {
-          if (v == null || !Number.isFinite(v)) return null
-          const tone = series.toneByWeek[i]
-          const fill = tone === 'good' ? '#10b981' : tone === 'bad' ? '#f43f5e' : '#0ea5e9'
-          const xCenter = xAt(i)
-          const yVal = yAt(v)
-          const top = Math.min(yVal, yBase)
-          const h = Math.max(1, Math.abs(yVal - yBase))
-          return (
-            <g key={`bar-${i}`}>
-              <rect
-                x={xCenter - barW / 2}
-                y={top}
-                width={barW}
-                height={h}
-                rx={compact ? '1.5' : '2.5'}
-                fill={fill}
-                opacity="0.8"
-                className={onBarClick ? 'cursor-pointer hover:opacity-100' : undefined}
-                onClick={(e) => {
-                  if (!onBarClick) return
-                  e.stopPropagation()
-                  onBarClick(i)
-                }}
-              />
-              {series.commentCountByWeek[i]! > 0 ? (
-                <circle
-                  cx={xCenter}
-                  cy={Math.max(margin.top + 3, top - 3)}
-                  r={compact ? 1.6 : 3}
-                  fill="#f59e0b"
-                  stroke="#78350f"
-                  strokeWidth={compact ? '0.3' : '0.8'}
-                  className={onBarClick ? 'cursor-pointer' : undefined}
-                  onClick={(e) => {
-                    if (!onBarClick) return
-                    e.stopPropagation()
-                    onBarClick(i)
-                  }}
-                />
-              ) : null}
-              <text
-                x={xCenter}
-                y={Math.max(margin.top + (compact ? 4 : 10), top - (compact ? 1.2 : 4))}
-                textAnchor="middle"
-                className={`fill-fg/80 tabular-nums ${compact ? 'text-[6.5px]' : 'text-[10px]'} pointer-events-none`}
-              >
-                {compact ? tickFmt.format(v) : compactFmt.format(v)}
-              </text>
-            </g>
-          )
-        })}
-        {targetPath ? (
-          <path d={targetPath} fill="none" stroke="#2563eb" strokeWidth={compact ? '1.2' : '2.2'} strokeDasharray={compact ? '3 2' : '6 3'} />
-        ) : null}
-      </g>
-    </svg>
-  )
-}
-
 export function WdsPage() {
   const { status, cellId } = usePlan24Workspace()
   const [columns, setColumns] = useState<WdsColumnRow[]>([])
   const [trends, setTrends] = useState<WdsTrendDefRow[]>([])
   const [kpis, setKpis] = useState<KpiDef[]>([])
   const [entries, setEntries] = useState<KpiEntry[]>([])
+  const [hcRecords, setHcRecords] = useState<WdsHcRecordLite[]>([])
   const [weeks, setWeeks] = useState<WdsWeekSlot[]>(() => defaultWdsWeeks())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -242,6 +74,7 @@ export function WdsPage() {
       setTrends([])
       setKpis([])
       setEntries([])
+      setHcRecords([])
       setLoading(false)
       return
     }
@@ -249,9 +82,11 @@ export function WdsPage() {
     setWeeks(windowWeeks)
     const fromDate = windowWeeks[0]?.startYmd ?? '2000-01-01'
     const toDate = windowWeeks[windowWeeks.length - 1]?.endYmd ?? '2100-01-01'
+    const fromIso = `${fromDate}T00:00:00.000Z`
+    const toIso = `${toDate}T23:59:59.999Z`
     setLoading(true)
     setError(null)
-    const [cRes, tRes, kRes, eRes] = await Promise.all([
+    const [cRes, tRes, kRes, eRes, hcRes] = await Promise.all([
       supabase
         .from('dds_wds_columns')
         .select('id, master_cell_id, header, sort_order, output_trend_id, in_process_a_trend_id, in_process_b_trend_id')
@@ -274,16 +109,54 @@ export function WdsPage() {
         .eq('master_cell_id', cellId)
         .gte('plan_date', fromDate)
         .lte('plan_date', toDate),
+      supabase
+        .from('hc_records')
+        .select('id, completed_at, score, status, hc_type_id, hc_types(name)')
+        .eq('master_cell_id', cellId)
+        .not('completed_at', 'is', null)
+        .gte('completed_at', fromIso)
+        .lte('completed_at', toIso)
+        .order('completed_at'),
     ])
     setLoading(false)
-    if (cRes.error || tRes.error || kRes.error || eRes.error) {
-      setError(cRes.error?.message ?? tRes.error?.message ?? kRes.error?.message ?? eRes.error?.message ?? 'Load failed')
+    if (cRes.error || tRes.error || kRes.error || eRes.error || hcRes.error) {
+      setError(
+        cRes.error?.message ??
+          tRes.error?.message ??
+          kRes.error?.message ??
+          eRes.error?.message ??
+          hcRes.error?.message ??
+          'Load failed',
+      )
       return
     }
     setColumns((cRes.data ?? []) as WdsColumnRow[])
     setTrends((tRes.data ?? []) as WdsTrendDefRow[])
     setKpis((kRes.data ?? []) as KpiDef[])
     setEntries((eRes.data ?? []) as KpiEntry[])
+    const hcRows = (hcRes.data ?? []) as {
+      id: string
+      completed_at: string
+      score: number
+      status: string
+      hc_type_id: string
+      hc_types: { name: string } | { name: string }[] | null
+    }[]
+    setHcRecords(
+      hcRows.map((r) => {
+        const t = r.hc_types
+        const type_name = Array.isArray(t) ? (t[0]?.name ?? 'Health check') : (t?.name ?? 'Health check')
+        const status = (r.status === 'green' || r.status === 'amber' || r.status === 'red' ? r.status : hcRagFromPercent(r.score)) as HcRag
+        return {
+          id: r.id,
+          completed_at: r.completed_at,
+          score: r.score,
+          status,
+          hc_type_id: r.hc_type_id,
+          type_name,
+        }
+      }),
+    )
   }, [cellId])
 
   useEffect(() => {
@@ -300,8 +173,10 @@ export function WdsPage() {
     }
   }, [columns.length, cellId])
 
+  const hcTrendSeries = useMemo(() => buildWdsHcTrendSeries(hcRecords, weeks), [hcRecords, weeks])
+
   const seriesByTrendId = useMemo(() => {
-    const map = new Map<string, TrendSeries>()
+    const map = new Map<string, WdsTrendSeries>()
     for (const t of trends) {
       const valueByWeek: (number | null)[] = Array.from({ length: 14 }, () => null)
       const grouped: number[][] = Array.from({ length: 14 }, () => [])
@@ -417,7 +292,19 @@ export function WdsPage() {
                   </span>
                 </td>
                 {columns.map((c) => {
-                  if (row.key === 'hc' || row.key === 'actions') {
+                  if (row.key === 'hc') {
+                    return (
+                      <td key={`${row.key}-${c.id}`} className="relative border-r border-b border-border px-1.5 py-1 align-top">
+                        <WdsHcTrendCell
+                          series={hcTrendSeries}
+                          weeks={weeks}
+                          records={hcRecords}
+                          columnHeader={c.header.trim() || 'Untitled'}
+                        />
+                      </td>
+                    )
+                  }
+                  if (row.key === 'actions') {
                     return (
                       <td key={`${row.key}-${c.id}`} className="border-r border-b border-border px-1.5 py-1 text-muted">
                         Coming later
@@ -442,7 +329,7 @@ export function WdsPage() {
                               <p className="truncate text-[9px] font-semibold text-fg">{trend?.label ?? 'Trend'}</p>
                             </div>
                             <div className="text-right">
-                              <p className={`text-[9px] font-semibold tabular-nums ${toneTextClass(latestTone)}`}>
+                              <p className={`text-[9px] font-semibold tabular-nums ${wdsToneTextClass(latestTone)}`}>
                                 {latestValue == null ? '—' : compactFmt.format(latestValue)}
                               </p>
                               <p className="text-[8px] tabular-nums text-blue-700 dark:text-blue-300">
