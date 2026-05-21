@@ -4,6 +4,7 @@ import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { useAuth } from '../hooks/useAuth'
 import { useShiftDdsShell } from '../features/dds/ShiftDdsShellContext'
 import { SiteDdsKpiSummary } from '../features/dds/SiteDdsKpiSummary'
+import { SiteDdsTriggerGrid } from '../features/dds/SiteDdsTriggerGrid'
 import { DdsTopLossesPanel } from '../features/dds/DdsTopLossesPanel'
 import { DdsRewardRecognitionPanel } from '../features/dds/DdsRewardRecognitionPanel'
 import {
@@ -14,7 +15,7 @@ import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClas
 
 export function SiteDdsPage() {
   const { status: scopeStatus, error: scopeError, siteId, siteCells, cellId } = usePlan24Workspace()
-  const { planDate, shiftKind, shellLoading, rosterError } = useShiftDdsShell()
+  const { planDate, shiftKind, shifts, shellLoading, rosterError } = useShiftDdsShell()
   const { user } = useAuth()
   const plannedActionsRef = useRef<RollupDdsPlannedActionsPanelHandle>(null)
 
@@ -49,6 +50,12 @@ export function SiteDdsPage() {
             KPI summary
           </h2>
           <div className="mt-1.5 min-h-0 flex-1 overflow-y-auto">
+            <SiteDdsTriggerGrid
+              cells={siteCellList}
+              planDate={planDate}
+              shiftKind={shiftKind ?? ''}
+              shifts={shifts}
+            />
             <SiteDdsKpiSummary
               siteId={siteId}
               cells={siteCellList}

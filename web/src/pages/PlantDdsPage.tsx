@@ -4,6 +4,7 @@ import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { useAuth } from '../hooks/useAuth'
 import { useShiftDdsShell } from '../features/dds/ShiftDdsShellContext'
 import { PlantDdsKpiSummary } from '../features/dds/PlantDdsKpiSummary'
+import { PlantDdsTriggerStrip } from '../features/dds/PlantDdsTriggerStrip'
 import { DdsTopLossesPanel } from '../features/dds/DdsTopLossesPanel'
 import { DdsRewardRecognitionPanel } from '../features/dds/DdsRewardRecognitionPanel'
 import {
@@ -15,7 +16,7 @@ import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClas
 
 export function PlantDdsPage() {
   const { status: scopeStatus, error: scopeError, plantId, cellId, cells } = usePlan24Workspace()
-  const { planDate, shiftKind, shellLoading, rosterError } = useShiftDdsShell()
+  const { planDate, shiftKind, shifts, shellLoading, rosterError } = useShiftDdsShell()
   const { user } = useAuth()
   const [rollupMode, setRollupMode] = useState<DdsPlantRollupMode>('all')
   const plannedActionsRef = useRef<RollupDdsPlannedActionsPanelHandle>(null)
@@ -84,6 +85,12 @@ export function PlantDdsPage() {
             KPI summary
           </h2>
           <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+            <PlantDdsTriggerStrip
+              cells={plantCells}
+              planDate={planDate}
+              shiftKind={shiftKind ?? ''}
+              shifts={shifts}
+            />
             <PlantDdsKpiSummary
               cells={plantCells}
               planDate={planDate}

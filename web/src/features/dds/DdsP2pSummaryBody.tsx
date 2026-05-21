@@ -25,7 +25,13 @@ import {
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
 import { ddsErr } from './ddsAdminCompactClasses'
 
-export type DdsP2pSummaryShiftRow = { kind: string; display_name: string | null; sort_order: number }
+export type DdsP2pSummaryShiftRow = {
+  kind: string
+  display_name: string | null
+  sort_order: number
+  start_local?: string
+  end_local?: string
+}
 
 export type DdsP2pSummaryRosterRole = { id: string; name: string; sort_order: number; is_active: boolean }
 

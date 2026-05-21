@@ -42,8 +42,14 @@ export function Plan24ScopeBar() {
     )
   }
 
-  const showDdsDayShiftStrip = onDdsDayShiftShell && shiftDds && cellId
   const p = location.pathname
+  const complianceDayOnly = Boolean(shiftDds?.complianceDayOnly)
+  const onSiteCompliance = p.endsWith('/site-compliance') || p.includes('/dds-process/site-compliance')
+  const showDdsDayShiftStrip = onDdsDayShiftShell && !complianceDayOnly && shiftDds && cellId
+  const showDdsComplianceDateStrip =
+    complianceDayOnly &&
+    shiftDds &&
+    (onSiteCompliance ? Boolean(siteId) : Boolean(cellId))
   const onWdsPage = p.endsWith('/wds') || p.includes('/dds-process/wds')
   const ddsDayShiftLabel =
     p.endsWith('/site-dds') || p.includes('/dds-process/site-dds')
@@ -53,6 +59,7 @@ export function Plan24ScopeBar() {
         : p.endsWith('/line-dds') || p.includes('/dds-process/line-dds')
           ? 'Line DDS'
           : 'Shift DDS'
+  const complianceDateLabel = onSiteCompliance ? 'Site compliance' : 'Line compliance'
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-border-strong bg-surface px-3 py-2 shadow-sm sm:px-4">
@@ -162,6 +169,42 @@ export function Plan24ScopeBar() {
                 )}
               </select>
             </label>
+          </>
+        ) : null}
+
+        {showDdsComplianceDateStrip ? (
+          <>
+            <span className="hidden h-6 w-px shrink-0 bg-border/80 sm:block" aria-hidden />
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/50">{complianceDateLabel}</span>
+            <div className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-border bg-surface-raised/50 p-0.5">
+              <button
+                type="button"
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-black/[0.06] hover:text-fg"
+                aria-label="Previous day"
+                onClick={() => shiftDds.stepPlanDay(-1)}
+              >
+                <ChevronLeft className="size-3.5" aria-hidden />
+              </button>
+              <input
+                type="date"
+                className="h-7 max-w-[7.25rem] shrink-0 rounded-md border-0 bg-transparent px-1 text-[11px] font-semibold text-fg outline-none"
+                value={shiftDds.planDate}
+                min={shiftDds.minPlanYmd}
+                max={shiftDds.maxPlanYmd}
+                onChange={(e) => shiftDds.setPlanDate(shiftDds.clampPlanDate(e.target.value))}
+                aria-label="Plan date"
+              />
+              <button
+                type="button"
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-black/[0.06] hover:text-fg disabled:opacity-35"
+                aria-label="Next day"
+                disabled={shiftDds.planDate >= shiftDds.maxPlanYmd}
+                onClick={() => shiftDds.stepPlanDay(1)}
+              >
+                <ChevronRight className="size-3.5" aria-hidden />
+              </button>
+            </div>
+            <span className="text-[10px] text-muted">24h day</span>
           </>
         ) : null}
 

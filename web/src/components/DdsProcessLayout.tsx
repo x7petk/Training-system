@@ -13,6 +13,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Table2,
+  Zap,
   UsersRound,
 } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router-dom'
@@ -31,7 +32,8 @@ export function DdsProcessLayout() {
   const adminNeedsScope =
     location.pathname.includes('/admin/p2p-soft-points') ||
     location.pathname.includes('/admin/p2p-setup') ||
-    location.pathname.includes('/admin/kpi-setup')
+    location.pathname.includes('/admin/kpi-setup') ||
+    location.pathname.includes('/admin/triggers')
   const showPlan24Scope = !inAdminSection || adminNeedsScope
 
   return (
@@ -58,6 +60,7 @@ export function DdsProcessLayout() {
           { to: '/dds-process/dds-actions', label: 'DDS actions', icon: ListTodo, end: true },
           { to: '/dds-process/p2p', label: 'P2P', icon: UsersRound, end: true },
           { to: '/dds-process/p2p-summary', label: 'P2P Summary', icon: Table2, end: true },
+          { to: '/dds-process/triggers', label: 'Triggers', icon: Zap, end: true },
           { to: '/dds-process/shift-dds', label: 'Shift DDS', icon: Clock, end: true },
           { to: '/dds-process/line-compliance', label: 'Line compliance', icon: ClipboardCheck, end: true },
           { to: '/dds-process/line-dds', label: 'Line DDS', icon: ListTree, end: true },
@@ -157,6 +160,18 @@ export function DdsProcessLayout() {
                     }
                   >
                     P2P set-up
+                  </NavLink>
+                  <NavLink
+                    to="/dds-process/admin/triggers"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    Triggers
                   </NavLink>
                   <NavLink
                     to="/dds-process/admin/reward-recognition"

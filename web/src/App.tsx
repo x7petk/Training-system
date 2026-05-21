@@ -73,6 +73,16 @@ const ShiftDdsPage = lazy(() => import('./pages/ShiftDdsPage').then((m) => ({ de
 const LineDdsPage = lazy(() => import('./pages/LineDdsPage').then((m) => ({ default: m.LineDdsPage })))
 const PlantDdsPage = lazy(() => import('./pages/PlantDdsPage').then((m) => ({ default: m.PlantDdsPage })))
 const SiteDdsPage = lazy(() => import('./pages/SiteDdsPage').then((m) => ({ default: m.SiteDdsPage })))
+const LineCompliancePage = lazy(() =>
+  import('./pages/LineCompliancePage').then((m) => ({ default: m.LineCompliancePage })),
+)
+const SiteCompliancePage = lazy(() =>
+  import('./pages/SiteCompliancePage').then((m) => ({ default: m.SiteCompliancePage })),
+)
+const DdsTriggersPage = lazy(() => import('./pages/DdsTriggersPage').then((m) => ({ default: m.DdsTriggersPage })))
+const DdsAdminTriggersPage = lazy(() =>
+  import('./pages/DdsAdminTriggersPage').then((m) => ({ default: m.DdsAdminTriggersPage })),
+)
 const DdsAdminRewardRecognitionPage = lazy(() =>
   import('./pages/DdsAdminRewardRecognitionPage').then((m) => ({ default: m.DdsAdminRewardRecognitionPage })),
 )
@@ -287,11 +297,12 @@ export default function App() {
             <Route path="dds-actions" element={<DdsActionsPage />} />
             <Route path="p2p" element={<DdsP2pPage />} />
             <Route path="p2p-summary" element={<DdsP2pSummaryPage />} />
+            <Route path="triggers" element={<DdsTriggersPage />} />
             <Route path="shift-dds" element={<ShiftDdsPage />} />
-            <Route path="line-compliance" element={<DdsPlaceholderPage title="Line compliance" />} />
+            <Route path="line-compliance" element={<LineCompliancePage />} />
             <Route path="line-dds" element={<LineDdsPage />} />
             <Route path="plant-dds" element={<PlantDdsPage />} />
-            <Route path="site-compliance" element={<DdsPlaceholderPage title="Site compliance" />} />
+            <Route path="site-compliance" element={<SiteCompliancePage />} />
             <Route path="site-dds" element={<SiteDdsPage />} />
             <Route path="wds" element={<WdsPage />} />
             <Route path="e-plan" element={<EPlanPage />} />
@@ -313,6 +324,7 @@ export default function App() {
               <Route path="p2p-setup" element={<DdsP2pSetupPage />} />
               <Route path="reward-recognition" element={<DdsAdminRewardRecognitionPage />} />
               <Route path="top-losses" element={<DdsAdminTopLossesPage />} />
+              <Route path="triggers" element={<DdsAdminTriggersPage />} />
               <Route path="e-plan-setup" element={<DdsAdminEPlanSetupPage />} />
               <Route path="wds-kpis" element={<DdsAdminWdsKpisPage />} />
             </Route>

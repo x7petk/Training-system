@@ -10,6 +10,7 @@ import {
 } from '../features/dds/DdsRewardRecognitionPanel'
 import { ShiftDdsKpiSummary } from '../features/dds/ShiftDdsKpiSummary'
 import { useShiftDdsShell } from '../features/dds/ShiftDdsShellContext'
+import { DdsTriggerScoreTilesRow } from '../features/dds/DdsTriggerScoreTilesRow'
 import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClasses'
 
 type RightMode = 'p2p' | 'plan24'
@@ -49,6 +50,15 @@ export function ShiftDdsPage() {
     <div className="flex h-full min-h-0 flex-1 flex-col gap-3">
       <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-b border-border/60 pb-2">
         <h1 className="shrink-0 font-display text-lg font-semibold tracking-tight">Shift DDS</h1>
+        {shiftKind ? (
+          <DdsTriggerScoreTilesRow
+            cellId={cellId}
+            planDate={planDate}
+            shiftKind={shiftKind}
+            shifts={shifts}
+            compact
+          />
+        ) : null}
         <div className="min-w-0 flex-1" />
         <div className="inline-flex shrink-0 rounded-lg border border-border bg-surface p-0.5">
           <button

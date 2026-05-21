@@ -75,6 +75,8 @@ export type LineDdsActionsPanelProps = {
   onVisibleChange?: (visible: boolean) => void
   /** After a new action is saved (e.g. refresh plant/site roll-up lists). */
   onCreated?: () => void
+  /** Compliance / 24h day: list all DDS actions for the plan date (any shift). */
+  allShiftsForPlanDate?: boolean
 }
 
 /**
@@ -91,6 +93,7 @@ export const LineDdsActionsPanel = forwardRef<LineDdsActionsPanelHandle, LineDds
       hideWhenEmpty = false,
       onVisibleChange,
       onCreated,
+      allShiftsForPlanDate = false,
     },
     ref,
   ) {
@@ -127,10 +130,25 @@ export const LineDdsActionsPanel = forwardRef<LineDdsActionsPanelHandle, LineDds
   const [createEndMin, setCreateEndMin] = useState('30')
   const [createSurfaces, setCreateSurfaces] = useState<DdsActionUiSurfaceKey[]>([uiSurface])
 
-  const windowBounds = useMemo(
-    () => shiftWindowBounds(planDate, shiftKind, shifts),
-    [planDate, shiftKind, shifts],
-  )
+  const windowBounds = useMemo(() => {
+    if (allShiftsForPlanDate && shifts.length > 0) {
+      let start: Date | null = null
+      let end: Date | null = null
+      for (const sh of shifts) {
+        const b = shiftWindowBounds(planDate, sh.kind, shifts)
+        if (!start || b.start < start) start = b.start
+        if (!end || b.end > end) end = b.end
+      }
+      if (start && end) return { start, end }
+    }
+    if (allShiftsForPlanDate) {
+      return {
+        start: new Date(planDate + 'T06:00:00'),
+        end: new Date(planDate + 'T22:00:00'),
+      }
+    }
+    return shiftWindowBounds(planDate, shiftKind, shifts)
+  }, [allShiftsForPlanDate, planDate, shiftKind, shifts])
 
   const detailBounds = useMemo(() => {
     if (!detailEv) return windowBounds
@@ -146,7 +164,8 @@ export const LineDdsActionsPanel = forwardRef<LineDdsActionsPanelHandle, LineDds
   }, [people])
 
   const refresh = useCallback(async () => {
-    if (!cellId || !planDate || !shiftKind) return
+    if (!cellId || !planDate) return
+    if (!allShiftsForPlanDate && !shiftKind) return
     setLoadErr(null)
     setLoading(true)
     const rosterRes = await supabase
@@ -176,24 +195,33 @@ export const LineDdsActionsPanel = forwardRef<LineDdsActionsPanelHandle, LineDds
         .eq('roster_id', r.id)
         .order('sort_order'),
       supabase.from('people').select('id, display_name, first_name, last_name').order('display_name').limit(500),
-      supabase
-        .from('plan24_events')
-        .select('*')
-        .eq('master_cell_id', cellId)
-        .eq('event_type', 'dds_action')
-        .eq('plan_date', planDate)
-        .eq('shift_kind', shiftKind)
-        .is('deleted_at', null)
-        .order('start_at'),
+      (() => {
+        let q = supabase
+          .from('plan24_events')
+          .select('*')
+          .eq('master_cell_id', cellId)
+          .eq('event_type', 'dds_action')
+          .eq('plan_date', planDate)
+          .is('deleted_at', null)
+          .order('start_at')
+        if (!allShiftsForPlanDate) q = q.eq('shift_kind', shiftKind)
+        return q
+      })(),
     ])
     if (shRes.error) setLoadErr(shRes.error.message)
-    else setShifts((shRes.data ?? []) as ShiftRow[])
+    else {
+      const shList = (shRes.data ?? []) as ShiftRow[]
+      setShifts(shList)
+      if (allShiftsForPlanDate && shList.length > 0 && !shList.some((s) => s.kind === createShiftKind)) {
+        setCreateShiftKind(shList[0].kind)
+      }
+    }
     if (peRes.error) setLoadErr(peRes.error.message)
     else setPeople((peRes.data ?? []) as typeof people)
     if (evRes.error) setLoadErr(evRes.error.message)
     else setEvents((evRes.data ?? []) as Plan24EventRow[])
     setLoading(false)
-  }, [cellId, planDate, shiftKind])
+  }, [allShiftsForPlanDate, cellId, createShiftKind, planDate, shiftKind])
 
   useEffect(() => {
     void refresh()
@@ -259,9 +287,9 @@ export const LineDdsActionsPanel = forwardRef<LineDdsActionsPanelHandle, LineDds
     const sk =
       shifts.length === 0
         ? shiftKind
-        : shifts.some((s) => s.kind === shiftKind)
-          ? shiftKind
-          : shifts[0].kind
+        : allShiftsForPlanDate || !shiftKind || !shifts.some((s) => s.kind === shiftKind)
+          ? shifts[0].kind
+          : shiftKind
     setCreatePlanDate(planDate)
     setCreateShiftKind(sk)
     const bounds = shiftWindowBounds(planDate, sk, shifts)
@@ -272,7 +300,7 @@ export const LineDdsActionsPanel = forwardRef<LineDdsActionsPanelHandle, LineDds
     setCreateEndMin('30')
     setCreateSurfaces([uiSurface])
     setCreateOpen(true)
-  }, [readOnly, roster, user, planDate, shiftKind, shifts, uiSurface])
+  }, [allShiftsForPlanDate, readOnly, roster, user, planDate, shiftKind, shifts, uiSurface])
 
   useImperativeHandle(ref, () => ({ openCreate }), [openCreate])
 
@@ -365,7 +393,7 @@ export const LineDdsActionsPanel = forwardRef<LineDdsActionsPanelHandle, LineDds
     else void refresh()
   }
 
-  if (!shiftKind) {
+  if (!allShiftsForPlanDate && !shiftKind) {
     return <p className="text-[11px] text-muted">Select a shift in the scope bar to load DDS actions.</p>
   }
 
@@ -373,7 +401,9 @@ export const LineDdsActionsPanel = forwardRef<LineDdsActionsPanelHandle, LineDds
     return null
   }
 
-  const shiftLabel = (shifts.find((s) => s.kind === shiftKind)?.display_name?.trim() || shiftKind).replace(/_/g, ' ')
+  const shiftLabel = allShiftsForPlanDate
+    ? 'All shifts'
+    : (shifts.find((s) => s.kind === shiftKind)?.display_name?.trim() || shiftKind).replace(/_/g, ' ')
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-1">

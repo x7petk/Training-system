@@ -9,12 +9,13 @@ import {
 } from '../features/dds/DdsRewardRecognitionPanel'
 import { DdsTopLossesPanel, type DdsTopLossesPanelHandle } from '../features/dds/DdsTopLossesPanel'
 import { LineDdsActionsPanel, type LineDdsActionsPanelHandle } from '../features/dds/LineDdsActionsPanel'
+import { DdsTriggerScoreTilesRow } from '../features/dds/DdsTriggerScoreTilesRow'
 import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClasses'
 import { useAuth } from '../hooks/useAuth'
 
 export function LineDdsPage() {
   const { status: scopeStatus, error: scopeError, cellId } = usePlan24Workspace()
-  const { planDate, shiftKind, shellLoading, rosterError } = useShiftDdsShell()
+  const { planDate, shiftKind, shifts, shellLoading, rosterError } = useShiftDdsShell()
   const { user } = useAuth()
   const plannedActionsPanelRef = useRef<LineDdsActionsPanelHandle>(null)
   const rewardRecognitionPanelRef = useRef<DdsRewardRecognitionPanelHandle>(null)
@@ -40,6 +41,7 @@ export function LineDdsPage() {
     <div className="flex h-full min-h-0 flex-1 flex-col gap-3">
       <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-b border-border/60 pb-2">
         <h1 className="shrink-0 font-display text-lg font-semibold tracking-tight">Line DDS</h1>
+        <DdsTriggerScoreTilesRow cellId={cellId} planDate={planDate} shifts={shifts} dayRollup compact />
         <div className="min-w-0 flex-1" />
       </div>
 

@@ -19,7 +19,7 @@ function sortGroups<T extends { sort_order: number; name: string }>(rows: T[]): 
   return [...rows].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
 }
 
-/** Day + shift strip in the scope bar (Shift / Line / Plant DDS share roster shell). */
+/** Day + shift strip in the scope bar (Shift / Line / Plant / Site DDS share roster shell). */
 function isDdsDayShiftShellPath(pathname: string): boolean {
   return (
     pathname.endsWith('/shift-dds') ||
@@ -29,13 +29,27 @@ function isDdsDayShiftShellPath(pathname: string): boolean {
     pathname.endsWith('/plant-dds') ||
     pathname.includes('/dds-process/plant-dds') ||
     pathname.endsWith('/site-dds') ||
-    pathname.includes('/dds-process/site-dds')
+    pathname.includes('/dds-process/site-dds') ||
+    pathname.endsWith('/triggers') ||
+    pathname.includes('/dds-process/triggers')
+  )
+}
+
+/** Date-only strip (24h day bucket; no shift selector). */
+function isDdsComplianceDayPath(pathname: string): boolean {
+  return (
+    pathname.endsWith('/line-compliance') ||
+    pathname.includes('/dds-process/line-compliance') ||
+    pathname.endsWith('/site-compliance') ||
+    pathname.includes('/dds-process/site-compliance')
   )
 }
 
 type Ctx = {
-  /** True when Shift / Line / Plant / Site DDS is active (scope bar shows day + shift). */
+  /** True when a DDS page uses the scope-bar date strip (with or without shift). */
   routeActive: boolean
+  /** Line / Site compliance: date only, no shift in scope bar. */
+  complianceDayOnly: boolean
   planDate: string
   setPlanDate: (ymd: string) => void
   shiftKind: string
@@ -54,7 +68,8 @@ const ShiftDdsShellContext = createContext<Ctx | undefined>(undefined)
 
 export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
   const location = useLocation()
-  const routeActive = isDdsDayShiftShellPath(location.pathname)
+  const complianceDayOnly = isDdsComplianceDayPath(location.pathname)
+  const routeActive = isDdsDayShiftShellPath(location.pathname) || complianceDayOnly
 
   const { status: scopeStatus, cellId } = usePlan24Workspace()
 
@@ -106,7 +121,7 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
   )
 
   const loadRosterShell = useCallback(async () => {
-    if (!routeActive || scopeStatus !== 'ready' || !cellId) {
+    if (!routeActive || complianceDayOnly || scopeStatus !== 'ready' || !cellId) {
       setShifts([])
       setRoles([])
       setShiftKind('')
@@ -138,7 +153,11 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
       return
     }
     const [shRes, roRes] = await Promise.all([
-      supabase.from('plan24_roster_shifts').select('kind, display_name, sort_order').eq('roster_id', rid).order('sort_order'),
+      supabase
+        .from('plan24_roster_shifts')
+        .select('kind, display_name, sort_order, start_local, end_local')
+        .eq('roster_id', rid)
+        .order('sort_order'),
       supabase.from('plan24_roster_roles').select('id, name, sort_order, is_active').eq('roster_id', rid).order('sort_order').order('name'),
     ])
     if (shRes.error || roRes.error) {
@@ -156,7 +175,7 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
     })
     setRoles(sortGroups((roRes.data ?? []) as DdsP2pSummaryRosterRole[]))
     setShellLoading(false)
-  }, [cellId, routeActive, scopeStatus])
+  }, [cellId, complianceDayOnly, routeActive, scopeStatus])
 
   useEffect(() => {
     void loadRosterShell()
@@ -172,6 +191,7 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Ctx>(
     () => ({
       routeActive,
+      complianceDayOnly,
       planDate,
       setPlanDate,
       shiftKind,
@@ -187,6 +207,7 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
     }),
     [
       routeActive,
+      complianceDayOnly,
       planDate,
       setPlanDate,
       shiftKind,

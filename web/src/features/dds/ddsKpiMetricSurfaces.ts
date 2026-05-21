@@ -19,3 +19,11 @@ export const DDS_KPI_METRIC_SURFACE_KEY_SET = new Set<string>(DDS_KPI_METRIC_SUR
 export function metricSurfacesFromRow(raw: string[] | null | undefined): DdsKpiMetricSurfaceKey[] {
   return (raw ?? []).filter((s): s is DdsKpiMetricSurfaceKey => DDS_KPI_METRIC_SURFACE_KEY_SET.has(s))
 }
+
+/** Admin → KPIs “Show on screens” — compliance pages use these keys only (not DDS set-up overrides). */
+export function kpiShowsOnMetricSurface(
+  kpi: { display_sections?: string[] | null },
+  surface: DdsKpiMetricSurfaceKey,
+): boolean {
+  return (kpi.display_sections ?? []).includes(surface)
+}

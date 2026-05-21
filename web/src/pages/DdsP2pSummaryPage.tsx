@@ -10,6 +10,7 @@ import {
   type DdsP2pSummaryRosterRole,
   type DdsP2pSummaryShiftRow,
 } from '../features/dds/DdsP2pSummaryBody'
+import { DdsTriggerScoreTilesRow } from '../features/dds/DdsTriggerScoreTilesRow'
 import { ddsErr, ddsHint, ddsInput, ddsSection, ddsSelect, ddsStack } from '../features/dds/ddsAdminCompactClasses'
 
 function sortGroups<T extends { sort_order: number; name: string }>(rows: T[]): T[] {
@@ -101,6 +102,13 @@ export function DdsP2pSummaryPage() {
     <div className={`${ddsStack} min-h-0 flex-1`}>
       <section className={`${ddsSection} flex min-h-0 flex-1 flex-col overflow-hidden`}>
         <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-border/60 pb-2">
+          <DdsTriggerScoreTilesRow
+            cellId={cellId}
+            planDate={planDate}
+            shiftKind={shiftKind}
+            shifts={shifts}
+            compact
+          />
           <div>
             <label className="text-[10px] font-medium text-muted">Date</label>
             <input type="date" className={ddsInput} value={planDate} onChange={(e) => setPlanDate(e.target.value)} />
