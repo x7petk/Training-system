@@ -108,6 +108,9 @@ import { MasterDataPeoplePage } from './pages/MasterDataPeoplePage'
 import { AgentsLayout } from './components/AgentsLayout'
 import { AgentsToolPage } from './pages/AgentsToolPage'
 import { UxUiExpertPage } from './pages/UxUiExpertPage'
+const RoadMapBuilderPage = lazy(() =>
+  import('./pages/RoadMapBuilderPage').then((m) => ({ default: m.RoadMapBuilderPage })),
+)
 import { DdsAdminRoute } from './components/DdsAdminRoute'
 import { DdsProcessLayout } from './components/DdsProcessLayout'
 import { DdsPlaceholderPage } from './pages/DdsPlaceholderPage'
@@ -258,6 +261,7 @@ export default function App() {
             <Route index element={<Navigate to="problem-solve-advisor" replace />} />
             <Route path="problem-solve-advisor" element={<AgentsToolPage title="Problem solve advisor" />} />
             <Route path="planner" element={<AgentsToolPage title="Planner" />} />
+            <Route path="road-map-builder" element={<RoadMapBuilderPage />} />
             <Route path="ux-ui-expert" element={<UxUiExpertPage />} />
             <Route path="q-and-a" element={<AgentsToolPage title="Q&A" />} />
             <Route path="reliability-engineer" element={<AgentsToolPage title="Reliability Engineer" />} />

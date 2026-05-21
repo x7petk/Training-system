@@ -52,6 +52,19 @@ export default defineConfig(({ mode }) => {
               })
             },
           },
+          '/api/road-map-builder': {
+            target,
+            changeOrigin: true,
+            secure: true,
+            rewrite: () => '/functions/v1/road-map-builder',
+            // http-proxy; types vary by Vite version
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            configure: (proxy: any) => {
+              proxy.on('proxyReq', (proxyReq: { setHeader: (k: string, v: string) => void }) => {
+                proxyReq.setHeader('apikey', anon)
+              })
+            },
+          },
         }
       : undefined
 
