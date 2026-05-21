@@ -54,11 +54,21 @@ Core principles:
 - Risks must be specific to THIS plan (not generic).
 - Success metrics must be measurable (number + unit + target by when).
 
+Compactness rules (the JSON is large; keep it tight):
+- Item title: <= 50 characters.
+- Item description: <= 140 characters, ONE sentence.
+- Item outcome: <= 80 characters.
+- Item owner: short role or team name, <= 30 characters.
+- Workstream description: <= 80 characters.
+- Milestone description: <= 100 characters.
+- Risk description and mitigation: <= 120 characters each.
+- Quick win: <= 14 words.
+- Executive summary: 40-70 words.
+
 Output validity rules:
 - Every item.workstreamId must match a workstreams[].id.
 - Every item.phaseIds[] entry must match a phases[].id.
 - startMonth/endMonth are 1-indexed months from the start of the plan; endMonth >= startMonth; endMonth <= horizonMonths.
-- Item titles <= 60 chars. Descriptions <= 240 chars.
 - Workstream colors: pick from "amber", "emerald", "sky", "violet", "rose", "indigo", "teal", "fuchsia".`
 
 Deno.serve(async (req) => {
@@ -169,12 +179,12 @@ Deno.serve(async (req) => {
 
 Rules:
 - 3-6 workstreams.
-- 10-22 items total — distributed across workstreams and phases.
-- 3-7 keyMilestones tied to specific months.
-- 4-8 successMetrics, each with a measurable target.
-- 4-8 risks with concrete mitigations.
-- 3-6 quickWins (each <= 14 words).
-- executiveSummary: 50-90 words, sharp, decision-grade.`
+- 8-16 items total — distributed across workstreams and phases.
+- 3-6 keyMilestones tied to specific months.
+- 4-6 successMetrics, each with a measurable target.
+- 3-6 risks with concrete mitigations.
+- 3-5 quickWins.
+- Keep every string within the compactness rules from the system prompt.`
 
     const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -184,8 +194,8 @@ Rules:
       },
       body: JSON.stringify({
         model: MODEL,
-        temperature: 0.4,
-        max_completion_tokens: 4000,
+        temperature: 0.3,
+        max_completion_tokens: 16000,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
@@ -203,9 +213,11 @@ Rules:
     }
 
     const completion = (await upstream.json()) as {
-      choices?: Array<{ message?: { content?: string } }>
+      choices?: Array<{ message?: { content?: string; finish_reason?: string }; finish_reason?: string }>
     }
-    const raw = completion.choices?.[0]?.message?.content ?? ''
+    const choice = completion.choices?.[0]
+    const finishReason = choice?.finish_reason ?? choice?.message?.finish_reason ?? ''
+    const raw = choice?.message?.content ?? ''
     if (!raw.trim()) {
       return new Response(JSON.stringify({ error: 'Model returned empty content.' }), {
         status: 502,
@@ -217,13 +229,17 @@ Rules:
     try {
       parsed = JSON.parse(stripJsonFence(raw))
     } catch {
+      const reason =
+        finishReason === 'length'
+          ? 'Output exceeded the token budget before completing. Try a shorter horizon, fewer workstreams, or simpler context, then regenerate.'
+          : 'Model returned invalid JSON.'
       return new Response(
-        JSON.stringify({ error: 'Model returned invalid JSON.', detail: raw.slice(0, 1200) }),
+        JSON.stringify({ error: reason, finishReason, detail: raw.slice(0, 2000) }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
-    return new Response(JSON.stringify({ model: MODEL, result: parsed }), {
+    return new Response(JSON.stringify({ model: MODEL, finishReason, result: parsed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (e) {
