@@ -40,6 +40,7 @@ export type WdsColumnRow = {
   output_trend_id: string | null
   in_process_a_trend_id: string | null
   in_process_b_trend_id: string | null
+  hc_type_id: string | null
 }
 
 export function parseWdsAggregation(raw: unknown): WdsAggregation {

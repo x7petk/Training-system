@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { useShiftDdsShell } from '../features/dds/ShiftDdsShellContext'
 import { SiteComplianceKpiPanel } from '../features/dds/SiteComplianceKpiPanel'
+import { ComplianceLdrPanel } from '../features/dds/ComplianceLdrPanel'
 import { SiteDdsTriggerGrid } from '../features/dds/SiteDdsTriggerGrid'
 import { ComplianceViewModeToggle } from '../features/dds/ComplianceViewModeToggle'
 import { LineDdsActionsPanel, type LineDdsActionsPanelHandle } from '../features/dds/LineDdsActionsPanel'
@@ -11,7 +12,7 @@ import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClas
 import { useAuth } from '../hooks/useAuth'
 
 export function SiteCompliancePage() {
-  const { status: scopeStatus, error: scopeError, siteId, siteCells, cellId } = usePlan24Workspace()
+  const { status: scopeStatus, error: scopeError, siteId, plantId, siteCells, cellId, sites } = usePlan24Workspace()
   const { planDate, shifts } = useShiftDdsShell()
   const { user } = useAuth()
   const [viewMode, setViewMode] = useState<ComplianceKpiViewMode>('day')
@@ -34,14 +35,14 @@ export function SiteCompliancePage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden">
       <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-b border-border/60 pb-2">
         <h1 className="shrink-0 font-display text-lg font-semibold tracking-tight">Site compliance</h1>
         <ComplianceViewModeToggle value={viewMode} onChange={setViewMode} />
         <div className="min-w-0 flex-1" />
       </div>
 
-      <section className={`${ddsSection} flex min-h-0 flex-1 flex-col overflow-hidden`}>
+      <section className={`${ddsSection} flex max-h-[min(34vh,20rem)] shrink-0 flex-col overflow-hidden`}>
         <h2 className="shrink-0 border-b border-border/60 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
           KPIs
           {viewMode === 'week' || viewMode === 'table' ? (
@@ -59,7 +60,16 @@ export function SiteCompliancePage() {
         </div>
       </section>
 
-      <section className={`${ddsSection} flex max-h-56 shrink-0 flex-col overflow-hidden sm:max-h-64`} aria-label="DDS actions">
+      <ComplianceLdrPanel
+        scopeLevel="site"
+        siteId={siteId}
+        plantId={plantId}
+        cellId={cellId}
+        planDate={planDate}
+        scopeLabel={sites.find((s) => s.id === siteId)?.name ? `Site · ${sites.find((s) => s.id === siteId)?.name}` : 'Site scope'}
+      />
+
+      <section className={`${ddsSection} flex max-h-[min(28vh,14rem)] shrink-0 flex-col overflow-hidden`} aria-label="DDS actions">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 pb-1.5">
           <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
             Planned actions (DDS)

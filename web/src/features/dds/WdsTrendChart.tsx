@@ -58,19 +58,25 @@ export function WdsTrendChart({
   series,
   weeks,
   compact = true,
+  showBarLabels = true,
+  showYAxisLabels = true,
   onChartClick,
   onBarClick,
 }: {
   series: WdsTrendSeries
   weeks: WdsWeekSlot[]
   compact?: boolean
+  showBarLabels?: boolean
+  showYAxisLabels?: boolean
   onChartClick?: () => void
   onBarClick?: (weekIndex: number) => void
 }) {
   const clipId = useId().replace(/:/g, '')
   const width = compact ? 320 : 1080
   const height = compact ? 86 : 560
-  const margin = compact ? { top: 6, right: 6, bottom: 14, left: 26 } : { top: 16, right: 20, bottom: 38, left: 58 }
+  const margin = compact
+    ? { top: 6, right: 6, bottom: 14, left: showYAxisLabels ? 26 : 6 }
+    : { top: 16, right: 20, bottom: 38, left: showYAxisLabels ? 58 : 20 }
   const plotW = width - margin.left - margin.right
   const plotH = height - margin.top - margin.bottom
   const allVals = [...series.valueByWeek, ...series.targetByWeek].filter((v): v is number => v != null && Number.isFinite(v))
@@ -109,9 +115,11 @@ export function WdsTrendChart({
       {yTicks.map((t) => (
         <g key={`y-${t}`}>
           <line x1={margin.left} y1={yAt(t)} x2={margin.left + plotW} y2={yAt(t)} stroke="currentColor" opacity="0.1" />
-          <text x={margin.left - (compact ? 4 : 8)} y={yAt(t) + 3} textAnchor="end" className={`fill-muted ${compact ? 'text-[7px]' : 'text-[11px]'}`}>
-            {tickFmt.format(t)}
-          </text>
+          {showYAxisLabels ? (
+            <text x={margin.left - (compact ? 4 : 8)} y={yAt(t) + 3} textAnchor="end" className={`fill-muted ${compact ? 'text-[7px]' : 'text-[11px]'}`}>
+              {tickFmt.format(t)}
+            </text>
+          ) : null}
         </g>
       ))}
 
@@ -168,14 +176,16 @@ export function WdsTrendChart({
                   }}
                 />
               ) : null}
-              <text
-                x={xCenter}
-                y={Math.max(margin.top + (compact ? 4 : 10), top - (compact ? 1.2 : 4))}
-                textAnchor="middle"
-                className={`fill-fg/80 tabular-nums ${compact ? 'text-[6.5px]' : 'text-[10px]'} pointer-events-none`}
-              >
-                {compact ? tickFmt.format(v) : compactFmt.format(v)}
-              </text>
+              {showBarLabels ? (
+                <text
+                  x={xCenter}
+                  y={Math.max(margin.top + (compact ? 4 : 10), top - (compact ? 1.2 : 4))}
+                  textAnchor="middle"
+                  className={`fill-fg/80 tabular-nums ${compact ? 'text-[6.5px]' : 'text-[10px]'} pointer-events-none`}
+                >
+                  {compact ? tickFmt.format(v) : compactFmt.format(v)}
+                </text>
+              ) : null}
             </g>
           )
         })}

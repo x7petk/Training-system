@@ -75,6 +75,8 @@ type WeekBoardProps = {
   emptyMinH: string
   lanePy: string
   eventTitleClass: string
+  /** Tighter board for compliance embed — fills parent height. */
+  compact?: boolean
 }
 
 function WeekEventBoard(props: WeekBoardProps) {
@@ -91,6 +93,7 @@ function WeekEventBoard(props: WeekBoardProps) {
     emptyMinH,
     lanePy,
     eventTitleClass,
+    compact = false,
   } = props
   const boardRef = useRef<HTMLDivElement>(null)
 
@@ -127,8 +130,10 @@ function WeekEventBoard(props: WeekBoardProps) {
   )
 
   return (
-    <div className="min-w-[720px] space-y-1">
-      <div className="grid grid-cols-7 gap-1">
+    <div
+      className={`${compact ? 'flex h-full min-h-0 min-w-[34rem] flex-col gap-0.5' : 'min-w-[720px] space-y-1'}`}
+    >
+      <div className="grid grid-cols-7 gap-0.5">
         {weekDays.map((d, i) => {
           const ymd = toYMD(d)
           return (
@@ -136,7 +141,9 @@ function WeekEventBoard(props: WeekBoardProps) {
               key={ymd}
               type="button"
               onClick={() => openCreate(ymd)}
-              className="rounded-lg border border-border/60 bg-surface/80 px-1 py-1 text-center text-[11px] font-semibold uppercase tracking-tight text-fg hover:border-accent/40 hover:bg-surface"
+              className={`rounded-lg border border-border/60 bg-surface/80 text-center font-semibold uppercase tracking-tight text-fg hover:border-accent/40 hover:bg-surface ${
+                compact ? 'px-0.5 py-0.5 text-[9px]' : 'px-1 py-1 text-[11px]'
+              }`}
             >
               {compactDayLine(d, i)}
             </button>
@@ -146,8 +153,8 @@ function WeekEventBoard(props: WeekBoardProps) {
 
       <div
         ref={boardRef}
-        className={`relative rounded-2xl border border-border bg-canvas/35 p-1.5 ${
-          segments.length === 0 ? emptyMinH : 'min-h-[8.5rem]'
+        className={`relative rounded-2xl border border-border bg-canvas/35 ${compact ? 'min-h-0 flex-1 p-1' : 'p-1.5'} ${
+          segments.length === 0 ? emptyMinH : compact ? 'min-h-0' : 'min-h-[8.5rem]'
         }`}
         onDragOver={handleDragOverBoard}
         onDrop={handleDropAtPointer}
@@ -240,9 +247,18 @@ function WeekEventBoard(props: WeekBoardProps) {
   )
 }
 
-export function LdrCalendarPage() {
+type LdrCalendarPageProps = {
+  /** Compact embed for compliance screens (same data as LDR tools). */
+  embed?: boolean
+  /** Sync week navigation to this plan date (YYYY-MM-DD). */
+  anchorPlanDate?: string
+}
+
+export function LdrCalendarPage({ embed = false, anchorPlanDate }: LdrCalendarPageProps = {}) {
   const { workspaceId } = useLdrWorkspace()
-  const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()))
+  const [weekStart, setWeekStart] = useState(() =>
+    anchorPlanDate ? startOfWeekMonday(parseYMD(anchorPlanDate)) : startOfWeekMonday(new Date()),
+  )
   const [events, setEvents] = useState<LdrEventRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -279,7 +295,11 @@ export function LdrCalendarPage() {
   }, [workspaceId, loadEnd, weekStartYmd])
 
   useEffect(() => {
-     
+    if (!anchorPlanDate) return
+    setWeekStart(startOfWeekMonday(parseYMD(anchorPlanDate)))
+  }, [anchorPlanDate])
+
+  useEffect(() => {
     void load()
   }, [load])
 
@@ -380,59 +400,76 @@ export function LdrCalendarPage() {
 
   const { segments, laneCount } = useMemo(() => buildWeekSegments(events, weekDays), [events, weekDays])
 
-  const previewWeekStarts = [addDays(weekStart, 7), addDays(weekStart, 14), addDays(weekStart, 21)]
+  const previewWeekStarts = embed ? [] : [addDays(weekStart, 7), addDays(weekStart, 14), addDays(weekStart, 21)]
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-center gap-3">
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-700 dark:text-violet-300">
-            <CalendarDays className="size-6" aria-hidden />
-          </span>
-          <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Calendar</h1>
-        </div>
-        <button
-          type="button"
-          onClick={() => openCreate(toYMD(weekStart))}
-          className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-fg hover:border-accent/40"
-        >
-          <Plus className="size-4" aria-hidden />
-          Add event
-        </button>
-      </header>
+    <div className={embed ? 'flex h-full min-h-0 flex-col gap-1' : 'space-y-6'}>
+      {!embed ? (
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-700 dark:text-violet-300">
+              <CalendarDays className="size-6" aria-hidden />
+            </span>
+            <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Calendar</h1>
+          </div>
+          <button
+            type="button"
+            onClick={() => openCreate(toYMD(weekStart))}
+            className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-fg hover:border-accent/40"
+          >
+            <Plus className="size-4" aria-hidden />
+            Add event
+          </button>
+        </header>
+      ) : null}
 
       {error ? (
-        <p className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
+        <p
+          className={`rounded-lg border border-danger/30 bg-danger/10 text-danger ${embed ? 'px-2 py-1.5 text-[10px]' : 'rounded-xl px-4 py-3 text-sm'}`}
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <section className="overflow-hidden rounded-3xl border border-border bg-surface-raised/60 shadow-sm backdrop-blur-sm">
-        <div className="border-b border-border bg-[radial-gradient(ellipse_at_top,_rgba(139,92,246,0.12),_transparent_60%)] p-4 md:p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <section
+        className={
+          embed
+            ? 'flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 bg-surface-raised/40'
+            : 'overflow-hidden rounded-3xl border border-border bg-surface-raised/60 shadow-sm backdrop-blur-sm'
+        }
+      >
+        <div
+          className={
+            embed
+              ? 'shrink-0 border-b border-border/70 px-1.5 py-1'
+              : 'border-b border-border bg-[radial-gradient(ellipse_at_top,_rgba(139,92,246,0.12),_transparent_60%)] p-4 md:p-6'
+          }
+        >
+          <div className={`flex flex-wrap items-center gap-2 ${embed ? '' : 'flex-col gap-4 lg:flex-row lg:items-center lg:justify-between'}`}>
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => shiftWeek(-1)}
-                className="rounded-lg border border-border p-2 text-muted hover:bg-black/[0.04] hover:text-fg"
+                className={`rounded-lg border border-border text-muted hover:bg-black/[0.04] hover:text-fg ${embed ? 'p-1' : 'p-2'}`}
                 aria-label="Previous week"
               >
-                <ChevronLeft className="size-5" />
+                <ChevronLeft className={embed ? 'size-4' : 'size-5'} />
               </button>
               <button
                 type="button"
                 onClick={() => shiftWeek(1)}
-                className="rounded-lg border border-border p-2 text-muted hover:bg-black/[0.04] hover:text-fg"
+                className={`rounded-lg border border-border text-muted hover:bg-black/[0.04] hover:text-fg ${embed ? 'p-1' : 'p-2'}`}
                 aria-label="Next week"
               >
-                <ChevronRight className="size-5" />
+                <ChevronRight className={embed ? 'size-4' : 'size-5'} />
               </button>
-              <h2 className="min-w-0 px-2 font-display text-lg font-semibold tracking-tight">
+              <h2 className={`min-w-0 px-1 font-semibold tracking-tight ${embed ? 'text-xs' : 'font-display px-2 text-lg'}`}>
                 {formatWeekTitle(weekStart)}
               </h2>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className={`flex items-center gap-1.5 font-medium uppercase tracking-wider text-muted ${embed ? 'text-[9px]' : 'gap-2 text-xs'}`}>
                 Jump
                 <input
                   type="date"
@@ -441,18 +478,34 @@ export function LdrCalendarPage() {
                     if (!e.target.value) return
                     setWeekStart(startOfWeekMonday(parseYMD(e.target.value)))
                   }}
-                  className="rounded-lg border border-border bg-canvas px-2 py-1.5 text-sm text-fg"
+                  className={`rounded-lg border border-border bg-canvas text-fg ${embed ? 'px-1.5 py-1 text-[10px]' : 'px-2 py-1.5 text-sm'}`}
                 />
               </label>
+              {embed ? (
+                <button
+                  type="button"
+                  onClick={() => openCreate(toYMD(weekStart))}
+                  className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2 py-1 text-[10px] font-semibold hover:border-accent/40"
+                >
+                  <Plus className="size-3" aria-hidden />
+                  Add
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
 
         {loading ? (
-          <p className="p-6 text-sm text-muted">Loading…</p>
+          <p className={`text-muted ${embed ? 'px-2 py-1.5 text-[10px]' : 'p-6 text-sm'}`}>Loading…</p>
         ) : (
           <>
-            <div className="overflow-x-auto p-4 md:p-6">
+            <div
+              className={
+                embed
+                  ? 'flex min-h-0 flex-1 flex-col overflow-auto px-1.5 py-1'
+                  : 'overflow-x-auto p-4 md:p-6'
+              }
+            >
               <WeekEventBoard
                 weekDays={weekDays}
                 segments={segments}
@@ -463,12 +516,14 @@ export function LdrCalendarPage() {
                 onDropOnDay={onDropOnDay}
                 openCreate={openCreate}
                 openEdit={openEdit}
-                emptyMinH="min-h-[7rem]"
-                lanePy="py-1"
-                eventTitleClass="text-xs"
+                emptyMinH={embed ? 'min-h-[2.5rem]' : 'min-h-[7rem]'}
+                lanePy={embed ? 'py-px' : 'py-1'}
+                eventTitleClass={embed ? 'text-[9px] leading-tight' : 'text-xs'}
+                compact={embed}
               />
             </div>
 
+            {!embed && previewWeekStarts.length > 0 ? (
             <div className="border-t border-border p-4 md:p-6">
               <h3 className="font-display text-sm font-semibold tracking-tight text-muted">Next 3 weeks</h3>
               <div className="mt-3 space-y-3">
@@ -497,6 +552,7 @@ export function LdrCalendarPage() {
                 })}
               </div>
             </div>
+            ) : null}
           </>
         )}
       </section>

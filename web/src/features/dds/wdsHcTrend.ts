@@ -22,12 +22,19 @@ export function hcRagToWdsTone(rag: HcRag | null | undefined): WdsChartTone {
   return 'neutral'
 }
 
-export function buildWdsHcTrendSeries(records: WdsHcRecordLite[], weeks: WdsWeekSlot[]): WdsTrendSeries {
+export function buildWdsHcTrendSeries(
+  records: WdsHcRecordLite[],
+  weeks: WdsWeekSlot[],
+  hcTypeId: string | null,
+): WdsTrendSeries | null {
+  if (!hcTypeId) return null
+  const scoped = records.filter((r) => r.hc_type_id === hcTypeId)
+
   const valueByWeek: (number | null)[] = Array.from({ length: weeks.length }, () => null)
   const grouped: number[][] = Array.from({ length: weeks.length }, () => [])
   const recordCountByWeek: number[] = Array.from({ length: weeks.length }, () => 0)
 
-  for (const r of records) {
+  for (const r of scoped) {
     const ymd = eventLocalDate(r.completed_at)
     const ix = weeks.findIndex((w) => ymd >= w.startYmd && ymd <= w.endYmd)
     if (ix < 0) continue

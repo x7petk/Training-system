@@ -13,19 +13,23 @@ import {
   type WdsWeekSlot,
 } from '../features/dds/ddsWds'
 import { WdsTrendChart, wdsToneTextClass, type WdsTrendSeries } from '../features/dds/WdsTrendChart'
+import { type WdsHcFailAnswerLite } from '../features/dds/wdsHcFails'
 import { buildWdsHcTrendSeries, type WdsHcRecordLite } from '../features/dds/wdsHcTrend'
+import { WdsActionsCell } from '../features/dds/WdsActionsCell'
 import { WdsHcTrendCell } from '../features/dds/WdsHcTrendCell'
+import { parseWdsActionKind, parseWdsActionStatus, type WdsActionRow } from '../features/dds/wdsActions'
 import { hcRagFromPercent, type HcRag } from '../features/health-checks/hcScore'
 import { ddsBtnDanger, ddsErr, ddsHint, ddsInput, ddsSelect, ddsStack } from '../features/dds/ddsAdminCompactClasses'
 
 type KpiDef = { id: string; scoring: unknown }
+type HcTypeOption = { id: string; name: string }
 
 const ROWS = [
   { key: 'output', label: 'Output measure' },
   { key: 'in_a', label: 'In-process measure' },
   { key: 'in_b', label: 'In-process measure' },
   { key: 'hc', label: 'Health check' },
-  { key: 'actions', label: 'Actions (placeholder)' },
+  { key: 'actions', label: 'Actions' },
 ] as const
 
 const compactFmt = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
@@ -48,11 +52,14 @@ export function WdsPage() {
   const [kpis, setKpis] = useState<KpiDef[]>([])
   const [entries, setEntries] = useState<KpiEntry[]>([])
   const [hcRecords, setHcRecords] = useState<WdsHcRecordLite[]>([])
+  const [hcFailAnswers, setHcFailAnswers] = useState<WdsHcFailAnswerLite[]>([])
+  const [wdsActions, setWdsActions] = useState<WdsActionRow[]>([])
+  const [hcTypes, setHcTypes] = useState<HcTypeOption[]>([])
   const [weeks, setWeeks] = useState<WdsWeekSlot[]>(() => defaultWdsWeeks())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [pickerFor, setPickerFor] = useState<{ columnId: string; rowKey: 'output' | 'in_a' | 'in_b' } | null>(null)
+  const [pickerFor, setPickerFor] = useState<{ columnId: string; rowKey: 'output' | 'in_a' | 'in_b' | 'hc' } | null>(null)
   const [zoomFor, setZoomFor] = useState<{ trendId: string; rowLabel: string; columnHeader: string } | null>(null)
   const [commentFor, setCommentFor] = useState<{ trendId: string; weekIndex: number; rowLabel: string; columnHeader: string } | null>(null)
 
@@ -68,13 +75,17 @@ export function WdsPage() {
     return m
   }, [trends])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    const quiet = opts?.quiet === true
     if (!cellId) {
       setColumns([])
       setTrends([])
       setKpis([])
       setEntries([])
       setHcRecords([])
+      setHcFailAnswers([])
+      setWdsActions([])
+      setHcTypes([])
       setLoading(false)
       return
     }
@@ -84,12 +95,14 @@ export function WdsPage() {
     const toDate = windowWeeks[windowWeeks.length - 1]?.endYmd ?? '2100-01-01'
     const fromIso = `${fromDate}T00:00:00.000Z`
     const toIso = `${toDate}T23:59:59.999Z`
-    setLoading(true)
-    setError(null)
-    const [cRes, tRes, kRes, eRes, hcRes] = await Promise.all([
+    if (!quiet) setLoading(true)
+    if (!quiet) setError(null)
+    const [cRes, tRes, kRes, eRes, hcRes, hcFailsRes, hcTypesRes, wdsActRes] = await Promise.all([
       supabase
         .from('dds_wds_columns')
-        .select('id, master_cell_id, header, sort_order, output_trend_id, in_process_a_trend_id, in_process_b_trend_id')
+        .select(
+          'id, master_cell_id, header, sort_order, output_trend_id, in_process_a_trend_id, in_process_b_trend_id, hc_type_id',
+        )
         .eq('master_cell_id', cellId)
         .order('sort_order')
         .order('created_at'),
@@ -117,15 +130,35 @@ export function WdsPage() {
         .gte('completed_at', fromIso)
         .lte('completed_at', toIso)
         .order('completed_at'),
+      supabase
+        .from('hc_answers')
+        .select(
+          'comment, question_text_snapshot, hc_record_id, hc_records!inner(completed_at, hc_type_id, master_cell_id)',
+        )
+        .eq('answer', 'fail')
+        .eq('hc_records.master_cell_id', cellId)
+        .not('hc_records.completed_at', 'is', null)
+        .gte('hc_records.completed_at', fromIso)
+        .lte('hc_records.completed_at', toIso),
+      supabase.from('hc_types').select('id, name').eq('active', true).order('sort_order').order('name'),
+      supabase
+        .from('dds_wds_actions')
+        .select('id, dds_wds_column_id, master_cell_id, kind, title, owner_name, target_date, status, hc_type_id, sort_order')
+        .eq('master_cell_id', cellId)
+        .order('sort_order')
+        .order('created_at'),
     ])
-    setLoading(false)
-    if (cRes.error || tRes.error || kRes.error || eRes.error || hcRes.error) {
+    if (!quiet) setLoading(false)
+    if (cRes.error || tRes.error || kRes.error || eRes.error || hcRes.error || hcFailsRes.error || hcTypesRes.error || wdsActRes.error) {
       setError(
         cRes.error?.message ??
           tRes.error?.message ??
           kRes.error?.message ??
           eRes.error?.message ??
           hcRes.error?.message ??
+          hcFailsRes.error?.message ??
+          hcTypesRes.error?.message ??
+          wdsActRes.error?.message ??
           'Load failed',
       )
       return
@@ -157,6 +190,44 @@ export function WdsPage() {
         }
       }),
     )
+    const failRows = (hcFailsRes.data ?? []) as {
+      comment: string | null
+      question_text_snapshot: string | null
+      hc_record_id: string
+      hc_records:
+        | { completed_at: string; hc_type_id: string; master_cell_id: string }
+        | { completed_at: string; hc_type_id: string; master_cell_id: string }[]
+    }[]
+    setHcFailAnswers(
+      failRows.flatMap((row) => {
+        const rec = Array.isArray(row.hc_records) ? row.hc_records[0] : row.hc_records
+        if (!rec?.completed_at) return []
+        return [
+          {
+            record_id: row.hc_record_id,
+            completed_at: rec.completed_at,
+            hc_type_id: rec.hc_type_id,
+            question_text: row.question_text_snapshot?.trim() || '—',
+            comment: row.comment?.trim() ?? '',
+          },
+        ]
+      }),
+    )
+    setHcTypes((hcTypesRes.data ?? []) as HcTypeOption[])
+    setWdsActions(
+      ((wdsActRes.data ?? []) as Record<string, unknown>[]).map((row) => ({
+        id: String(row.id),
+        dds_wds_column_id: String(row.dds_wds_column_id),
+        master_cell_id: String(row.master_cell_id),
+        kind: parseWdsActionKind(row.kind),
+        title: String(row.title ?? ''),
+        owner_name: String(row.owner_name ?? ''),
+        target_date: String(row.target_date ?? '').slice(0, 10),
+        status: parseWdsActionStatus(row.status),
+        hc_type_id: row.hc_type_id ? String(row.hc_type_id) : null,
+        sort_order: Number(row.sort_order) || 0,
+      })),
+    )
   }, [cellId])
 
   useEffect(() => {
@@ -173,7 +244,11 @@ export function WdsPage() {
     }
   }, [columns.length, cellId])
 
-  const hcTrendSeries = useMemo(() => buildWdsHcTrendSeries(hcRecords, weeks), [hcRecords, weeks])
+  const hcTypeNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const t of hcTypes) m.set(t.id, t.name)
+    return m
+  }, [hcTypes])
 
   const seriesByTrendId = useMemo(() => {
     const map = new Map<string, WdsTrendSeries>()
@@ -209,6 +284,7 @@ export function WdsPage() {
       output_trend_id: null,
       in_process_a_trend_id: null,
       in_process_b_trend_id: null,
+      hc_type_id: null,
     })
     if (insErr) {
       setError(insErr.message)
@@ -228,6 +304,7 @@ export function WdsPage() {
         output_trend_id: row.output_trend_id,
         in_process_a_trend_id: row.in_process_a_trend_id,
         in_process_b_trend_id: row.in_process_b_trend_id,
+        hc_type_id: row.hc_type_id,
       })
       .eq('id', row.id)
       .eq('master_cell_id', cellId)
@@ -293,21 +370,37 @@ export function WdsPage() {
                 </td>
                 {columns.map((c) => {
                   if (row.key === 'hc') {
+                    const hcTypeId = c.hc_type_id
+                    const hcSeries = buildWdsHcTrendSeries(hcRecords, weeks, hcTypeId)
+                    const hcTypeName = hcTypeId ? (hcTypeNameById.get(hcTypeId) ?? 'Health check') : null
+                    const hcRecordsForCell = hcTypeId ? hcRecords.filter((r) => r.hc_type_id === hcTypeId) : []
+                    const hcFailsForCell = hcTypeId ? hcFailAnswers.filter((f) => f.hc_type_id === hcTypeId) : []
                     return (
                       <td key={`${row.key}-${c.id}`} className="relative border-r border-b border-border px-1.5 py-1 align-top">
                         <WdsHcTrendCell
-                          series={hcTrendSeries}
+                          series={hcSeries}
+                          typeName={hcTypeName}
                           weeks={weeks}
-                          records={hcRecords}
+                          records={hcRecordsForCell}
+                          failAnswers={hcFailsForCell}
                           columnHeader={c.header.trim() || 'Untitled'}
+                          onOpenPicker={() => setPickerFor({ columnId: c.id, rowKey: 'hc' })}
                         />
                       </td>
                     )
                   }
                   if (row.key === 'actions') {
+                    const columnActions = wdsActions.filter((a) => a.dds_wds_column_id === c.id)
                     return (
-                      <td key={`${row.key}-${c.id}`} className="border-r border-b border-border px-1.5 py-1 text-muted">
-                        Coming later
+                      <td key={`${row.key}-${c.id}`} className="relative border-r border-b border-border px-1.5 py-1 align-top">
+                        <WdsActionsCell
+                          columnId={c.id}
+                          columnHeader={c.header.trim() || 'Untitled'}
+                          cellId={cellId}
+                          actions={columnActions}
+                          hcTypes={hcTypes}
+                          onReload={() => void load({ quiet: true })}
+                        />
                       </td>
                     )
                   }
@@ -414,42 +507,66 @@ export function WdsPage() {
           onClick={() => setPickerFor(null)}
         >
           <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-2" onClick={(e) => e.stopPropagation()}>
-            <p className="mb-1 text-[10px] font-semibold text-muted">Select trend</p>
-            <select
-              className={`${ddsSelect} mt-0 h-8`}
-              value={
-                columns.find((c) => c.id === pickerFor.columnId)?.[
-                  pickerFor.rowKey === 'output'
-                    ? 'output_trend_id'
-                    : pickerFor.rowKey === 'in_a'
-                      ? 'in_process_a_trend_id'
-                      : 'in_process_b_trend_id'
-                ] ?? ''
-              }
-              onChange={(e) => {
-                const v = e.target.value || null
-                const next = columns.map((p) =>
-                  p.id === pickerFor.columnId
-                    ? pickerFor.rowKey === 'output'
-                      ? { ...p, output_trend_id: v }
+            <p className="mb-1 text-[10px] font-semibold text-muted">
+              {pickerFor.rowKey === 'hc' ? 'Select health check type' : 'Select trend'}
+            </p>
+            {pickerFor.rowKey === 'hc' ? (
+              <select
+                className={`${ddsSelect} mt-0 h-8`}
+                value={columns.find((c) => c.id === pickerFor.columnId)?.hc_type_id ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value || null
+                  const next = columns.map((p) => (p.id === pickerFor.columnId ? { ...p, hc_type_id: v } : p))
+                  setColumns(next)
+                  const rowNext = next.find((x) => x.id === pickerFor.columnId)
+                  if (rowNext) void saveColumn(rowNext)
+                  setPickerFor(null)
+                }}
+              >
+                <option value="">Select type…</option>
+                {hcTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select
+                className={`${ddsSelect} mt-0 h-8`}
+                value={
+                  columns.find((c) => c.id === pickerFor.columnId)?.[
+                    pickerFor.rowKey === 'output'
+                      ? 'output_trend_id'
                       : pickerFor.rowKey === 'in_a'
-                        ? { ...p, in_process_a_trend_id: v }
-                        : { ...p, in_process_b_trend_id: v }
-                    : p,
-                )
-                setColumns(next)
-                const rowNext = next.find((x) => x.id === pickerFor.columnId)
-                if (rowNext) void saveColumn(rowNext)
-                setPickerFor(null)
-              }}
-            >
-              <option value="">Select trend…</option>
-              {trends.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+                        ? 'in_process_a_trend_id'
+                        : 'in_process_b_trend_id'
+                  ] ?? ''
+                }
+                onChange={(e) => {
+                  const v = e.target.value || null
+                  const next = columns.map((p) =>
+                    p.id === pickerFor.columnId
+                      ? pickerFor.rowKey === 'output'
+                        ? { ...p, output_trend_id: v }
+                        : pickerFor.rowKey === 'in_a'
+                          ? { ...p, in_process_a_trend_id: v }
+                          : { ...p, in_process_b_trend_id: v }
+                      : p,
+                  )
+                  setColumns(next)
+                  const rowNext = next.find((x) => x.id === pickerFor.columnId)
+                  if (rowNext) void saveColumn(rowNext)
+                  setPickerFor(null)
+                }}
+              >
+                <option value="">Select trend…</option>
+                {trends.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
       ) : null}

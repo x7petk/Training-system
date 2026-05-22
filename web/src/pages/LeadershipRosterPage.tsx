@@ -145,7 +145,12 @@ function ragDotClass(r: LdrRag): string {
   return 'bg-rose-500'
 }
 
-export function LeadershipRosterPage() {
+type LeadershipRosterPageProps = {
+  /** Compact embed for compliance screens (same data as LDR tools). */
+  embed?: boolean
+}
+
+export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProps = {}) {
   const navigate = useNavigate()
   const {
     status: ldrStatus,
@@ -823,42 +828,57 @@ export function LeadershipRosterPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-center gap-3">
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-700 dark:text-violet-300">
-            <Users className="size-6" aria-hidden />
-          </span>
-          <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Roster</h1>
-        </div>
-      </header>
+    <div className={embed ? 'flex h-full min-h-0 flex-col' : 'space-y-6'}>
+      {!embed ? (
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-700 dark:text-violet-300">
+              <Users className="size-6" aria-hidden />
+            </span>
+            <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">Roster</h1>
+          </div>
+        </header>
+      ) : null}
 
       {error ? (
-        <p className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
+        <p
+          className={`rounded-lg border border-danger/30 bg-danger/10 text-danger ${embed ? 'px-2 py-1.5 text-[10px]' : 'rounded-xl px-4 py-3 text-sm'}`}
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
-      <section className="rounded-2xl border border-border bg-surface-raised/50 p-4 backdrop-blur-sm md:p-6">
-        <div className="flex flex-wrap items-center gap-2">
+      <section
+        className={
+          embed
+            ? 'flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/80 bg-surface-raised/40 p-1.5'
+            : 'rounded-2xl border border-border bg-surface-raised/50 p-4 backdrop-blur-sm md:p-6'
+        }
+      >
+        <div className={`flex flex-wrap items-center gap-1.5 ${embed ? 'shrink-0' : 'gap-2'}`}>
           <button
             type="button"
             onClick={() => shiftWeek(-1)}
-            className="rounded-lg border border-border p-2 text-muted hover:bg-black/[0.04] hover:text-fg"
+            className={`rounded-lg border border-border text-muted hover:bg-black/[0.04] hover:text-fg ${embed ? 'p-1' : 'p-2'}`}
             aria-label="Previous week"
           >
-            <ChevronLeft className="size-5" />
+            <ChevronLeft className={embed ? 'size-4' : 'size-5'} />
           </button>
           <button
             type="button"
             onClick={() => shiftWeek(1)}
-            className="rounded-lg border border-border p-2 text-muted hover:bg-black/[0.04] hover:text-fg"
+            className={`rounded-lg border border-border text-muted hover:bg-black/[0.04] hover:text-fg ${embed ? 'p-1' : 'p-2'}`}
             aria-label="Next week"
           >
-            <ChevronRight className="size-5" />
+            <ChevronRight className={embed ? 'size-4' : 'size-5'} />
           </button>
-          <h2 className="px-2 font-display text-lg font-semibold tracking-tight">{formatWeekTitle(weekStart)}</h2>
-          <label className="ml-auto flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted">
+          <h2 className={`px-1 font-semibold tracking-tight ${embed ? 'text-xs' : 'px-2 font-display text-lg'}`}>
+            {formatWeekTitle(weekStart)}
+          </h2>
+          <label
+            className={`ml-auto flex items-center font-medium uppercase tracking-wider text-muted ${embed ? 'gap-1 text-[9px]' : 'gap-2 text-xs'}`}
+          >
             Jump
             <input
               type="date"
@@ -867,29 +887,38 @@ export function LeadershipRosterPage() {
                 if (!e.target.value) return
                 setWeekStart(startOfWeekMonday(parseYMD(e.target.value)))
               }}
-              className="rounded-lg border border-border bg-canvas px-2 py-1.5 text-sm text-fg"
+              className={`rounded-lg border border-border bg-canvas text-fg ${embed ? 'px-1.5 py-1 text-[10px]' : 'px-2 py-1.5 text-sm'}`}
             />
           </label>
         </div>
 
         {loading ? (
-          <p className="mt-6 text-sm text-muted">Loading…</p>
+          <p className={`text-muted ${embed ? 'mt-1 text-[10px]' : 'mt-6 text-sm'}`}>Loading…</p>
         ) : activities.length === 0 ? (
-          <p className="mt-6 text-sm text-muted">
+          <p className={`text-muted ${embed ? 'mt-1 text-[10px]' : 'mt-6 text-sm'}`}>
             No activities yet. Add them under <strong className="text-fg/90">LDR tools → Admin</strong>.
           </p>
         ) : ldrPeople.length === 0 ? (
-          <p className="mt-6 text-sm text-muted">
+          <p className={`text-muted ${embed ? 'mt-1 text-[10px]' : 'mt-6 text-sm'}`}>
             No LDR people yet. Add people under <strong className="text-fg/90">LDR tools → Admin</strong>.
           </p>
         ) : (
-          <div className="mt-6 overflow-x-auto">
-            <table className="w-full min-w-[780px] border-collapse text-left text-sm">
+          <div className={`min-h-0 overflow-auto ${embed ? 'mt-1 flex-1' : 'mt-6 overflow-x-auto'}`}>
+            <table
+              className={`w-full border-collapse text-left ${embed ? 'min-w-[32rem] text-[9px]' : 'min-w-[780px] text-sm'}`}
+            >
               <thead>
-                <tr className="border-b border-border text-xs font-medium uppercase tracking-wider text-muted">
-                  <th className="sticky left-0 z-10 min-w-[7.5rem] bg-surface py-2 pl-2 pr-2">Activity</th>
+                <tr className="border-b border-border font-medium uppercase tracking-wider text-muted">
+                  <th
+                    className={`sticky left-0 z-10 bg-surface ${embed ? 'min-w-[4.5rem] py-0.5 pl-1 pr-1 text-[8px]' : 'min-w-[7.5rem] py-2 pl-2 pr-2 text-xs'}`}
+                  >
+                    Activity
+                  </th>
                   {weekDays.map((d, i) => (
-                    <th key={toYMD(d)} className="min-w-[5.8rem] px-1 py-2 text-center">
+                    <th
+                      key={toYMD(d)}
+                      className={`px-0.5 text-center ${embed ? 'min-w-[3.25rem] py-0.5 text-[8px]' : 'min-w-[5.8rem] px-1 py-2 text-xs'}`}
+                    >
                       <span className="block">{dayLabels[i]}</span>
                       <span className="text-fg">{d.getDate()}</span>
                     </th>
@@ -899,10 +928,10 @@ export function LeadershipRosterPage() {
               <tbody className="divide-y divide-border">
                 {activities.map((act) => (
                   <tr key={act.id}>
-                    <td className="sticky left-0 z-10 bg-surface py-1.5 pl-2 pr-2 font-medium text-fg">
-                      <span className="inline-flex items-center gap-1.5">
+                    <td className={`sticky left-0 z-10 bg-surface font-medium text-fg ${embed ? 'py-0.5 pl-1 pr-1' : 'py-1.5 pl-2 pr-2'}`}>
+                      <span className="inline-flex items-center gap-0.5">
                         <span className="truncate">{act.name}</span>
-                        {scopeLevel === 'cell' ? (
+                        {scopeLevel === 'cell' && !embed ? (
                           <span
                             className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                               activityScopeTagById.get(act.id) === 'site'
@@ -930,14 +959,19 @@ export function LeadershipRosterPage() {
                               const id = e.dataTransfer.getData('text/ldr-assignment') || dragAssignmentId
                               if (id) void moveAssignment(id, act.id, ymd)
                             }}
-                            className="min-h-[4.25rem] w-full rounded-lg border border-border bg-canvas/40 p-1.5 text-left transition hover:border-accent/40 hover:bg-black/[0.02]"
+                            className={`w-full rounded-lg border border-border bg-canvas/40 text-left transition hover:border-accent/40 hover:bg-black/[0.02] ${
+                              embed ? 'min-h-[1.75rem] p-0.5' : 'min-h-[4.25rem] p-1.5'
+                            }`}
                           >
-                            <div className="mb-1 flex min-h-[1rem] items-center justify-end">
+                            <div className={`flex items-center justify-end ${embed ? 'min-h-0' : 'mb-1 min-h-[1rem]'}`}>
                               {warn ? (
-                                <AlertTriangle className="size-4 text-amber-600" aria-label="Assignment conflict" />
+                                <AlertTriangle
+                                  className={embed ? 'size-3 text-amber-600' : 'size-4 text-amber-600'}
+                                  aria-label="Assignment conflict"
+                                />
                               ) : null}
                             </div>
-                            <div className="flex flex-wrap gap-1">
+                            <div className={`flex flex-wrap ${embed ? 'gap-px' : 'gap-1'}`}>
                               {list.map((a) => {
                                 const lp = peopleById.get(a.ldr_person_id)
                                 const nm = lp ? personName(lp) : '?'
@@ -963,7 +997,9 @@ export function LeadershipRosterPage() {
                                       setCellModal({ activityId: act.id, date: ymd })
                                     }}
                                     title={a.comment?.trim() ? `${nm}\n${a.comment.trim()}` : nm}
-                                    className={`inline-flex max-w-full items-center gap-1 rounded-md border px-1 py-0.5 text-[10px] font-semibold shadow-sm ${
+                                    className={`inline-flex max-w-full items-center gap-0.5 rounded-md border font-semibold shadow-sm ${
+                                      embed ? 'px-0.5 py-px text-[8px]' : 'gap-1 px-1 py-0.5 text-[10px]'
+                                    } ${
                                       c
                                         ? 'border-amber-400/60 bg-amber-50 text-amber-950'
                                         : 'border-border bg-surface text-fg'
