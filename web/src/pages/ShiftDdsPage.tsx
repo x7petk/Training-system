@@ -8,7 +8,6 @@ import {
   DdsRewardRecognitionPanel,
   type DdsRewardRecognitionPanelHandle,
 } from '../features/dds/DdsRewardRecognitionPanel'
-import { ShiftDdsKpiSummary } from '../features/dds/ShiftDdsKpiSummary'
 import { useShiftDdsShell } from '../features/dds/ShiftDdsShellContext'
 import { DdsTriggerScoreTilesRow } from '../features/dds/DdsTriggerScoreTilesRow'
 import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClasses'
@@ -97,56 +96,7 @@ export function ShiftDdsPage() {
 
       {error ? <p className={`${ddsErr} shrink-0`}>{error}</p> : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] gap-3 lg:grid-cols-[minmax(0,38%)_minmax(0,1fr)] lg:grid-rows-1 lg:items-stretch lg:gap-4">
-        <div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto lg:min-h-0">
-          <section className={`${ddsSection} flex min-h-0 flex-1 flex-col overflow-hidden`}>
-            <h2 className="shrink-0 border-b border-border/60 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-              KPI summary
-            </h2>
-            {shellLoading ? (
-              <p className="mt-2 flex shrink-0 items-center gap-1 text-[11px] text-muted" role="status">
-                <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading…
-              </p>
-            ) : !shiftKind ? (
-              <p className="mt-2 shrink-0 text-[11px] text-muted">Select a shift to load KPIs.</p>
-            ) : (
-              <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
-                <ShiftDdsKpiSummary cellId={cellId} planDate={planDate} shiftKind={shiftKind} />
-              </div>
-            )}
-          </section>
-
-          <section className={`${ddsSection} flex max-h-56 shrink-0 flex-col overflow-hidden sm:max-h-64`}>
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 pb-1.5">
-              <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Reward and recognition
-              </h2>
-              {!shellLoading && shiftKind ? (
-                <button
-                  type="button"
-                  disabled={!user}
-                  title={user ? 'Add reward & recognition entry' : 'Sign in to add entries'}
-                  onClick={() => rewardRecognitionPanelRef.current?.openCreate()}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/80 bg-surface px-2 py-0.5 text-[10px] font-semibold text-fg shadow-sm hover:bg-surface-raised/80 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <Plus className="size-3" aria-hidden />
-                  Add
-                </button>
-              ) : null}
-            </div>
-            <div className="min-h-0 flex-1">
-              <DdsRewardRecognitionPanel
-                ref={rewardRecognitionPanelRef}
-                cellId={cellId}
-                planDate={planDate}
-                shiftKind={shiftKind ?? ''}
-                surface="shift-dds"
-                shellLoading={shellLoading}
-              />
-            </div>
-          </section>
-        </div>
-
+      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_auto] gap-3 lg:grid-cols-1 lg:grid-rows-[minmax(0,1fr)_auto] lg:gap-4">
         <section
           className={`${ddsSection} flex h-full min-h-0 min-w-0 flex-col overflow-hidden`}
           aria-label={rightMode === 'p2p' ? 'P2P summary' : 'Plan 24'}
@@ -178,6 +128,36 @@ export function ShiftDdsPage() {
             </div>
           )}
         </section>
+
+        <section className={`${ddsSection} flex max-h-56 shrink-0 flex-col overflow-hidden sm:max-h-64`}>
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 pb-1.5">
+              <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Reward and recognition
+              </h2>
+              {!shellLoading && shiftKind ? (
+                <button
+                  type="button"
+                  disabled={!user}
+                  title={user ? 'Add reward & recognition entry' : 'Sign in to add entries'}
+                  onClick={() => rewardRecognitionPanelRef.current?.openCreate()}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/80 bg-surface px-2 py-0.5 text-[10px] font-semibold text-fg shadow-sm hover:bg-surface-raised/80 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <Plus className="size-3" aria-hidden />
+                  Add
+                </button>
+              ) : null}
+            </div>
+            <div className="min-h-0 flex-1">
+              <DdsRewardRecognitionPanel
+                ref={rewardRecognitionPanelRef}
+                cellId={cellId}
+                planDate={planDate}
+                shiftKind={shiftKind ?? ''}
+                surface="shift-dds"
+                shellLoading={shellLoading}
+              />
+            </div>
+          </section>
       </div>
     </div>
   )

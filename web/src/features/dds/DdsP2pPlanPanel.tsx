@@ -8,6 +8,7 @@ import { Plan24EventDetailModal } from '../plan24/Plan24EventDetailModal'
 import { plan24PersistCheckMove } from '../plan24/plan24PersistCheckMove'
 import {
   addMinutes,
+  formatPlan24Clock,
   minutesBetween,
   patternDayIndex,
   resolveNextShift,
@@ -62,6 +63,8 @@ type Props = {
   shifts: PlanPanelShift[]
   onError: (msg: string) => void
   onSuccessMsg?: (msg: string | null) => void
+  /** Fired when plan events change (complete, save, move, ad-hoc) so P2P stats can refresh. */
+  onPlanDataChanged?: () => void
 }
 
 export function DdsP2pPlanPanel({
@@ -74,6 +77,7 @@ export function DdsP2pPlanPanel({
   shifts,
   onError,
   onSuccessMsg,
+  onPlanDataChanged,
 }: Props) {
   const navigate = useNavigate()
   const { isAdmin } = useAuth()
@@ -84,6 +88,12 @@ export function DdsP2pPlanPanel({
   const [detailEv, setDetailEv] = useState<Plan24EventRow | null>(null)
   const [rolePersonSubtitle, setRolePersonSubtitle] = useState<string | undefined>(undefined)
   const [shiftPlanView, setShiftPlanView] = useState<'my' | 'next'>('my')
+  const [adhocOpen, setAdhocOpen] = useState(false)
+  const [adhocRole, setAdhocRole] = useState<string>('')
+  const [adhocStart, setAdhocStart] = useState<Date | null>(null)
+  const [adhocTitle, setAdhocTitle] = useState('Check')
+  const [adhocEndMin, setAdhocEndMin] = useState('30')
+  const [adhocSaving, setAdhocSaving] = useState(false)
 
   useEffect(() => {
     setShiftPlanView('my')
@@ -307,9 +317,10 @@ export function DdsP2pPlanPanel({
           ),
         )
         void refresh()
+        onPlanDataChanged?.()
       }
     },
-    [events, onError, refresh],
+    [events, onError, refresh, onPlanDataChanged],
   )
 
   const onDropUnassigned = useCallback(
@@ -339,9 +350,10 @@ export function DdsP2pPlanPanel({
           ),
         )
         void refresh()
+        onPlanDataChanged?.()
       }
     },
-    [events, onError, refresh],
+    [events, onError, refresh, onPlanDataChanged],
   )
 
   async function toggleTask(t: Plan24TaskRow) {
@@ -349,7 +361,10 @@ export function DdsP2pPlanPanel({
     const { error } = await supabase.from('plan24_tasks').update({ done: !t.done }).eq('id', t.id)
     setBusyId(null)
     if (error) onError(error.message)
-    else void refresh()
+    else {
+      void refresh()
+      onPlanDataChanged?.()
+    }
   }
 
   const gridEvents = events
@@ -364,9 +379,54 @@ export function DdsP2pPlanPanel({
   const handleModalSuccess = useCallback(
     (msg: string | null) => {
       onSuccessMsg?.(msg)
+      onPlanDataChanged?.()
     },
-    [onSuccessMsg],
+    [onSuccessMsg, onPlanDataChanged],
   )
+
+  const handleModalSaved = useCallback(() => {
+    void refresh()
+    onPlanDataChanged?.()
+  }, [refresh, onPlanDataChanged])
+
+  const onBackgroundClick = useCallback((rn: string, startAt: Date) => {
+    setAdhocRole(rn)
+    setAdhocStart(startAt)
+    setAdhocTitle('Check')
+    setAdhocEndMin('30')
+    setAdhocOpen(true)
+  }, [])
+
+  const saveAdhoc = useCallback(async () => {
+    if (!cellId || !userId || !viewPlanDate || !viewShiftKind || !adhocStart) return
+    const dur = Math.max(5, Number(adhocEndMin) || 30)
+    const end = addMinutes(adhocStart, dur)
+    setAdhocSaving(true)
+    const { error } = await supabase.from('plan24_events').insert({
+      master_cell_id: cellId,
+      plan_date: viewPlanDate,
+      shift_kind: viewShiftKind,
+      role_name: adhocRole,
+      schedule_role_name: adhocRole || '',
+      title: adhocTitle.trim() || 'Check',
+      event_type: 'check',
+      source: 'ad_hoc',
+      start_at: adhocStart.toISOString(),
+      end_at: end.toISOString(),
+      status: 'scheduled',
+      sub_tasks: [],
+      created_by: userId,
+    })
+    setAdhocSaving(false)
+    if (error) {
+      onError(error.message)
+      return
+    }
+    setAdhocOpen(false)
+    onSuccessMsg?.('Ad-hoc check added to Plan 24.')
+    void refresh()
+    onPlanDataChanged?.()
+  }, [cellId, userId, viewPlanDate, viewShiftKind, adhocStart, adhocEndMin, adhocRole, adhocTitle, onError, onSuccessMsg, onPlanDataChanged, refresh])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border bg-surface">
@@ -430,9 +490,7 @@ export function DdsP2pPlanPanel({
               windowEnd={windowBounds.end}
               roles={roleCols}
               events={gridEvents}
-              onBackgroundClick={() => {
-                /* ad-hoc creation lives on Plan 24 */
-              }}
+              onBackgroundClick={onBackgroundClick}
               onEventClick={(ev) => setDetailEv(ev)}
               onEventMove={onEventMove}
               onDropUnassigned={onDropUnassigned}
@@ -470,10 +528,71 @@ export function DdsP2pPlanPanel({
           isAdmin={isAdmin}
           navigate={navigate}
           onClose={() => setDetailEv(null)}
-          onSaved={() => void refresh()}
+          onSaved={handleModalSaved}
           onLoadError={handleModalLoadError}
           onSuccessMsg={handleModalSuccess}
         />
+      ) : null}
+
+      {adhocOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="presentation">
+          <div
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-border-strong bg-surface p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="p2p-plan-adhoc-title"
+          >
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void saveAdhoc()
+              }}
+            >
+              <h2 id="p2p-plan-adhoc-title" className="font-display text-lg font-semibold">
+                New ad-hoc check
+              </h2>
+              <p className="text-xs text-muted">
+                Role <strong className="text-fg">{adhocRole}</strong> · starts {adhocStart ? formatPlan24Clock(adhocStart) : '—'}
+              </p>
+              <label className="block text-xs font-medium text-muted">
+                Title
+                <input
+                  className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-1"
+                  value={adhocTitle}
+                  onChange={(e) => setAdhocTitle(e.target.value)}
+                />
+              </label>
+              <label className="block text-xs font-medium text-muted">
+                Duration (minutes)
+                <input
+                  className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none ring-accent/30 focus:border-accent/50 focus:ring-1"
+                  type="number"
+                  min={5}
+                  step={5}
+                  value={adhocEndMin}
+                  onChange={(e) => setAdhocEndMin(e.target.value)}
+                />
+              </label>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  className="rounded-xl px-3 py-2 text-sm text-muted hover:bg-black/[0.06]"
+                  onClick={() => setAdhocOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={adhocSaving}
+                  className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {adhocSaving ? 'Saving…' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       ) : null}
     </div>
   )

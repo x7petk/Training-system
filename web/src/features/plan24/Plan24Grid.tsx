@@ -735,15 +735,15 @@ export function Plan24Grid(props: {
                             {!isDone && !isNr && (isDds ? isDdsInProgress : inProgress) ? (
                               <span
                                 aria-hidden
-                                className={`pointer-events-none absolute right-1 top-1 inline-flex size-1.5 rounded-full ${
-                                  isDds ? 'bg-orange-950/85' : 'bg-amber-900/90'
-                                }`}
+                                className={`pointer-events-none absolute top-1 inline-flex size-1.5 rounded-full ${
+                                  raisedInfo ? 'left-1' : 'right-1'
+                                } ${isDds ? 'bg-orange-950/85' : 'bg-amber-900/90'}`}
                               />
                             ) : null}
                             {raisedInfo ? (
                               <span
                                 aria-hidden
-                                className="pointer-events-none absolute left-1 top-1 z-[2] inline-flex size-3 items-center justify-center rounded bg-black/15 dark:bg-white/10"
+                                className="pointer-events-none absolute right-1 top-1 z-[2] inline-flex size-3 items-center justify-center rounded bg-black/15 dark:bg-white/10"
                               >
                                 {raisedInfo.icon}
                               </span>
@@ -751,7 +751,7 @@ export function Plan24Grid(props: {
                             <span
                               className={`pointer-events-none relative z-[2] min-h-0 w-full min-w-0 flex-1 truncate text-left ${
                                 isDone ? 'line-through decoration-2 decoration-current/55' : ''
-                              } ${raisedInfo ? 'pl-3' : ''}`}
+                              } ${raisedInfo ? 'pr-3' : ''}`}
                             >
                               {ev.title}
                             </span>

@@ -8,6 +8,7 @@ import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { ddsP2pQuestionKey } from '../features/dds/ddsP2pQuestionKey'
 import { labelForDdsP2pResponseKind, type DdsP2pResponseKind } from '../features/dds/ddsP2pResponseKind'
 import { DdsP2pPlanPanel } from '../features/dds/DdsP2pPlanPanel'
+import { DdsP2pPlanDayStrip } from '../features/dds/DdsP2pPlanDayStrip'
 import { refreshKpiP2pRollups } from '../features/dds/ddsKpiP2pRollup'
 import { dispatchDdsP2pKpiRollupDone } from '../features/dds/ddsP2pKpiRollupEvents'
 import { ddsErr, ddsHint, ddsInput, ddsSection, ddsSelect, ddsStack } from '../features/dds/ddsAdminCompactClasses'
@@ -72,6 +73,7 @@ export function DdsP2pPage() {
   const [error, setError] = useState<string | null>(null)
   const [planErr, setPlanErr] = useState<string | null>(null)
   const [planSuccess, setPlanSuccess] = useState<string | null>(null)
+  const [planRefreshToken, setPlanRefreshToken] = useState(0)
 
   useEffect(() => {
     setPlanErr(null)
@@ -91,9 +93,17 @@ export function DdsP2pPage() {
     setPlanErr(msg || null)
   }, [])
 
-  const handlePlanPanelSuccess = useCallback((msg: string | null) => {
-    setPlanSuccess(msg)
+  const bumpPlanStats = useCallback(() => {
+    setPlanRefreshToken((t) => t + 1)
   }, [])
+
+  const handlePlanPanelSuccess = useCallback(
+    (msg: string | null) => {
+      setPlanSuccess(msg)
+      bumpPlanStats()
+    },
+    [bumpPlanStats],
+  )
 
   const readOnlyRevision = revisionIx > 0
 
@@ -490,6 +500,15 @@ export function DdsP2pPage() {
 
   return (
     <div className={`${ddsStack} min-h-0 flex-1`}>
+      {cellId && shiftKind && roleName ? (
+        <DdsP2pPlanDayStrip
+          cellId={cellId}
+          planDate={planDate}
+          shiftKind={shiftKind}
+          roleName={roleName}
+          refreshToken={planRefreshToken}
+        />
+      ) : null}
       <div className="flex min-h-0 flex-1 flex-col gap-2 lg:grid lg:max-h-[min(96dvh,1080px)] lg:min-h-[420px] lg:grid-cols-2 lg:gap-3">
         <section className={`${ddsSection} flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden`}>
           <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-border/60 pb-2">
@@ -725,6 +744,7 @@ export function DdsP2pPage() {
             shifts={shifts}
             onError={handlePlanPanelError}
             onSuccessMsg={handlePlanPanelSuccess}
+            onPlanDataChanged={bumpPlanStats}
           />
         ) : (
           <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border p-4 text-[11px] text-muted">

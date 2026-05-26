@@ -608,7 +608,7 @@ export function Plan24AdminChecksTab({ config = DEFAULT_CHECKS_CONFIG }: { confi
     }
     setScheduleSaving(true)
     setError(null)
-    const payload = {
+    const payload: Record<string, unknown> = {
       master_cell_id: cellId,
       template_id: scheduleDialog.templateId,
       template_version_id: scheduleDialog.templateVersionId,
@@ -625,9 +625,11 @@ export function Plan24AdminChecksTab({ config = DEFAULT_CHECKS_CONFIG }: { confi
       ends_on: scheduleDialog.endsOn || null,
       timezone: scheduleDialog.timezone || 'UTC',
       state: scheduleDialog.state,
-      area_id: config.enableLocationTargets ? scheduleDialog.areaId || null : null,
-      equipment_id: config.enableLocationTargets ? scheduleDialog.equipmentId || null : null,
-      equipment_ids: config.enableLocationTargets ? scheduleDialog.equipmentIds : [],
+    }
+    if (config.enableLocationTargets) {
+      payload.area_id = scheduleDialog.areaId || null
+      payload.equipment_id = scheduleDialog.equipmentId || null
+      payload.equipment_ids = scheduleDialog.equipmentIds
     }
     const q = scheduleDialog.id
       ? supabase.from(config.schedulesTable).update(payload).eq('id', scheduleDialog.id).select('id').single()
