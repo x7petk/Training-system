@@ -16,6 +16,50 @@ export type KpiBlockTone = 'neutral' | 'good' | 'bad'
 
 const DEFAULT_SCORING: DdsKpiScoring = { kind: 'no_target' }
 
+export function defaultScoringForKind(kind: DdsKpiScoring['kind']): DdsKpiScoring {
+  switch (kind) {
+    case 'no_target':
+      return { kind: 'no_target' }
+    case 'pass_fail':
+      return { kind: 'pass_fail' }
+    case 'min_red':
+      return { kind: 'min_red', target: 0 }
+    case 'max_red':
+      return { kind: 'max_red', target: 100 }
+    case 'range_green':
+      return { kind: 'range_green', min: 0, max: 100 }
+    case 'symmetric_abs':
+      return { kind: 'symmetric_abs', target: 100, tolerance: 5 }
+    case 'symmetric_pct':
+      return { kind: 'symmetric_pct', target: 100, tolerancePct: 5 }
+    default:
+      return { kind: 'no_target' }
+  }
+}
+
+export function scoringKindNeedsLineTargets(kind: DdsKpiScoring['kind']): boolean {
+  return kind !== 'no_target' && kind !== 'pass_fail'
+}
+
+export function resolveLineKpiScoring(defaultScoring: DdsKpiScoring, lineOverride?: DdsKpiScoring | null): DdsKpiScoring {
+  if (lineOverride && lineOverride.kind === defaultScoring.kind) return lineOverride
+  return defaultScoring
+}
+
+export function lineKpiScoringKey(kpiId: string, lineId: string): string {
+  return `${kpiId}\0${lineId}`
+}
+
+export function buildLineScoringMap(
+  rows: { kpi_id: string; line_id: string; scoring: unknown }[],
+): Map<string, DdsKpiScoring> {
+  const m = new Map<string, DdsKpiScoring>()
+  for (const row of rows) {
+    m.set(lineKpiScoringKey(row.kpi_id, row.line_id), parseDdsKpiScoring(row.scoring))
+  }
+  return m
+}
+
 function fmtTarget(n: number): string {
   if (!Number.isFinite(n)) return ''
   if (Number.isInteger(n)) return String(n)
@@ -28,7 +72,7 @@ export function scoringTargetNumbersOnly(s: DdsKpiScoring): string {
     case 'no_target':
       return ''
     case 'pass_fail':
-      return '0 1'
+      return 'Yes No'
     case 'min_red':
     case 'max_red':
       return fmtTarget(s.target)
@@ -88,7 +132,7 @@ export function scoringHint(s: DdsKpiScoring): string {
     case 'no_target':
       return 'No target'
     case 'pass_fail':
-      return '1 pass · 0 fail'
+      return 'Yes = pass · No = fail'
     case 'min_red':
       return `≥ ${s.target} ok`
     case 'max_red':

@@ -12,6 +12,7 @@ import {
 } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
+import { DdsKpiValueField } from './DdsKpiValueField'
 import {
   kpiHasDdsCommentDetail,
   mergeMeetingDayKpiCellEntry,
@@ -497,8 +498,13 @@ export function ShiftDdsKpiSummary({
                       }
                     }}
                   >
-                    <span className={`font-medium leading-tight text-fg/90 line-clamp-2 ${layout.label}`}>
-                      {kpi.label}
+                    <span className={`inline-flex min-w-0 flex-wrap items-baseline gap-x-0.5 ${layout.label}`}>
+                      <span className="font-medium leading-tight text-fg/90">{kpi.label}</span>
+                      {targetLine ? (
+                        <span className={`shrink-0 font-medium tabular-nums leading-none text-fg/60 ${layout.target}`}>
+                          {targetLine}
+                        </span>
+                      ) : null}
                     </span>
                     <div className={`flex flex-col gap-px ${layout.valueRow}`}>
                       <span className="inline-flex min-w-0 items-center gap-0.5">
@@ -524,11 +530,6 @@ export function ShiftDdsKpiSummary({
                           </button>
                         ) : null}
                       </span>
-                      {targetLine ? (
-                        <span className={`font-medium tabular-nums leading-none text-fg/60 ${layout.target}`}>
-                          {targetLine}
-                        </span>
-                      ) : null}
                     </div>
                   </div>
                 )
@@ -598,13 +599,11 @@ export function ShiftDdsKpiSummary({
               {modal.kpi.unit !== 'none' ? (
                 <span className="font-normal text-fg/55"> ({DDS_KPI_UNIT_OPTIONS.find((u) => u.value === modal.kpi.unit)?.label})</span>
               ) : null}
-              <input
-                type="text"
-                inputMode="decimal"
-                className="mt-1 w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2"
-                value={modal.valueStr}
-                onChange={(e) => setModal((m) => (m ? { ...m, valueStr: e.target.value } : m))}
-                placeholder="e.g. 98.5"
+              <DdsKpiValueField
+                scoring={modal.kpi.scoring}
+                valueStr={modal.valueStr}
+                onChange={(valueStr) => setModal((m) => (m ? { ...m, valueStr } : m))}
+                disabled={saving}
               />
             </label>
             <label className="mt-3 block text-xs font-medium text-muted">

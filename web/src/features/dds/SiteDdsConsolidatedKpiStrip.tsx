@@ -6,6 +6,7 @@ import type { DdsKpiScoring } from './ddsKpiScoring'
 import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { formatKpiValueWithUnit } from './ddsKpiUnits'
+import { DdsKpiValueField } from './DdsKpiValueField'
 import { kpiHasDdsCommentDetail, type DdsP2pKpiBreakdownItem } from './ddsKpiP2pRollup'
 import {
   resolveSiteDdsKpiValue,
@@ -169,7 +170,12 @@ export function SiteDdsConsolidatedKpiStrip({
                 }
               }}
             >
-              <span className="line-clamp-2 text-[7px] font-medium leading-none text-fg/90">{kpi.label}</span>
+              <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-0.5 text-[7px] font-medium leading-none text-fg/90">
+                <span>{kpi.label}</span>
+                {targetLine ? (
+                  <span className="shrink-0 text-[6px] tabular-nums leading-none text-fg/55">{targetLine}</span>
+                ) : null}
+              </span>
               <span className="inline-flex items-center gap-0.5">
                 <span className="text-[9px] font-semibold tabular-nums leading-none">{valueLabel}</span>
                 {showComment ? (
@@ -187,7 +193,6 @@ export function SiteDdsConsolidatedKpiStrip({
                   </button>
                 ) : null}
               </span>
-              {targetLine ? <span className="text-[6px] tabular-nums leading-none text-fg/55">{targetLine}</span> : null}
               <span className="mt-px line-clamp-1 text-[6px] leading-none text-fg/50">{sub}</span>
             </div>
           )
@@ -237,12 +242,12 @@ export function SiteDdsConsolidatedKpiStrip({
             </p>
             <label className="mt-3 block text-xs font-medium text-muted">
               Value
-              <input
-                type="text"
-                inputMode="decimal"
-                className="mt-1 w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm"
-                value={modal.valueStr}
-                onChange={(e) => setModal((m) => (m ? { ...m, valueStr: e.target.value } : m))}
+              <DdsKpiValueField
+                scoring={modal.kpi.scoring}
+                valueStr={modal.valueStr}
+                onChange={(valueStr) => setModal((m) => (m ? { ...m, valueStr } : m))}
+                disabled={saving}
+                inputClassName="mt-1 w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm"
               />
             </label>
             <label className="mt-2 block text-xs font-medium text-muted">

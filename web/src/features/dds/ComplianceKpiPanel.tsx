@@ -6,6 +6,7 @@ import type { DdsKpiScoring } from './ddsKpiScoring'
 import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
+import { DdsKpiValueField } from './DdsKpiValueField'
 import { parseDdsKpiScoring } from './ddsKpiScoring'
 import {
   DDS_COMPLIANCE_DAY_SHIFT_KIND,
@@ -268,15 +269,15 @@ export function ComplianceKpiPanel({ cellId, planDate, viewMode, metricSurface }
         {viewMode === 'week' ? (
           <span className="text-[8px] font-medium text-fg/65">{formatShortYmd(ymd)}</span>
         ) : null}
-        <span className={`font-medium leading-tight text-fg/90 line-clamp-2 ${compact ? 'text-[8px]' : 'text-[8px]'}`}>
-          {viewMode === 'week' ? kpi.label : kpi.label}
+        <span className={`inline-flex min-w-0 flex-wrap items-baseline gap-x-0.5 ${compact ? 'text-[8px]' : 'text-[8px]'}`}>
+          <span className="font-medium leading-tight text-fg/90">{kpi.label}</span>
+          {targetLine ? (
+            <span className="shrink-0 text-[7px] font-medium tabular-nums leading-none text-fg/60">{targetLine}</span>
+          ) : null}
         </span>
         <span className={`font-semibold tabular-nums leading-none text-fg ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
           {valueLabel}
         </span>
-        {targetLine ? (
-          <span className="mt-px block text-[7px] font-medium tabular-nums leading-none text-fg/60">{targetLine}</span>
-        ) : null}
       </div>
     )
   }
@@ -374,12 +375,20 @@ export function ComplianceKpiPanel({ cellId, planDate, viewMode, metricSurface }
             </h3>
             {viewMode === 'week' ? (
               <div className="space-y-2">
-                {list.map((kpi) => (
+                {list.map((kpi) => {
+                  const targetLine = scoringTargetNumbersOnly(kpi.scoring)
+                  return (
                   <div key={kpi.id}>
-                    <div className="mb-0.5 text-[10px] font-medium text-fg">{kpi.label}</div>
+                    <div className="mb-0.5 inline-flex flex-wrap items-baseline gap-x-1 text-[10px] font-medium text-fg">
+                      <span>{kpi.label}</span>
+                      {targetLine ? (
+                        <span className="text-[8px] tabular-nums text-fg/60">{targetLine}</span>
+                      ) : null}
+                    </div>
                     <div className="flex flex-wrap gap-1">{dateKeys.map((ymd) => renderTile(kpi, ymd, true))}</div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <div className="flex flex-wrap gap-1.5">{list.map((kpi) => renderTile(kpi, planDate))}</div>
@@ -410,12 +419,11 @@ export function ComplianceKpiPanel({ cellId, planDate, viewMode, metricSurface }
                   ({DDS_KPI_UNIT_OPTIONS.find((u) => u.value === modal.kpi.unit)?.label})
                 </span>
               ) : null}
-              <input
-                type="text"
-                inputMode="decimal"
-                className="mt-1 w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm outline-none ring-accent/40 focus:border-accent/50 focus:ring-2"
-                value={modal.valueStr}
-                onChange={(e) => setModal((m) => (m ? { ...m, valueStr: e.target.value } : m))}
+              <DdsKpiValueField
+                scoring={modal.kpi.scoring}
+                valueStr={modal.valueStr}
+                onChange={(valueStr) => setModal((m) => (m ? { ...m, valueStr } : m))}
+                disabled={saving}
               />
             </label>
             <label className="mt-3 block text-xs font-medium text-muted">

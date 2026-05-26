@@ -2,60 +2,54 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Loader2, MessageSquare } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
-import type { DdsCellLine, DdsKpiLineEntry } from './ddsCellLines'
-import { lineEntryKey } from './ddsCellLines'
+import type { DdsKpiCellEntry } from './ddsCellLines'
+import { cellEntryKey } from './ddsCellLines'
+import type { DdsKpiDdsSetupSurfaceKey } from './ddsKpiDdsSetupSurfaces'
 import {
   kpiHasDdsCommentDetail,
   parseDdsP2pKpiBreakdown,
   type DdsP2pKpiBreakdownItem,
 } from './ddsKpiP2pRollup'
 import type { DdsKpiScoring } from './ddsKpiScoring'
-import {
-  evaluateKpiBlock,
-  kpiBlockToneClasses,
-  lineKpiScoringKey,
-  resolveLineKpiScoring,
-  scoringHint,
-  scoringTargetNumbersOnly,
-} from './ddsKpiScoring'
+import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit } from './ddsKpiUnits'
 import { DdsKpiValueField } from './DdsKpiValueField'
+import { isDdsPlan24ValueSource, plan24EntryShiftKind } from './ddsPlan24ValueSource'
 
-export type ByLineKpiDef = {
+export type ByCellKpiDef = {
   id: string
   label: string
   sort_order: number
   unit: DdsKpiUnit
   scoring: DdsKpiScoring
+  plan24_value_source: string | null
 }
 
-export type ByLineTableColumn = {
-  line: DdsCellLine
+export type ByCellTableColumn = {
   cellId: string
   columnLabel: string
 }
 
 type Props = {
-  columns: ByLineTableColumn[]
-  kpis: ByLineKpiDef[]
-  entries: DdsKpiLineEntry[]
+  columns: ByCellTableColumn[]
+  kpis: ByCellKpiDef[]
+  entries: DdsKpiCellEntry[]
   planDate: string
   shiftKind: string
-  tableTitle?: string
-  emptyLinesMessage?: string
-  /** Per-line scoring overrides keyed by lineKpiScoringKey(kpiId, lineId). */
-  lineScoringByKey?: Map<string, DdsKpiScoring>
+  kpiSurface: DdsKpiDdsSetupSurfaceKey
   onSaved: () => void
+  /** Hide column header row (e.g. Line DDS single-cell view). */
+  hideHeader?: boolean
 }
 
 type EditModal = {
-  col: ByLineTableColumn
-  kpi: ByLineKpiDef
-  scoring: DdsKpiScoring
+  col: ByCellTableColumn
+  kpi: ByCellKpiDef
   valueStr: string
   comment: string
   entryId: string | null
+  hadP2pBreakdown: boolean
   p2pBreakdown: DdsP2pKpiBreakdownItem[]
 }
 
@@ -74,16 +68,15 @@ function placeDetailPanel(anchor: HTMLElement, maxW: number): { top: number; lef
   return { top: rect.bottom + 6, left, maxW }
 }
 
-export function DdsByLineKpiTable({
+export function DdsByCellKpiTable({
   columns,
   kpis,
   entries,
   planDate,
   shiftKind,
-  tableTitle,
-  emptyLinesMessage = 'No lines configured. Add lines under Admin → Cell lines.',
-  lineScoringByKey,
+  kpiSurface,
   onSaved,
+  hideHeader = false,
 }: Props) {
   const { user } = useAuth()
   const editTitleId = useId()
@@ -94,37 +87,30 @@ export function DdsByLineKpiTable({
   const [error, setError] = useState<string | null>(null)
 
   const entryByKey = useMemo(() => {
-    const m = new Map<string, DdsKpiLineEntry>()
+    const m = new Map<string, DdsKpiCellEntry>()
     for (const e of entries) {
-      m.set(lineEntryKey(e.line_id, e.kpi_id), e)
+      m.set(cellEntryKey(e.master_cell_id, e.kpi_id), e)
     }
     return m
   }, [entries])
 
-  const resolveScoring = useCallback(
-    (kpi: ByLineKpiDef, lineId: string): DdsKpiScoring => {
-      const override = lineScoringByKey?.get(lineKpiScoringKey(kpi.id, lineId)) ?? null
-      return resolveLineKpiScoring(kpi.scoring, override)
-    },
-    [lineScoringByKey],
-  )
-
   const openModal = useCallback(
-    (col: ByLineTableColumn, kpi: ByLineKpiDef) => {
-      const key = lineEntryKey(col.line.id, kpi.id)
+    (col: ByCellTableColumn, kpi: ByCellKpiDef) => {
+      const key = cellEntryKey(col.cellId, kpi.id)
       const entry = entryByKey.get(key)
       const v = entry?.value_numeric
+      const p2pBreakdown = parseDdsP2pKpiBreakdown(entry?.p2p_breakdown)
       setModal({
         col,
         kpi,
-        scoring: resolveScoring(kpi, col.line.id),
         valueStr: v != null && Number.isFinite(v) ? String(v) : '',
         comment: entry?.comment ?? '',
         entryId: entry?.id ?? null,
-        p2pBreakdown: parseDdsP2pKpiBreakdown(entry?.p2p_breakdown),
+        hadP2pBreakdown: p2pBreakdown.length > 0,
+        p2pBreakdown,
       })
     },
-    [entryByKey, resolveScoring],
+    [entryByKey],
   )
 
   const saveModal = useCallback(async () => {
@@ -133,18 +119,21 @@ export function DdsByLineKpiTable({
     const value_numeric = String(modal.valueStr).trim() === '' || !Number.isFinite(n) ? null : n
     setSaving(true)
     setError(null)
-    const { error: uErr } = await supabase.from('dds_kpi_line_entries').upsert(
+    const entryShift = plan24EntryShiftKind(modal.kpi.plan24_value_source, kpiSurface, shiftKind)
+    const plan24Manual = isDdsPlan24ValueSource(modal.kpi.plan24_value_source)
+    const { error: uErr } = await supabase.from('dds_kpi_cell_entries').upsert(
       {
         master_cell_id: modal.col.cellId,
-        line_id: modal.col.line.id,
         kpi_id: modal.kpi.id,
         plan_date: planDate,
-        shift_kind: shiftKind,
+        shift_kind: entryShift,
         value_numeric,
         comment: modal.comment.trim() || null,
+        p2p_breakdown: null,
+        plan24_manual_override: plan24Manual,
         updated_by: user?.id ?? null,
       },
-      { onConflict: 'line_id,kpi_id,plan_date,shift_kind' },
+      { onConflict: 'master_cell_id,kpi_id,plan_date,shift_kind' },
     )
     setSaving(false)
     if (uErr) setError(uErr.message)
@@ -152,7 +141,7 @@ export function DdsByLineKpiTable({
       setModal(null)
       onSaved()
     }
-  }, [modal, planDate, shiftKind, user?.id, onSaved])
+  }, [modal, planDate, shiftKind, kpiSurface, user?.id, onSaved])
 
   useEffect(() => {
     if (!modal) return
@@ -182,78 +171,58 @@ export function DdsByLineKpiTable({
 
   if (kpis.length === 0) return null
 
-  if (columns.length === 0) {
-    return (
-      <div className="mt-0.5 rounded border border-dashed border-border/70 bg-canvas/30 px-1.5 py-1">
-        {tableTitle ? (
-          <p className="text-[8px] font-semibold uppercase tracking-wide text-muted">{tableTitle}</p>
-        ) : null}
-        <p className="mt-px text-[9px] leading-snug text-muted">{emptyLinesMessage}</p>
-      </div>
-    )
-  }
-
   return (
     <>
       <div className="mt-0.5 overflow-x-auto rounded border border-border/60">
-        {tableTitle ? (
-          <p className="border-b border-border/60 bg-canvas/40 px-1.5 py-px text-[8px] font-semibold uppercase tracking-wide text-muted">
-            {tableTitle}
-          </p>
-        ) : null}
         {error && !modal ? (
           <p className="px-1.5 py-0.5 text-[9px] text-rose-700 dark:text-rose-300">{error}</p>
         ) : null}
         <table className="w-full min-w-0 border-collapse text-[9px] leading-tight">
-          <thead>
-            <tr className="border-b border-border/60 bg-surface-raised/50">
-              <th className="sticky left-0 z-[1] max-w-[5.5rem] min-w-[3.75rem] border-r border-border/50 bg-surface-raised/80 px-1 py-px text-left text-[8px] font-semibold text-muted">
-                Metric
-              </th>
-              {columns.map((col) => (
-                <th
-                  key={`${col.cellId}-${col.line.id}`}
-                  className="min-w-[2.25rem] max-w-[3.75rem] px-0.5 py-px text-center text-[8px] font-semibold leading-none text-muted"
-                  title={col.columnLabel}
-                >
-                  <span className="line-clamp-2 break-words">{col.columnLabel}</span>
+          {!hideHeader ? (
+            <thead>
+              <tr className="border-b border-border/60 bg-surface-raised/50">
+                <th className="sticky left-0 z-[1] max-w-[5.5rem] min-w-[3.75rem] border-r border-border/50 bg-surface-raised/80 px-1 py-px text-left text-[8px] font-semibold text-muted">
+                  Metric
                 </th>
-              ))}
-            </tr>
-          </thead>
+                {columns.map((col) => (
+                  <th
+                    key={col.cellId}
+                    className="min-w-[2.25rem] max-w-[3.75rem] px-0.5 py-px text-center text-[8px] font-semibold leading-none text-muted"
+                    title={col.columnLabel}
+                  >
+                    <span className="line-clamp-2 break-words">{col.columnLabel}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+          ) : null}
           <tbody>
             {kpis.map((kpi) => {
-              const hasPerLineTargets = Boolean(
-                lineScoringByKey &&
-                  columns.some((col) => lineScoringByKey.has(lineKpiScoringKey(kpi.id, col.line.id))),
-              )
-              const rowTargetLine = hasPerLineTargets ? '' : scoringTargetNumbersOnly(kpi.scoring)
+              const targetLine = scoringTargetNumbersOnly(kpi.scoring)
               return (
                 <tr key={kpi.id} className="border-b border-border/40 last:border-b-0">
                   <td className="sticky left-0 z-[1] max-w-[5.5rem] border-r border-border/50 bg-canvas/80 px-1 py-px">
                     <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-0.5">
                       <span className="font-medium leading-none text-fg">{kpi.label}</span>
-                      {rowTargetLine ? (
+                      {targetLine ? (
                         <span className="shrink-0 text-[7px] font-medium tabular-nums leading-none text-muted">
-                          {rowTargetLine}
+                          {targetLine}
                         </span>
                       ) : null}
                     </span>
                   </td>
                   {columns.map((col) => {
-                    const key = lineEntryKey(col.line.id, kpi.id)
+                    const key = cellEntryKey(col.cellId, kpi.id)
                     const entry = entryByKey.get(key)
                     const val = entry?.value_numeric ?? null
-                    const scoring = resolveScoring(kpi, col.line.id)
-                    const tone = evaluateKpiBlock(val, scoring)
-                    const cellTargetLine = scoringTargetNumbersOnly(scoring)
+                    const tone = evaluateKpiBlock(val, kpi.scoring)
                     const valueLabel =
                       val != null && Number.isFinite(val) ? formatKpiValueWithUnit(val, kpi.unit) : '—'
                     const cmt = entry?.comment?.trim() ?? ''
                     const breakdown = parseDdsP2pKpiBreakdown(entry?.p2p_breakdown)
                     const showComment = kpiHasDdsCommentDetail(cmt, breakdown)
                     return (
-                      <td key={`${col.cellId}-${col.line.id}`} className="p-px align-middle">
+                      <td key={col.cellId} className="p-px align-middle">
                         <button
                           type="button"
                           disabled={!user}
@@ -261,12 +230,7 @@ export function DdsByLineKpiTable({
                           aria-label={`${kpi.label}, ${col.columnLabel}: ${valueLabel}${showComment ? ', has comment' : ''}. Edit value and comment.`}
                           onClick={() => openModal(col, kpi)}
                         >
-                          <span className="flex flex-col items-center gap-px leading-none">
-                            {hasPerLineTargets && cellTargetLine ? (
-                              <span className="text-[6px] font-medium tabular-nums opacity-75">{cellTargetLine}</span>
-                            ) : null}
-                            <span className="tabular-nums text-[9px] font-semibold">{valueLabel}</span>
-                          </span>
+                          <span className="tabular-nums text-[9px] font-semibold leading-none">{valueLabel}</span>
                           {showComment ? (
                             <span
                               role="button"
@@ -353,10 +317,11 @@ export function DdsByLineKpiTable({
               {modal.kpi.label}
             </h2>
             <p className="mt-0.5 text-[11px] text-muted">{modal.col.columnLabel}</p>
-            <p className="mt-2 text-[11px] text-muted">{scoringHint(modal.scoring)}</p>
-            {scoringTargetNumbersOnly(modal.scoring) ? (
-              <p className="mt-1 text-[11px] font-medium tabular-nums text-fg/80">
-                Target: {scoringTargetNumbersOnly(modal.scoring)}
+            <p className="mt-2 text-[11px] text-muted">{scoringHint(modal.kpi.scoring)}</p>
+            {modal.hadP2pBreakdown ? (
+              <p className="mt-2 rounded-lg border border-amber-600/35 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-950 dark:bg-amber-950/25 dark:text-amber-100/90">
+                Saving replaces the automatic P2P rollup for this KPI with your manual value and clears per-role P2P
+                lines.
               </p>
             ) : null}
             {error ? <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">{error}</p> : null}
@@ -384,7 +349,7 @@ export function DdsByLineKpiTable({
                 </span>
               ) : null}
               <DdsKpiValueField
-                scoring={modal.scoring}
+                scoring={modal.kpi.scoring}
                 valueStr={modal.valueStr}
                 onChange={(valueStr) => setModal((m) => (m ? { ...m, valueStr } : m))}
                 disabled={saving}

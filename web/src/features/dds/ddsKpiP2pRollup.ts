@@ -157,6 +157,61 @@ export function mergeMeetingDayLineEntries(
   return out
 }
 
+/** Meeting-day views: merge day/night cell entry rows per cell × KPI. */
+export function mergeMeetingDayCellEntries(
+  rows: Array<{
+    id: string
+    master_cell_id: string
+    kpi_id: string
+    shift_kind: string
+    value_numeric: number | null
+    comment: string | null
+    p2p_breakdown: unknown
+  }>,
+): Array<{
+  id: string
+  master_cell_id: string
+  kpi_id: string
+  value_numeric: number | null
+  comment: string | null
+  p2p_breakdown: DdsP2pKpiBreakdownItem[] | null
+}> {
+  const groups = new Map<string, typeof rows>()
+  for (const row of rows) {
+    const key = `${row.master_cell_id}\0${row.kpi_id}`
+    const list = groups.get(key) ?? []
+    list.push(row)
+    groups.set(key, list)
+  }
+  const out: Array<{
+    id: string
+    master_cell_id: string
+    kpi_id: string
+    value_numeric: number | null
+    comment: string | null
+    p2p_breakdown: DdsP2pKpiBreakdownItem[] | null
+  }> = []
+  for (const [, groupRows] of groups) {
+    const first = groupRows[0]!
+    const merged = mergeMeetingDayKpiCellEntry(groupRows)
+    if (
+      !merged &&
+      !groupRows.some((r) => r.value_numeric != null || kpiHasDdsCommentDetail(r.comment, r.p2p_breakdown))
+    ) {
+      continue
+    }
+    out.push({
+      id: merged?.id ?? first.id,
+      master_cell_id: first.master_cell_id,
+      kpi_id: first.kpi_id,
+      value_numeric: merged?.value_numeric ?? first.value_numeric,
+      comment: merged?.comment ?? first.comment,
+      p2p_breakdown: merged?.p2p_breakdown ?? null,
+    })
+  }
+  return out
+}
+
 export type DdsKpiCellEntryMergeRow = {
   id: string
   shift_kind: string

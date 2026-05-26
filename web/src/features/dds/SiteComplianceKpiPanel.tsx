@@ -13,6 +13,7 @@ import { kpiShowsOnMetricSurface } from './ddsKpiMetricSurfaces'
 import { parseDdsKpiMetricScope } from './ddsKpiDdsSetupSurfaces'
 import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import { formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
+import { DdsKpiValueField } from './DdsKpiValueField'
 import { parseDdsKpiScoring } from './ddsKpiScoring'
 import type { DdsKpiScoring } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
@@ -295,9 +296,16 @@ export function SiteComplianceKpiPanel({ siteId, cells, planDate, viewMode }: Pr
               </table>
             ) : viewMode === 'week' ? (
               <div className="space-y-2">
-                {list.map((kpi) => (
+                {list.map((kpi) => {
+                  const targetLine = scoringTargetNumbersOnly(kpi.scoring)
+                  return (
                   <div key={kpi.id}>
-                    <div className="mb-0.5 text-[10px] font-medium">{kpi.label}</div>
+                    <div className="mb-0.5 inline-flex flex-wrap items-baseline gap-x-1 text-[10px] font-medium">
+                      <span>{kpi.label}</span>
+                      {targetLine ? (
+                        <span className="text-[8px] tabular-nums text-fg/60">{targetLine}</span>
+                      ) : null}
+                    </div>
                     <div className="flex flex-wrap gap-1">
                       {dateKeys.map((ymd) => {
                         const e = entries[entryKey(kpi.id, ymd)]
@@ -327,7 +335,8 @@ export function SiteComplianceKpiPanel({ siteId, cells, planDate, viewMode }: Pr
                       })}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <div className="flex flex-wrap gap-1.5">
@@ -337,6 +346,7 @@ export function SiteComplianceKpiPanel({ siteId, cells, planDate, viewMode }: Pr
                   const tone = evaluateKpiBlock(val, kpi.scoring)
                   const valueLabel =
                     val != null && Number.isFinite(val) ? formatKpiValueWithUnit(val, kpi.unit) : '—'
+                  const targetLine = scoringTargetNumbersOnly(kpi.scoring)
                   return (
                     <button
                       key={kpi.id}
@@ -352,11 +362,13 @@ export function SiteComplianceKpiPanel({ siteId, cells, planDate, viewMode }: Pr
                         })
                       }
                     >
-                      <span className="text-[8px] font-medium leading-none line-clamp-2">{kpi.label}</span>
+                      <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-0.5 text-[8px] font-medium leading-none">
+                        <span>{kpi.label}</span>
+                        {targetLine ? (
+                          <span className="shrink-0 text-[7px] tabular-nums leading-none text-fg/60">{targetLine}</span>
+                        ) : null}
+                      </span>
                       <span className="text-[11px] font-semibold tabular-nums leading-none">{valueLabel}</span>
-                      {scoringTargetNumbersOnly(kpi.scoring) ? (
-                        <span className="text-[7px] leading-none text-fg/60">{scoringTargetNumbersOnly(kpi.scoring)}</span>
-                      ) : null}
                     </button>
                   )
                 })}
@@ -403,12 +415,12 @@ export function SiteComplianceKpiPanel({ siteId, cells, planDate, viewMode }: Pr
             </p>
             <label className="mt-4 block text-xs font-medium text-muted">
               Value
-              <input
-                type="text"
-                inputMode="decimal"
-                className="mt-1 w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm"
-                value={modal.valueStr}
-                onChange={(e) => setModal((m) => (m ? { ...m, valueStr: e.target.value } : m))}
+              <DdsKpiValueField
+                scoring={modal.kpi.scoring}
+                valueStr={modal.valueStr}
+                onChange={(valueStr) => setModal((m) => (m ? { ...m, valueStr } : m))}
+                disabled={saving}
+                inputClassName="mt-1 w-full rounded-xl border border-border bg-canvas/60 px-3 py-2 text-sm"
               />
             </label>
             <label className="mt-3 block text-xs font-medium text-muted">
