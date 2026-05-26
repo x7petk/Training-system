@@ -1,3 +1,4 @@
+import { buildCascadeDemoSeed } from './cascadeSeed'
 import { emptyCascadeBuilder, emptyForumCascadeBuilder } from './cascadeMigrate'
 import type {
   KpiCascadeForum,
@@ -79,13 +80,27 @@ const KPI_CASCADE_CATALOGS = {
 }
 
 function buildKpiCascadeSeed(): KpiCascadeWorkspace {
-  const ws: KpiCascadeWorkspace = {
+  const base: KpiCascadeWorkspace = {
     version: 1,
     ...KPI_CASCADE_CATALOGS,
     cascade: emptyCascadeBuilder(),
     forumCascade: emptyForumCascadeBuilder(),
   }
-  return ws
+  return {
+    ...base,
+    cascade: buildCascadeDemoSeed(base),
+  }
+}
+
+/** Fill an empty KPI Cascade board with the demo tree (catalogs must already exist). */
+export function hydrateKpiCascadeDemoIfEmpty(ws: KpiCascadeWorkspace): {
+  workspace: KpiCascadeWorkspace
+  changed: boolean
+} {
+  if ((ws.cascade.metrics?.length ?? 0) > 0) {
+    return { workspace: ws, changed: false }
+  }
+  return { workspace: { ...ws, cascade: buildCascadeDemoSeed(ws) }, changed: true }
 }
 
 export const KPI_CASCADE_SEED: KpiCascadeWorkspace = buildKpiCascadeSeed()

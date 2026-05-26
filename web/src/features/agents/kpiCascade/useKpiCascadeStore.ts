@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../../lib/supabase'
 import { useAuth } from '../../../hooks/useAuth'
 import { normalizeWorkspace } from './normalizeWorkspace'
-import { KPI_CASCADE_SEED } from './seed'
+import { hydrateKpiCascadeDemoIfEmpty, KPI_CASCADE_SEED } from './seed'
 import type { KpiCascadeCatalogKey, KpiCascadeWorkspace } from './types'
 
 type DbRow = {
@@ -88,9 +88,12 @@ export function useKpiCascadeStore() {
       const row = data as DbRow | null
       const normalized = normalizeWorkspace(row?.workspace)
       if (normalized) {
-        setWorkspace(normalized)
-        setRowId(row?.id ?? null)
+        const { workspace: hydrated, changed } = hydrateKpiCascadeDemoIfEmpty(normalized)
+        setWorkspace(hydrated)
+        const id = row?.id ?? null
+        setRowId(id)
         setReady(true)
+        if (changed && id) void flushSave(hydrated, id)
         return
       }
 
@@ -112,7 +115,7 @@ export function useKpiCascadeStore() {
     return () => {
       cancelled = true
     }
-  }, [user?.id])
+  }, [user?.id, flushSave])
 
   const updateCatalog = useCallback(
     (key: KpiCascadeCatalogKey, items: KpiCascadeWorkspace[typeof key]) => {
