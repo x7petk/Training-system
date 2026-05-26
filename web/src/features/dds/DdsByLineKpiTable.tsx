@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import type { DdsCellLine, DdsKpiLineEntry } from './ddsCellLines'
 import { lineEntryKey } from './ddsCellLines'
+import { kpiHasDdsCommentDetail } from './ddsKpiP2pRollup'
 import type { DdsKpiScoring } from './ddsKpiScoring'
 import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
@@ -176,7 +177,7 @@ export function DdsByLineKpiTable({
                     const tone = evaluateKpiBlock(val, kpi.scoring)
                     const valueLabel =
                       val != null && Number.isFinite(val) ? formatKpiValueWithUnit(val, kpi.unit) : '—'
-                    const hasCmt = Boolean((entry?.comment ?? '').trim())
+                    const hasCmt = kpiHasDdsCommentDetail(entry?.comment, entry?.p2p_breakdown)
                     return (
                       <td key={`${col.cellId}-${col.line.id}`} className="p-px align-middle">
                         <button

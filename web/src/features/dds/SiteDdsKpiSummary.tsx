@@ -15,6 +15,11 @@ import {
 import { parseDdsKpiScoring } from './ddsKpiScoring'
 import { parseDdsKpiUnit } from './ddsKpiUnits'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
+import {
+  mergeMeetingDayKpiCellEntry,
+  p2pRollupEventMatchesMeetingDay,
+  type DdsP2pKpiBreakdownItem,
+} from './ddsKpiP2pRollup'
 
 type CellLite = { id: string; name: string }
 
@@ -46,7 +51,15 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
   const [kpis, setKpis] = useState<KpiRow[]>([])
   const [overridesByCell, setOverridesByCell] = useState<Map<string, Map<string, string[]>>>(new Map())
   const [cellEntries, setCellEntries] = useState<
-    { kpi_id: string; master_cell_id: string; value_numeric: number | null }[]
+    {
+      id: string
+      kpi_id: string
+      master_cell_id: string
+      shift_kind: string
+      value_numeric: number | null
+      comment: string | null
+      p2p_breakdown: unknown
+    }[]
   >([])
   const [siteEntries, setSiteEntries] = useState<
     Record<string, { id: string; kpi_id: string; value_numeric: number | null; comment: string | null }>
@@ -73,10 +86,9 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
       supabase.from('dds_kpi_cell_dds_display').select('master_cell_id, kpi_id, surfaces').in('master_cell_id', cellIds),
       supabase
         .from('dds_kpi_cell_entries')
-        .select('kpi_id, master_cell_id, value_numeric')
+        .select('id, kpi_id, master_cell_id, shift_kind, value_numeric, comment, p2p_breakdown')
         .in('master_cell_id', cellIds)
-        .eq('plan_date', planDate)
-        .eq('shift_kind', shiftKind),
+        .eq('plan_date', planDate),
       supabase
         .from('dds_kpi_site_entries')
         .select('id, kpi_id, value_numeric, comment')
@@ -92,7 +104,7 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
         .order('name'),
       supabase
         .from('dds_kpi_line_entries')
-        .select('id, master_cell_id, line_id, kpi_id, value_numeric, comment')
+        .select('id, master_cell_id, line_id, kpi_id, value_numeric, comment, p2p_breakdown')
         .in('master_cell_id', cellIds)
         .eq('plan_date', planDate)
         .eq('shift_kind', shiftKind),
@@ -110,7 +122,15 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
     }
     setOverridesByCell(oMap)
     setCellEntries(
-      (eRes.data ?? []) as { kpi_id: string; master_cell_id: string; value_numeric: number | null }[],
+      (eRes.data ?? []) as {
+        id: string
+        kpi_id: string
+        master_cell_id: string
+        shift_kind: string
+        value_numeric: number | null
+        comment: string | null
+        p2p_breakdown: unknown
+      }[],
     )
     const se: typeof siteEntries = {}
     for (const row of (sRes.data ?? []) as {
@@ -132,7 +152,10 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
 
   useEffect(() => {
     return subscribeDdsP2pKpiRollupDone((d) => {
-      if (d.planDate !== planDate || d.shiftKind !== shiftKind) return
+      if (d.planDate !== planDate) return
+      if (!p2pRollupEventMatchesMeetingDay({ eventShiftKind: d.shiftKind, viewShiftKind: shiftKind, meetingSurface: true })) {
+        return
+      }
       if (d.masterCellId && cellIds.includes(d.masterCellId)) setEpoch((n) => n + 1)
     })
   }, [cellIds, planDate, shiftKind])
@@ -185,11 +208,19 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
     return cols
   }, [cells, linesByCell])
 
-  const { perCellKpiIds, byLineByGroup, consolidatedByGroup, cellValuesByKpi } = useMemo(() => {
+  const { perCellKpiIds, byLineByGroup, consolidatedByGroup, cellValuesByKpi, p2pBreakdownByKpi } = useMemo(() => {
     const perCell = new Set<string>()
     const byLine = new Map<string, ByLineKpiDef[]>()
     const consolidated = new Map<string, ConsolidatedKpiDef[]>()
     const valuesByKpi = new Map<string, number[]>()
+    const breakdownByKpi = new Map<string, DdsP2pKpiBreakdownItem[]>()
+    const cellNameById = new Map(cells.map((c) => [c.id, c.name]))
+    const multiCell = cells.length > 1
+
+    const mergedForCell = (cellId: string, kpiId: string) =>
+      mergeMeetingDayKpiCellEntry(
+        cellEntries.filter((row) => row.master_cell_id === cellId && row.kpi_id === kpiId),
+      )
 
     for (const k of kpis) {
       if (!kpiVisibleOnSiteDds(k)) continue
@@ -218,11 +249,20 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
         })
         consolidated.set(k.kpi_group_id, list)
         const vals: number[] = []
-        for (const row of cellEntries) {
-          if (row.kpi_id !== k.id) continue
-          if (row.value_numeric != null && Number.isFinite(row.value_numeric)) vals.push(row.value_numeric)
+        const breakdown: DdsP2pKpiBreakdownItem[] = []
+        for (const cellId of cellIds) {
+          const merged = mergedForCell(cellId, k.id)
+          if (merged?.value_numeric != null && Number.isFinite(merged.value_numeric)) vals.push(merged.value_numeric)
+          for (const item of merged?.p2p_breakdown ?? []) {
+            const cellName = cellNameById.get(cellId)
+            breakdown.push({
+              ...item,
+              role_name: multiCell && cellName ? `${cellName} · ${item.role_name}` : item.role_name,
+            })
+          }
         }
         valuesByKpi.set(k.id, vals)
+        if (breakdown.length > 0) breakdownByKpi.set(k.id, breakdown)
       } else {
         perCell.add(k.id)
       }
@@ -240,8 +280,9 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
       byLineByGroup: byLine,
       consolidatedByGroup: consolidated,
       cellValuesByKpi: valuesByKpi,
+      p2pBreakdownByKpi: breakdownByKpi,
     }
-  }, [kpis, kpiVisibleOnSiteDds, cellEntries])
+  }, [kpis, kpiVisibleOnSiteDds, cellEntries, cellIds, cells])
 
   const excludeKpiIds = useMemo(() => {
     const ids = new Set<string>()
@@ -346,6 +387,7 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
               cellIds={cellIds}
               kpis={consolidated}
               cellValuesByKpi={cellValuesByKpi}
+              p2pBreakdownByKpi={p2pBreakdownByKpi}
               siteEntries={siteEntries}
               planDate={planDate}
               shiftKind={shiftKind}

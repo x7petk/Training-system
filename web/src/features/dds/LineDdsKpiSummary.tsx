@@ -10,6 +10,7 @@ import { isDdsKpiSiteByLine, isDdsKpiSiteConsolidated } from './ddsKpiSitePresen
 import { parseDdsKpiScoring } from './ddsKpiScoring'
 import { parseDdsKpiUnit } from './ddsKpiUnits'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
+import { p2pRollupEventMatchesMeetingDay } from './ddsKpiP2pRollup'
 
 type KpiGroup = { id: string; name: string; sort_order: number }
 
@@ -67,7 +68,7 @@ export function LineDdsKpiSummary({ cellId, cellName, planDate, shiftKind, shell
         .order('name'),
       supabase
         .from('dds_kpi_line_entries')
-        .select('id, master_cell_id, line_id, kpi_id, value_numeric, comment')
+        .select('id, master_cell_id, line_id, kpi_id, value_numeric, comment, p2p_breakdown')
         .eq('master_cell_id', cellId)
         .eq('plan_date', planDate)
         .eq('shift_kind', shiftKind),
@@ -92,9 +93,11 @@ export function LineDdsKpiSummary({ cellId, cellName, planDate, shiftKind, shell
 
   useEffect(() => {
     return subscribeDdsP2pKpiRollupDone((d) => {
-      if (d.masterCellId === cellId && d.planDate === planDate && d.shiftKind === shiftKind) {
-        setEpoch((n) => n + 1)
+      if (d.masterCellId !== cellId || d.planDate !== planDate) return
+      if (!p2pRollupEventMatchesMeetingDay({ eventShiftKind: d.shiftKind, viewShiftKind: shiftKind, meetingSurface: true })) {
+        return
       }
+      setEpoch((n) => n + 1)
     })
   }, [cellId, planDate, shiftKind])
 

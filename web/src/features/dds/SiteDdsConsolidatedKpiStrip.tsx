@@ -6,6 +6,7 @@ import type { DdsKpiScoring } from './ddsKpiScoring'
 import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { formatKpiValueWithUnit } from './ddsKpiUnits'
+import { kpiHasDdsCommentDetail, type DdsP2pKpiBreakdownItem } from './ddsKpiP2pRollup'
 import {
   resolveSiteDdsKpiValue,
   sitePresentationLabel,
@@ -33,6 +34,7 @@ type Props = {
   cellIds: string[]
   kpis: ConsolidatedKpiDef[]
   cellValuesByKpi: Map<string, number[]>
+  p2pBreakdownByKpi?: Map<string, DdsP2pKpiBreakdownItem[]>
   siteEntries: Record<string, SiteEntryRow>
   planDate: string
   shiftKind: string
@@ -44,6 +46,7 @@ export function SiteDdsConsolidatedKpiStrip({
   cellIds,
   kpis,
   cellValuesByKpi,
+  p2pBreakdownByKpi,
   siteEntries,
   planDate,
   shiftKind,
@@ -59,7 +62,12 @@ export function SiteDdsConsolidatedKpiStrip({
   } | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [detail, setDetail] = useState<{ top: number; left: number; text: string } | null>(null)
+  const [detail, setDetail] = useState<{
+    top: number
+    left: number
+    text: string
+    breakdown: DdsP2pKpiBreakdownItem[]
+  } | null>(null)
   const detailRef = useRef<HTMLDivElement | null>(null)
 
   useLayoutEffect(() => {
@@ -121,6 +129,8 @@ export function SiteDdsConsolidatedKpiStrip({
               : '—'
           const targetLine = scoringTargetNumbersOnly(kpi.scoring)
           const cmt = siteEntry?.comment?.trim() ?? ''
+          const breakdown = p2pBreakdownByKpi?.get(kpi.id) ?? []
+          const showComment = kpiHasDdsCommentDetail(cmt, breakdown)
           const sub = resolved.fromRollup
             ? `${sitePresentationLabel(kpi.site_dds_presentation)} · ${cellVals.length} cell${cellVals.length === 1 ? '' : 's'}`
             : resolved.fromSiteEntry
@@ -161,23 +171,25 @@ export function SiteDdsConsolidatedKpiStrip({
               }}
             >
               <span className="line-clamp-2 text-[7px] font-medium leading-none text-fg/90">{kpi.label}</span>
-              <span className="text-[9px] font-semibold tabular-nums leading-none">{valueLabel}</span>
+              <span className="inline-flex items-center gap-0.5">
+                <span className="text-[9px] font-semibold tabular-nums leading-none">{valueLabel}</span>
+                {showComment ? (
+                  <button
+                    type="button"
+                    className="inline-flex shrink-0 rounded p-0.5 text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
+                    aria-label={breakdown.length > 0 ? 'Show P2P role comments' : 'Show KPI comment'}
+                    onClick={(ev) => {
+                      ev.stopPropagation()
+                      const r = ev.currentTarget.getBoundingClientRect()
+                      setDetail({ top: r.bottom + 4, left: r.left, text: cmt, breakdown })
+                    }}
+                  >
+                    <MessageSquare className="size-3.5 shrink-0 text-accent" aria-hidden />
+                  </button>
+                ) : null}
+              </span>
               {targetLine ? <span className="text-[6px] tabular-nums leading-none text-fg/55">{targetLine}</span> : null}
               <span className="mt-px line-clamp-1 text-[6px] leading-none text-fg/50">{sub}</span>
-              {cmt ? (
-                <button
-                  type="button"
-                  className="mt-px self-end text-muted"
-                  aria-label="Comment"
-                  onClick={(ev) => {
-                    ev.stopPropagation()
-                    const r = ev.currentTarget.getBoundingClientRect()
-                    setDetail({ top: r.bottom + 4, left: r.left, text: cmt })
-                  }}
-                >
-                  <MessageSquare className="size-2.5 text-accent" />
-                </button>
-              ) : null}
             </div>
           )
         })}
@@ -186,10 +198,32 @@ export function SiteDdsConsolidatedKpiStrip({
       {detail ? (
         <div
           ref={detailRef}
-          className="fixed z-[68] max-w-xs rounded-lg border border-border bg-surface px-2 py-1.5 text-[11px] shadow-lg"
+          className="fixed z-[68] max-h-[min(50vh,20rem)] max-w-xs overflow-y-auto rounded-lg border border-border bg-surface px-2 py-1.5 text-[11px] shadow-lg"
           style={{ top: detail.top, left: detail.left }}
         >
-          {detail.text}
+          {detail.breakdown.length > 0 ? (
+            <div className="mb-2">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">P2P by role</div>
+              <ul className="space-y-1.5 leading-snug">
+                {detail.breakdown.map((b, i) => (
+                  <li key={`${b.roster_role_id}-${b.question_key}-${i}`}>
+                    <span className="font-semibold">{b.role_name}</span>
+                    {b.prompt ? <span className="text-muted"> · {b.prompt}</span> : null}
+                    <span className="tabular-nums"> · {b.value}</span>
+                    {b.comment ? <span> — {b.comment}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {detail.text ? (
+            <div>
+              {detail.breakdown.length > 0 ? (
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Comment</div>
+              ) : null}
+              {detail.text}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

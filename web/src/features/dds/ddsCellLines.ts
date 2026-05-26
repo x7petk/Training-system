@@ -13,6 +13,7 @@ export type DdsKpiLineEntry = {
   kpi_id: string
   value_numeric: number | null
   comment: string | null
+  p2p_breakdown?: unknown
 }
 
 export function lineEntryKey(lineId: string, kpiId: string): string {

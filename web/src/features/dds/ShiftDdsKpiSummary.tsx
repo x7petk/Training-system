@@ -12,7 +12,14 @@ import {
 } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
-import { parseDdsP2pKpiBreakdown, type DdsP2pKpiBreakdownItem } from './ddsKpiP2pRollup'
+import {
+  kpiHasDdsCommentDetail,
+  mergeMeetingDayKpiCellEntry,
+  parseDdsP2pKpiBreakdown,
+  p2pRollupEventMatchesMeetingDay,
+  refreshKpiP2pRollups,
+  type DdsP2pKpiBreakdownItem,
+} from './ddsKpiP2pRollup'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
 import { refreshKpiPlan24Rollups } from './ddsPlan24KpiRollup'
 import { DDS_MEETING_SHIFT_KIND } from './ddsMeetingDay'
@@ -136,6 +143,8 @@ export function ShiftDdsKpiSummary({
   const { user } = useAuth()
   const kpiEditTitleId = useId()
   const surfaceLabel = DDS_KPI_DDS_SETUP_SURFACE_LABELS[kpiSurface]
+  const meetingSurface =
+    kpiSurface === 'line-dds' || kpiSurface === 'plant-dds' || kpiSurface === 'site-dds'
   const [groups, setGroups] = useState<KpiGroup[]>([])
   const [kpis, setKpis] = useState<KpiDef[]>([])
   const [entries, setEntries] = useState<Record<string, EntryRow>>({})
@@ -159,9 +168,8 @@ export function ShiftDdsKpiSummary({
   const detailPanelRef = useRef<HTMLDivElement | null>(null)
 
   const load = useCallback(async () => {
-    const meetingSurface =
-      kpiSurface === 'line-dds' || kpiSurface === 'plant-dds' || kpiSurface === 'site-dds'
-    if (!cellId || !planDate || (!meetingSurface && !shiftKind)) {
+    const meetingSurfaceLoad = meetingSurface
+    if (!cellId || !planDate || (!meetingSurfaceLoad && !shiftKind)) {
       setGroups([])
       setKpis([])
       setEntries({})
@@ -174,8 +182,8 @@ export function ShiftDdsKpiSummary({
       await refreshKpiPlan24Rollups(supabase, {
         masterCellId: cellId,
         planDate,
-        mode: meetingSurface ? 'line_consolidated' : 'per_shift',
-        shiftKind: meetingSurface ? undefined : shiftKind,
+        mode: meetingSurfaceLoad ? 'line_consolidated' : 'per_shift',
+        shiftKind: meetingSurfaceLoad ? undefined : shiftKind,
         updatedBy: user?.id ?? null,
       })
     } catch (e) {
@@ -183,7 +191,43 @@ export function ShiftDdsKpiSummary({
       setError(e instanceof Error ? e.message : 'Could not refresh Plan 24 KPI values')
       return
     }
-    const entryShiftKinds = meetingSurface ? [DDS_MEETING_SHIFT_KIND] : [shiftKind]
+    if (meetingSurfaceLoad) {
+      try {
+        const { data: auditShiftRows, error: auditShiftErr } = await supabase
+          .from('dds_p2p_audits')
+          .select('shift_kind')
+          .eq('master_cell_id', cellId)
+          .eq('plan_date', planDate)
+        if (auditShiftErr) throw new Error(auditShiftErr.message)
+        const shiftKinds = [
+          ...new Set(
+            ((auditShiftRows ?? []) as { shift_kind: string }[])
+              .map((row) => row.shift_kind)
+              .filter((sk) => sk && sk !== DDS_MEETING_SHIFT_KIND),
+          ),
+        ]
+        for (const sk of shiftKinds) {
+          await refreshKpiP2pRollups(supabase, {
+            masterCellId: cellId,
+            planDate,
+            shiftKind: sk,
+            updatedBy: user?.id ?? null,
+          })
+        }
+      } catch (e) {
+        setLoading(false)
+        setError(e instanceof Error ? e.message : 'Could not refresh P2P KPI values')
+        return
+      }
+    }
+    let entryQuery = supabase
+      .from('dds_kpi_cell_entries')
+      .select('id, kpi_id, shift_kind, value_numeric, comment, p2p_breakdown, plan24_manual_override')
+      .eq('master_cell_id', cellId)
+      .eq('plan_date', planDate)
+    if (!meetingSurfaceLoad) {
+      entryQuery = entryQuery.eq('shift_kind', shiftKind)
+    }
     const [gRes, kRes, eRes, oRes] = await Promise.all([
       supabase.from('dds_kpi_groups').select('id, name, sort_order').order('sort_order').order('name'),
       supabase
@@ -191,12 +235,7 @@ export function ShiftDdsKpiSummary({
         .select('id, kpi_group_id, label, sort_order, point_kind, unit, display_sections, scoring, plan24_value_source')
         .order('sort_order')
         .order('label'),
-      supabase
-        .from('dds_kpi_cell_entries')
-        .select('id, kpi_id, shift_kind, value_numeric, comment, p2p_breakdown, plan24_manual_override')
-        .eq('master_cell_id', cellId)
-        .eq('plan_date', planDate)
-        .in('shift_kind', entryShiftKinds),
+      entryQuery,
       supabase.from('dds_kpi_cell_dds_display').select('kpi_id, surfaces').eq('master_cell_id', cellId),
     ])
     setLoading(false)
@@ -253,15 +292,29 @@ export function ShiftDdsKpiSummary({
       scoring: parseDdsKpiScoring(r.scoring),
     }))
     setKpis(kpiDefs)
-    const byKpiShift = new Map<string, EntryRow & { shift_kind: string }>()
+    const rowsByKpi = new Map<string, (EntryRow & { shift_kind: string })[]>()
     for (const row of eRes.data ?? []) {
       const r = row as EntryRow & { kpi_id: string; shift_kind: string }
-      byKpiShift.set(`${r.kpi_id}\0${r.shift_kind}`, r)
+      const list = rowsByKpi.get(r.kpi_id) ?? []
+      list.push(r)
+      rowsByKpi.set(r.kpi_id, list)
     }
     const em: Record<string, EntryRow> = {}
     for (const kpi of kpiDefs) {
+      if (meetingSurfaceLoad && !isDdsPlan24ValueSource(kpi.plan24_value_source)) {
+        const merged = mergeMeetingDayKpiCellEntry(rowsByKpi.get(kpi.id) ?? [])
+        if (!merged) continue
+        em[kpi.id] = {
+          id: merged.id,
+          kpi_id: kpi.id,
+          value_numeric: merged.value_numeric,
+          comment: merged.comment,
+          p2p_breakdown: merged.p2p_breakdown,
+        }
+        continue
+      }
       const sk = plan24EntryShiftKind(kpi.plan24_value_source, kpiSurface, shiftKind)
-      const r = byKpiShift.get(`${kpi.id}\0${sk}`)
+      const r = (rowsByKpi.get(kpi.id) ?? []).find((row) => row.shift_kind === sk)
       if (!r) continue
       em[kpi.id] = {
         id: r.id,
@@ -272,7 +325,7 @@ export function ShiftDdsKpiSummary({
       }
     }
     setEntries(em)
-  }, [cellId, planDate, shiftKind, kpiSurface, excludeKpiIds, groupId, user?.id])
+  }, [cellId, planDate, shiftKind, kpiSurface, meetingSurface, excludeKpiIds, groupId, user?.id])
 
   useEffect(() => {
     void load()
@@ -280,10 +333,13 @@ export function ShiftDdsKpiSummary({
 
   useEffect(() => {
     return subscribeDdsP2pKpiRollupDone((d) => {
-      if (d.masterCellId !== cellId || d.planDate !== planDate || d.shiftKind !== shiftKind) return
+      if (d.masterCellId !== cellId || d.planDate !== planDate) return
+      if (!p2pRollupEventMatchesMeetingDay({ eventShiftKind: d.shiftKind, viewShiftKind: shiftKind, meetingSurface })) {
+        return
+      }
       void load()
     })
-  }, [cellId, planDate, shiftKind, kpiSurface, load])
+  }, [cellId, planDate, shiftKind, meetingSurface, load])
 
   useEffect(() => {
     setDetailPop(null)
@@ -425,8 +481,7 @@ export function ShiftDdsKpiSummary({
                   val != null && Number.isFinite(val) ? formatKpiValueWithUnit(val, kpi.unit) : '—'
                 const cmt = e?.comment?.trim() ?? ''
                 const breakdown = parseDdsP2pKpiBreakdown(e?.p2p_breakdown)
-                const hasCmt = Boolean(cmt)
-                const hasP2pDetail = breakdown.length > 0
+                const showComment = kpiHasDdsCommentDetail(cmt, breakdown)
                 return (
                   <div
                     key={kpi.id}
@@ -445,36 +500,34 @@ export function ShiftDdsKpiSummary({
                     <span className={`font-medium leading-tight text-fg/90 line-clamp-2 ${layout.label}`}>
                       {kpi.label}
                     </span>
-                    <div className={`flex items-end justify-between gap-0.5 ${layout.valueRow}`}>
-                      <div className="min-w-0 flex-1">
+                    <div className={`flex flex-col gap-px ${layout.valueRow}`}>
+                      <span className="inline-flex min-w-0 items-center gap-0.5">
                         <span className={`font-semibold tabular-nums leading-none text-fg ${layout.value}`}>
                           {valueLabel}
                         </span>
-                        {targetLine ? (
-                          <span
-                            className={`mt-px block font-medium tabular-nums leading-none text-fg/60 ${layout.target}`}
+                        {showComment ? (
+                          <button
+                            type="button"
+                            className="inline-flex shrink-0 rounded p-0.5 text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
+                            aria-label={breakdown.length > 0 ? 'Show P2P role comments' : 'Show KPI comment'}
+                            onClick={(clickEv) => {
+                              clickEv.stopPropagation()
+                              const pos = placeDetailPanel(clickEv.currentTarget, 280)
+                              setDetailPop({
+                                ...pos,
+                                text: cmt,
+                                breakdown,
+                              })
+                            }}
                           >
-                            {targetLine}
-                          </span>
+                            <MessageSquare className={`${layout.commentIcon} shrink-0 text-accent`} aria-hidden />
+                          </button>
                         ) : null}
-                      </div>
-                      {hasCmt || hasP2pDetail ? (
-                        <button
-                          type="button"
-                          className="-m-0.5 inline-flex shrink-0 rounded p-px text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
-                          aria-label={hasP2pDetail ? 'Show P2P role comments' : 'Show KPI comment'}
-                          onClick={(clickEv) => {
-                            clickEv.stopPropagation()
-                            const pos = placeDetailPanel(clickEv.currentTarget, 280)
-                            setDetailPop({
-                              ...pos,
-                              text: cmt,
-                              breakdown,
-                            })
-                          }}
-                        >
-                          <MessageSquare className={`${layout.commentIcon} shrink-0 text-accent`} aria-hidden />
-                        </button>
+                      </span>
+                      {targetLine ? (
+                        <span className={`font-medium tabular-nums leading-none text-fg/60 ${layout.target}`}>
+                          {targetLine}
+                        </span>
                       ) : null}
                     </div>
                   </div>
