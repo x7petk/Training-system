@@ -688,9 +688,13 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
   }, [activities, scopeLevel, workspaceId])
 
   const ensureLegacyLocationIdForMasterCell = useCallback(
-    async (masterCellId: string | null | undefined): Promise<string | null> => {
+    async (
+      masterCellId: string | null | undefined,
+      targetWorkspaceId: string | null | undefined,
+    ): Promise<string | null> => {
+      const wsId = targetWorkspaceId ?? workspaceId
       const existing = legacyLocationIdForMasterCell(masterCellId, legacyLdrLocations, masterCellJoinById)
-      if (existing || !masterCellId || !workspaceId) return existing
+      if (existing || !masterCellId || !wsId) return existing
 
       const join = masterCellJoinById.get(masterCellId)
       const preferredName = join?.name?.trim() ?? ''
@@ -698,7 +702,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
 
       const { error: insertErr } = await supabase
         .from('ldr_locations')
-        .insert({ workspace_id: workspaceId, name: preferredName, sort_order: legacyLdrLocations.length })
+        .insert({ workspace_id: wsId, name: preferredName, sort_order: legacyLdrLocations.length })
 
       // If insert fails (e.g. duplicate), still refresh and resolve from current rows.
       if (insertErr && !/duplicate|unique/i.test(insertErr.message)) return null
@@ -706,11 +710,15 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
       const { data: refreshedRows, error: refreshErr } = await supabase
         .from('ldr_locations')
         .select('id, name')
-        .eq('workspace_id', workspaceId)
+        .eq('workspace_id', wsId)
 
       if (refreshErr) return null
       const refreshed = (refreshedRows ?? []) as { id: string; name: string }[]
-      setLegacyLdrLocations(refreshed)
+      setLegacyLdrLocations((prev) => {
+        const byId = new Map(prev.map((row) => [row.id, row]))
+        for (const row of refreshed) byId.set(row.id, row)
+        return [...byId.values()]
+      })
       return legacyLocationIdForMasterCell(masterCellId, refreshed, masterCellJoinById)
     },
     [legacyLdrLocations, masterCellJoinById, workspaceId],
@@ -738,7 +746,11 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
     const person = peopleById.get(ldrPersonId)
     const targetWorkspaceId = activityWorkspaceById.get(activityId) ?? workspaceId
     if (!targetWorkspaceId) return
-    const masterCellId = opts?.masterCellId
+    const masterCellId =
+      opts?.masterCellId ??
+      (scopeLevel === 'cell' && cellId ? cellId : undefined) ??
+      person?.master_cell_id ??
+      null
     const rag_status = opts?.rag_status ?? 'none'
     const comment = opts?.comment?.trim() ?? ''
     const { error: e } = await supabase.from('ldr_assignments').insert({
@@ -746,14 +758,18 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
       activity_id: activityId,
       assignment_date: date,
       ldr_person_id: ldrPersonId,
-      master_cell_id: masterCellId ?? person?.master_cell_id ?? null,
+      master_cell_id: masterCellId,
       ldr_location_id: null,
       rag_status,
       comment,
     })
     if (e && isMissingMasterCellColumnError(e.message)) {
-      const chosenMaster = masterCellId ?? person?.master_cell_id ?? undefined
-      const locId = await ensureLegacyLocationIdForMasterCell(chosenMaster ?? null)
+      const chosenMaster =
+        opts?.masterCellId ??
+        (scopeLevel === 'cell' && cellId ? cellId : undefined) ??
+        person?.master_cell_id ??
+        undefined
+      const locId = await ensureLegacyLocationIdForMasterCell(chosenMaster ?? null, targetWorkspaceId)
       const { error: legacyErr } = await supabase.from('ldr_assignments').insert({
         workspace_id: targetWorkspaceId,
         activity_id: activityId,
@@ -782,7 +798,9 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
     const { error: e } = await supabase.from('ldr_assignments').update(patch).eq('id', id)
     if (e && isMissingMasterCellColumnError(e.message)) {
       const { master_cell_id: mc, ...legacyPatch } = patch
-      const locId = mc !== undefined ? await ensureLegacyLocationIdForMasterCell(mc) : undefined
+      const assignmentWorkspaceId = assignments.find((a) => a.id === id)?.workspace_id ?? workspaceId
+      const locId =
+        mc !== undefined ? await ensureLegacyLocationIdForMasterCell(mc, assignmentWorkspaceId) : undefined
       const withLoc =
         locId !== undefined
           ? {
@@ -1035,7 +1053,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
           activityName={activityNameById.get(cellModal.activityId) ?? 'Activity'}
           date={cellModal.date}
           people={ldrPeople}
-          currentWorkspaceId={workspaceId ?? ''}
+          activityWorkspaceId={activityWorkspaceById.get(cellModal.activityId) ?? workspaceId ?? ''}
           scopeLevel={scopeLevel}
           contextMasterCellId={cellId}
           cells={siteCellOptions}
@@ -1076,12 +1094,17 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
   )
 }
 
+function ldrPersonWorkspaceId(person: LdrPersonRow, fallbackWorkspaceId: string): string {
+  return person.workspace_id ?? fallbackWorkspaceId
+}
+
 function CellEditorModal(props: {
   rosterActivityId: string
   activityName: string
   date: string
   people: LdrPersonRow[]
-  currentWorkspaceId: string
+  /** Workspace that owns the activity row (site vs cell activity). */
+  activityWorkspaceId: string
   scopeLevel: 'site' | 'cell'
   contextMasterCellId: string
   cells: { id: string; label: string }[]
@@ -1107,8 +1130,17 @@ function CellEditorModal(props: {
   const assignedIds = useMemo(() => new Set(props.rows.map((r) => r.ldr_person_id)), [props.rows])
   const peopleById = useMemo(() => new Map(props.people.map((p) => [p.id, p])), [props.people])
   const addable = useMemo(
-    () => props.people.filter((p) => !assignedIds.has(p.id) && (p.workspace_id ?? props.currentWorkspaceId) === props.currentWorkspaceId),
-    [props.people, assignedIds, props.currentWorkspaceId],
+    () =>
+      props.people.filter(
+        (p) =>
+          !assignedIds.has(p.id) &&
+          ldrPersonWorkspaceId(p, props.activityWorkspaceId) === props.activityWorkspaceId,
+      ),
+    [props.people, assignedIds, props.activityWorkspaceId],
+  )
+  const hasUnassignedPeople = useMemo(
+    () => props.people.some((p) => !assignedIds.has(p.id)),
+    [props.people, assignedIds],
   )
   const [selectedPersonId, setSelectedPersonId] = useState('')
   const [selectedCellId, setSelectedCellId] = useState('')
@@ -1331,7 +1363,10 @@ function CellEditorModal(props: {
                   onClick={() => {
                     if (!selectedPersonId) return
                     props.onAdd(selectedPersonId, {
-                      masterCellId: props.scopeLevel === 'cell' ? undefined : selectedCellId || undefined,
+                      masterCellId:
+                        props.scopeLevel === 'cell'
+                          ? props.contextMasterCellId || undefined
+                          : selectedCellId || undefined,
                       rag_status: addRag,
                       comment: addComment,
                     })
@@ -1347,6 +1382,12 @@ function CellEditorModal(props: {
                 </button>
               </div>
             </div>
+          ) : hasUnassignedPeople ? (
+            <p className="rounded-xl border border-border bg-surface-raised/60 p-3 text-sm text-muted">
+              No people available for this activity&apos;s scope. Add matching people under{' '}
+              <strong className="text-fg/90">LDR tools → Admin → People</strong> for the same site or cell workspace
+              as the activity.
+            </p>
           ) : null}
         </div>
         </div>
