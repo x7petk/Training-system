@@ -25,6 +25,7 @@ import {
   parseDdsKpiScoring,
   scoringHint,
 } from '../features/dds/ddsKpiScoring'
+import { DDS_PLAN24_VALUE_SOURCES } from '../features/dds/ddsPlan24ValueSource'
 import {
   ddsBtn,
   ddsBtnDanger,
@@ -55,6 +56,7 @@ type KpiRow = {
   unit: string | null
   display_sections: string[] | null
   scoring: unknown
+  plan24_value_source: string | null
 }
 
 type KpiDraft = {
@@ -65,6 +67,7 @@ type KpiDraft = {
   unit: DdsKpiUnit
   sections: DdsKpiMetricSurfaceKey[]
   scoring: DdsKpiScoring
+  plan24_value_source: string
 }
 
 function defaultScoringForKind(kind: DdsKpiScoring['kind']): DdsKpiScoring {
@@ -137,7 +140,9 @@ export function DdsAdminKpisPage() {
     setError(null)
     const { data, error: qErr } = await supabase
       .from('dds_kpis')
-      .select('id, kpi_group_id, label, sort_order, point_kind, metric_scope, site_dds_presentation, unit, display_sections, scoring')
+      .select(
+        'id, kpi_group_id, label, sort_order, point_kind, metric_scope, site_dds_presentation, unit, display_sections, scoring, plan24_value_source',
+      )
       .eq('kpi_group_id', gid)
       .order('sort_order', { ascending: true })
       .order('label', { ascending: true })
@@ -159,6 +164,7 @@ export function DdsAdminKpisPage() {
         unit: parseDdsKpiUnit(r.unit),
         sections: metricSurfacesFromRow(r.display_sections),
         scoring: parseDdsKpiScoring(r.scoring),
+        plan24_value_source: r.plan24_value_source ?? '',
       }
     }
     setDrafts(next)
@@ -215,6 +221,7 @@ export function DdsAdminKpisPage() {
         unit: d.unit,
         display_sections: d.sections,
         scoring: d.scoring,
+        plan24_value_source: d.plan24_value_source.trim() || null,
       })
       .eq('id', id)
     setSavingId(null)
@@ -552,6 +559,25 @@ export function DdsAdminKpisPage() {
                         </label>
                       ))}
                     </div>
+                  </div>
+
+                  <div className="mt-3 border-t border-border/50 pt-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Value source</p>
+                    <p className="mt-0.5 text-[10px] text-muted">
+                      Plan 24 metrics refresh when a DDS screen loads. Line DDS uses day+night consolidated; Shift DDS
+                      uses the selected shift. Editing a value on DDS keeps it manual until you change it again.
+                    </p>
+                    <select
+                      className={`${ddsSelect} mt-1.5 max-w-md`}
+                      value={d.plan24_value_source}
+                      onChange={(e) => setDraft(row.id, { plan24_value_source: e.target.value })}
+                    >
+                      {DDS_PLAN24_VALUE_SOURCES.map((o) => (
+                        <option key={o.value || 'manual'} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="mt-3 border-t border-border/50 pt-3">

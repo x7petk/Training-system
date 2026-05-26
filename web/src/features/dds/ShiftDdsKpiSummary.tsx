@@ -8,6 +8,12 @@ import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
 import { parseDdsP2pKpiBreakdown, type DdsP2pKpiBreakdownItem } from './ddsKpiP2pRollup'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
+import { refreshKpiPlan24Rollups } from './ddsPlan24KpiRollup'
+import {
+  isDdsPlan24ValueSource,
+  PLAN24_LINE_CONSOLIDATED_SHIFT_KIND,
+  plan24EntryShiftKind,
+} from './ddsPlan24ValueSource'
 import {
   DDS_KPI_DDS_SETUP_SURFACE_LABELS,
   type DdsKpiDdsSetupSurfaceKey,
@@ -25,6 +31,7 @@ type KpiDef = {
   sort_order: number
   point_kind: string
   display_sections: string[] | null
+  plan24_value_source: string | null
   unit: DdsKpiUnit
   scoring: DdsKpiScoring
 }
@@ -121,19 +128,34 @@ export function ShiftDdsKpiSummary({
     }
     setLoading(true)
     setError(null)
+    try {
+      await refreshKpiPlan24Rollups(supabase, {
+        masterCellId: cellId,
+        planDate,
+        mode: kpiSurface === 'line-dds' ? 'line_consolidated' : 'per_shift',
+        shiftKind: kpiSurface === 'line-dds' ? undefined : shiftKind,
+        updatedBy: user?.id ?? null,
+      })
+    } catch (e) {
+      setLoading(false)
+      setError(e instanceof Error ? e.message : 'Could not refresh Plan 24 KPI values')
+      return
+    }
+    const entryShiftKinds =
+      kpiSurface === 'line-dds' ? [shiftKind, PLAN24_LINE_CONSOLIDATED_SHIFT_KIND] : [shiftKind]
     const [gRes, kRes, eRes, oRes] = await Promise.all([
       supabase.from('dds_kpi_groups').select('id, name, sort_order').order('sort_order').order('name'),
       supabase
         .from('dds_kpis')
-        .select('id, kpi_group_id, label, sort_order, point_kind, unit, display_sections, scoring')
+        .select('id, kpi_group_id, label, sort_order, point_kind, unit, display_sections, scoring, plan24_value_source')
         .order('sort_order')
         .order('label'),
       supabase
         .from('dds_kpi_cell_entries')
-        .select('id, kpi_id, value_numeric, comment, p2p_breakdown')
+        .select('id, kpi_id, shift_kind, value_numeric, comment, p2p_breakdown, plan24_manual_override')
         .eq('master_cell_id', cellId)
         .eq('plan_date', planDate)
-        .eq('shift_kind', shiftKind),
+        .in('shift_kind', entryShiftKinds),
       supabase.from('dds_kpi_cell_dds_display').select('kpi_id, surfaces').eq('master_cell_id', cellId),
     ])
     setLoading(false)
@@ -166,6 +188,7 @@ export function ShiftDdsKpiSummary({
       point_kind: string | null
       unit: string | null
       display_sections: string[] | null
+      plan24_value_source: string | null
       scoring: unknown
     }[]
     const kRows = kRowsAll.filter((r) => {
@@ -177,22 +200,29 @@ export function ShiftDdsKpiSummary({
         overrideBy.has(r.id) ? overrideBy.get(r.id)! : null,
       )
     })
-    setKpis(
-      kRows.map((r) => ({
-        id: r.id,
-        kpi_group_id: r.kpi_group_id,
-        label: r.label,
-        sort_order: r.sort_order,
-        point_kind: String(r.point_kind ?? ''),
-        display_sections: r.display_sections,
-        unit: parseDdsKpiUnit(r.unit),
-        scoring: parseDdsKpiScoring(r.scoring),
-      })),
-    )
-    const em: Record<string, EntryRow> = {}
+    const kpiDefs = kRows.map((r) => ({
+      id: r.id,
+      kpi_group_id: r.kpi_group_id,
+      label: r.label,
+      sort_order: r.sort_order,
+      point_kind: String(r.point_kind ?? ''),
+      display_sections: r.display_sections,
+      plan24_value_source: r.plan24_value_source,
+      unit: parseDdsKpiUnit(r.unit),
+      scoring: parseDdsKpiScoring(r.scoring),
+    }))
+    setKpis(kpiDefs)
+    const byKpiShift = new Map<string, EntryRow & { shift_kind: string }>()
     for (const row of eRes.data ?? []) {
-      const r = row as EntryRow & { kpi_id: string }
-      em[r.kpi_id] = {
+      const r = row as EntryRow & { kpi_id: string; shift_kind: string }
+      byKpiShift.set(`${r.kpi_id}\0${r.shift_kind}`, r)
+    }
+    const em: Record<string, EntryRow> = {}
+    for (const kpi of kpiDefs) {
+      const sk = plan24EntryShiftKind(kpi.plan24_value_source, kpiSurface, shiftKind)
+      const r = byKpiShift.get(`${kpi.id}\0${sk}`)
+      if (!r) continue
+      em[kpi.id] = {
         id: r.id,
         kpi_id: r.kpi_id,
         value_numeric: r.value_numeric,
@@ -201,7 +231,7 @@ export function ShiftDdsKpiSummary({
       }
     }
     setEntries(em)
-  }, [cellId, planDate, shiftKind, kpiSurface, excludeKpiIds, groupId])
+  }, [cellId, planDate, shiftKind, kpiSurface, excludeKpiIds, groupId, user?.id])
 
   useEffect(() => {
     void load()
@@ -278,15 +308,18 @@ export function ShiftDdsKpiSummary({
     const value_numeric = String(modal.valueStr).trim() === '' || !Number.isFinite(n) ? null : n
     setSaving(true)
     setError(null)
+    const entryShift = plan24EntryShiftKind(modal.kpi.plan24_value_source, kpiSurface, shiftKind)
+    const plan24Manual = isDdsPlan24ValueSource(modal.kpi.plan24_value_source)
     const { error: uErr } = await supabase.from('dds_kpi_cell_entries').upsert(
       {
         master_cell_id: cellId,
         kpi_id: modal.kpi.id,
         plan_date: planDate,
-        shift_kind: shiftKind,
+        shift_kind: entryShift,
         value_numeric,
         comment: modal.comment.trim() || null,
         p2p_breakdown: null,
+        plan24_manual_override: plan24Manual,
         updated_by: user?.id ?? null,
       },
       { onConflict: 'master_cell_id,kpi_id,plan_date,shift_kind' },
