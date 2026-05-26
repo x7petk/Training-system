@@ -58,6 +58,9 @@ const DdsAdminKpisPage = lazy(() => import('./pages/DdsAdminKpisPage').then((m) 
 const DdsAdminKpiSetupPage = lazy(() =>
   import('./pages/DdsAdminKpiSetupPage').then((m) => ({ default: m.DdsAdminKpiSetupPage })),
 )
+const DdsAdminCellLinesPage = lazy(() =>
+  import('./pages/DdsAdminCellLinesPage').then((m) => ({ default: m.DdsAdminCellLinesPage })),
+)
 const DdsAdminP2pStandardPage = lazy(() =>
   import('./pages/DdsAdminP2pStandardPage').then((m) => ({ default: m.DdsAdminP2pStandardPage })),
 )
@@ -327,6 +330,7 @@ export default function App() {
               <Route path="kpi-groups" element={<DdsAdminKpiGroupsPage />} />
               <Route path="kpis" element={<DdsAdminKpisPage />} />
               <Route path="kpi-setup" element={<DdsAdminKpiSetupPage />} />
+              <Route path="cell-lines" element={<DdsAdminCellLinesPage />} />
               <Route path="p2p-standard" element={<DdsAdminP2pStandardPage />} />
               <Route path="p2p-soft-points" element={<DdsAdminP2pSoftPointsPage />} />
               <Route path="p2p-setup" element={<DdsP2pSetupPage />} />

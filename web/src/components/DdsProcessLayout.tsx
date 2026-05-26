@@ -126,6 +126,18 @@ export function DdsProcessLayout() {
                     KPI set-up
                   </NavLink>
                   <NavLink
+                    to="/dds-process/admin/cell-lines"
+                    end
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg py-1.5 pl-9 pr-3 text-xs font-medium transition-colors',
+                        isActive ? 'text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    Cell lines
+                  </NavLink>
+                  <NavLink
                     to="/dds-process/admin/p2p-standard"
                     end
                     className={({ isActive }) =>

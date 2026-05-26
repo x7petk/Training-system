@@ -524,8 +524,8 @@ export function DdsAdminKpisPage() {
                   <div className="mt-3 border-t border-border/50 pt-3">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Site DDS presentation</p>
                     <p className="mt-0.5 text-[10px] text-muted">
-                      Per cell = one tile per cell on Site DDS. Consolidated = one site tile (rollup from cells; manual
-                      site value overrides).
+                      Per cell = one tile per cell. Consolidated = one site tile (rollup). By line = table on Site DDS
+                      (metric rows, line columns from Admin → Cell lines).
                     </p>
                     <select
                       className={`${ddsSelect} mt-1.5 max-w-md`}

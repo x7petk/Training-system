@@ -9,7 +9,7 @@ import { formatKpiValueWithUnit } from './ddsKpiUnits'
 import {
   resolveSiteDdsKpiValue,
   sitePresentationLabel,
-  type DdsKpiSitePresentationMode,
+  type DdsKpiSiteRollupMode,
 } from './ddsKpiSitePresentation'
 
 export type ConsolidatedKpiDef = {
@@ -18,7 +18,7 @@ export type ConsolidatedKpiDef = {
   sort_order: number
   unit: DdsKpiUnit
   scoring: DdsKpiScoring
-  site_dds_presentation: DdsKpiSitePresentationMode
+  site_dds_presentation: DdsKpiSiteRollupMode
 }
 
 type SiteEntryRow = {
