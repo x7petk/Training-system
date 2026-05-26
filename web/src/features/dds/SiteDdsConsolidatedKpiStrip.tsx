@@ -110,7 +110,6 @@ export function SiteDdsConsolidatedKpiStrip({
 
   return (
     <div className="mt-1 border-t border-dashed border-border/70 pt-1">
-      <p className="mb-0.5 text-[8px] font-semibold uppercase tracking-wide text-muted">Site consolidated</p>
       {error ? <p className="mb-1 text-[10px] text-rose-700 dark:text-rose-300">{error}</p> : null}
       <div className="flex flex-wrap gap-0.5">
         {kpis.map((kpi) => {

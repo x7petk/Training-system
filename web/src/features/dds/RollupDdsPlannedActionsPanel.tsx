@@ -14,6 +14,7 @@ type Props = {
   createCellId: string | null
   /** Line / Plant / Site DDS: list all actions for the plan date (day meeting). */
   allShiftsForPlanDate?: boolean
+  showOtherCellsEmptyHint?: boolean
 }
 
 export type RollupDdsPlannedActionsPanelHandle = {
@@ -23,7 +24,7 @@ export type RollupDdsPlannedActionsPanelHandle = {
 /** Plant / Site DDS planned actions — scoped cell editable; other cells read-only timelines. */
 export const RollupDdsPlannedActionsPanel = forwardRef<RollupDdsPlannedActionsPanelHandle, Props>(
   function RollupDdsPlannedActionsPanel(
-    { cells, planDate, shiftKind, uiSurface, emptyLabel, createCellId, allShiftsForPlanDate },
+    { cells, planDate, shiftKind, uiSurface, emptyLabel, createCellId, allShiftsForPlanDate, showOtherCellsEmptyHint = true },
     ref,
   ) {
     const createPanelRef = useRef<LineDdsActionsPanelHandle>(null)
@@ -108,7 +109,7 @@ export const RollupDdsPlannedActionsPanel = forwardRef<RollupDdsPlannedActionsPa
           />
         ))}
 
-        {otherCells.length > 0 && allLoadedEmpty ? (
+        {showOtherCellsEmptyHint && otherCells.length > 0 && allLoadedEmpty ? (
           <p className="py-0.5 text-[10px] text-muted">No DDS actions on other cells for this shift.</p>
         ) : null}
       </div>

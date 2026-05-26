@@ -67,7 +67,6 @@ export function SiteDdsPage() {
             <h2 className="shrink-0 border-b border-border/60 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
               Top losses
             </h2>
-            <p className="mt-0.5 shrink-0 text-[9px] text-muted">Promoted to site only.</p>
             <div className="min-h-0 flex-1">
               <DdsTopLossesPanel
                 cellIds={siteCellIds}
@@ -85,12 +84,9 @@ export function SiteDdsPage() {
             aria-label="Planned DDS actions"
           >
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 pb-1.5">
-              <div className="min-w-0">
-                <h2 className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  Planned actions (DDS)
-                </h2>
-                <p className="mt-0.5 text-[9px] text-muted">Site-level actions only.</p>
-              </div>
+              <h2 className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Planned actions (DDS)
+              </h2>
               {!shellLoading && cellId ? (
                 <button
                   type="button"
@@ -119,6 +115,7 @@ export function SiteDdsPage() {
                   uiSurface="site-dds"
                   emptyLabel="No cells in this site."
                   allShiftsForPlanDate
+                  showOtherCellsEmptyHint={false}
                 />
               )}
             </div>
@@ -128,7 +125,6 @@ export function SiteDdsPage() {
             <h2 className="shrink-0 border-b border-border/60 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
               Reward and recognition
             </h2>
-            <p className="mt-0.5 shrink-0 text-[9px] text-muted">Promoted to site only.</p>
             <div className="min-h-0 flex-1">
               <DdsRewardRecognitionPanel
                 cellIds={siteCellIds}

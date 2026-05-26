@@ -28,13 +28,12 @@ type KpiRow = {
 
 type Props = {
   cellId: string
-  cellName?: string
   planDate: string
   shiftKind: string
   shellLoading?: boolean
 }
 
-export function LineDdsKpiSummary({ cellId, cellName, planDate, shiftKind, shellLoading }: Props) {
+export function LineDdsKpiSummary({ cellId, planDate, shiftKind, shellLoading }: Props) {
   const [groups, setGroups] = useState<KpiGroup[]>([])
   const [kpis, setKpis] = useState<KpiRow[]>([])
   const [surfaceOverrides, setSurfaceOverrides] = useState<Map<string, string[]>>(new Map())
@@ -173,13 +172,6 @@ export function LineDdsKpiSummary({ cellId, cellName, planDate, shiftKind, shell
     return [...withContent].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
   }, [groups, byLineByGroup, kpis, kpiVisibleOnLineDds, excludeKpiIds])
 
-  const firstByLineGroupId = useMemo(() => {
-    const g = sortedGroups.find((sg) => (byLineByGroup.get(sg.id) ?? []).length > 0)
-    return g?.id ?? null
-  }, [sortedGroups, byLineByGroup])
-
-  const byLineCaption = cellName ? `${cellName} — by line` : 'By line'
-
   if (shellLoading || loading) {
     return (
       <p className="flex items-center gap-1 text-[11px] text-muted" role="status">
@@ -217,7 +209,6 @@ export function LineDdsKpiSummary({ cellId, cellName, planDate, shiftKind, shell
                     entries={lineEntries}
                     planDate={planDate}
                     shiftKind={shiftKind}
-                    tableTitle={g.id === firstByLineGroupId ? byLineCaption : undefined}
                     emptyLinesMessage="No lines for this cell. Add lines under Admin → Cell lines."
                     onSaved={() => setEpoch((n) => n + 1)}
                   />

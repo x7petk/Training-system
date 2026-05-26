@@ -14,8 +14,7 @@ import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClas
 import { useAuth } from '../hooks/useAuth'
 
 export function LineDdsPage() {
-  const { status: scopeStatus, error: scopeError, cellId, cells } = usePlan24Workspace()
-  const cellName = cells.find((c) => c.id === cellId)?.name
+  const { status: scopeStatus, error: scopeError, cellId } = usePlan24Workspace()
   const { planDate, shiftKind, shifts, shellLoading, rosterError } = useShiftDdsShell()
   const { user } = useAuth()
   const plannedActionsPanelRef = useRef<LineDdsActionsPanelHandle>(null)
@@ -61,7 +60,6 @@ export function LineDdsPage() {
             <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
               <LineDdsKpiSummary
                 cellId={cellId}
-                cellName={cellName}
                 planDate={planDate}
                 shiftKind={shiftKind}
               />
