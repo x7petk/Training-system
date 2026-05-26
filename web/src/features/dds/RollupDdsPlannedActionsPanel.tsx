@@ -12,6 +12,8 @@ type Props = {
   emptyLabel: string
   /** Scoped cell from the scope bar — used for New (create) and shown with full Line DDS actions UI. */
   createCellId: string | null
+  /** Line / Plant / Site DDS: list all actions for the plan date (day meeting). */
+  allShiftsForPlanDate?: boolean
 }
 
 export type RollupDdsPlannedActionsPanelHandle = {
@@ -21,7 +23,7 @@ export type RollupDdsPlannedActionsPanelHandle = {
 /** Plant / Site DDS planned actions — scoped cell editable; other cells read-only timelines. */
 export const RollupDdsPlannedActionsPanel = forwardRef<RollupDdsPlannedActionsPanelHandle, Props>(
   function RollupDdsPlannedActionsPanel(
-    { cells, planDate, shiftKind, uiSurface, emptyLabel, createCellId },
+    { cells, planDate, shiftKind, uiSurface, emptyLabel, createCellId, allShiftsForPlanDate },
     ref,
   ) {
     const createPanelRef = useRef<LineDdsActionsPanelHandle>(null)
@@ -65,10 +67,6 @@ export const RollupDdsPlannedActionsPanel = forwardRef<RollupDdsPlannedActionsPa
       return trackedCells.every((c) => visibleByCell[c.id] === false)
     }, [trackedCells, visibleByCell, createCell, createCellId])
 
-    if (!shiftKind) {
-      return <p className="text-[11px] text-muted">Select a shift in the scope bar to load DDS actions.</p>
-    }
-
     if (cells.length === 0) {
       return <p className="text-[11px] text-muted">{emptyLabel}</p>
     }
@@ -92,6 +90,7 @@ export const RollupDdsPlannedActionsPanel = forwardRef<RollupDdsPlannedActionsPa
               planDate={planDate}
               shiftKind={shiftKind}
               uiSurface={uiSurface}
+              allShiftsForPlanDate={allShiftsForPlanDate}
               onCreated={onCreated}
             />
           </section>
@@ -104,6 +103,7 @@ export const RollupDdsPlannedActionsPanel = forwardRef<RollupDdsPlannedActionsPa
             planDate={planDate}
             shiftKind={shiftKind}
             uiSurface={uiSurface}
+            allShiftsForPlanDate={allShiftsForPlanDate}
             onVisibleChange={(visible) => onCellVisible(cell.id, visible)}
           />
         ))}
@@ -121,12 +121,14 @@ function RollupCellActionsSection({
   planDate,
   shiftKind,
   uiSurface,
+  allShiftsForPlanDate,
   onVisibleChange,
 }: {
   cell: CellLite
   planDate: string
   shiftKind: string
   uiSurface: DdsActionUiSurfaceKey
+  allShiftsForPlanDate?: boolean
   onVisibleChange: (visible: boolean) => void
 }) {
   const [hasActions, setHasActions] = useState<boolean | null>(null)
@@ -143,6 +145,7 @@ function RollupCellActionsSection({
         planDate={planDate}
         shiftKind={shiftKind}
         uiSurface={uiSurface}
+        allShiftsForPlanDate={allShiftsForPlanDate}
         readOnly
         hideWhenEmpty
         onVisibleChange={(visible) => {

@@ -3,7 +3,7 @@ import { Loader2, MessageSquare } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import type { DdsKpiScoring } from './ddsKpiScoring'
-import { evaluateKpiBlock, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
+import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { formatKpiValueWithUnit } from './ddsKpiUnits'
 import {
@@ -37,12 +37,6 @@ type Props = {
   planDate: string
   shiftKind: string
   onSaved: () => void
-}
-
-function blockClasses(tone: 'neutral' | 'good' | 'bad'): string {
-  if (tone === 'good') return 'border-emerald-600/50 bg-emerald-600/15 text-emerald-950 dark:bg-emerald-900/35 dark:text-emerald-50'
-  if (tone === 'bad') return 'border-rose-600/50 bg-rose-600/15 text-rose-950 dark:bg-rose-900/35 dark:text-rose-50'
-  return 'border-sky-600/45 bg-sky-600/12 text-sky-950 dark:bg-sky-900/35 dark:text-sky-50'
 }
 
 export function SiteDdsConsolidatedKpiStrip({
@@ -140,7 +134,7 @@ export function SiteDdsConsolidatedKpiStrip({
               key={kpi.id}
               role="button"
               tabIndex={0}
-              className={`flex min-w-[3rem] max-w-[5.5rem] cursor-pointer flex-col rounded-md border px-1 py-0.5 text-left shadow-sm outline-none ring-accent/30 focus-visible:ring-2 ${blockClasses(tone)}`}
+              className={`flex min-w-[2.75rem] max-w-[5rem] cursor-pointer flex-col rounded-sm border px-1 py-px text-left outline-none ring-accent/30 focus-visible:ring-2 ${kpiBlockToneClasses(tone)}`}
               onClick={() =>
                 setModal({
                   kpi,
@@ -166,10 +160,10 @@ export function SiteDdsConsolidatedKpiStrip({
                 }
               }}
             >
-              <span className="line-clamp-2 text-[8px] font-medium leading-tight text-fg/90">{kpi.label}</span>
-              <span className="text-[10px] font-semibold tabular-nums leading-none">{valueLabel}</span>
-              {targetLine ? <span className="text-[7px] tabular-nums text-fg/55">{targetLine}</span> : null}
-              <span className="mt-px line-clamp-1 text-[7px] text-fg/50">{sub}</span>
+              <span className="line-clamp-2 text-[7px] font-medium leading-none text-fg/90">{kpi.label}</span>
+              <span className="text-[9px] font-semibold tabular-nums leading-none">{valueLabel}</span>
+              {targetLine ? <span className="text-[6px] tabular-nums leading-none text-fg/55">{targetLine}</span> : null}
+              <span className="mt-px line-clamp-1 text-[6px] leading-none text-fg/50">{sub}</span>
               {cmt ? (
                 <button
                   type="button"

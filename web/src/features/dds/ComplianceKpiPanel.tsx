@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import type { DdsKpiScoring } from './ddsKpiScoring'
-import { evaluateKpiBlock, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
+import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
 import { parseDdsKpiScoring } from './ddsKpiScoring'
@@ -44,12 +44,6 @@ type Props = {
   planDate: string
   viewMode: ComplianceKpiViewMode
   metricSurface: Extract<DdsKpiMetricSurfaceKey, 'line-compliance' | 'site-compliance'>
-}
-
-function blockClasses(tone: 'neutral' | 'good' | 'bad'): string {
-  if (tone === 'good') return 'border-emerald-600/50 bg-emerald-600/15 text-emerald-950 dark:bg-emerald-900/35 dark:text-emerald-50'
-  if (tone === 'bad') return 'border-rose-600/50 bg-rose-600/15 text-rose-950 dark:bg-rose-900/35 dark:text-rose-50'
-  return 'border-sky-600/45 bg-sky-600/12 text-sky-950 dark:bg-sky-900/35 dark:text-sky-50'
 }
 
 const inputClass =
@@ -259,9 +253,9 @@ export function ComplianceKpiPanel({ cellId, planDate, viewMode, metricSurface }
         key={`${kpi.id}-${ymd}`}
         role="button"
         tabIndex={0}
-        className={`flex cursor-pointer flex-col rounded-md border text-left shadow-sm outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-2 ${
-          compact ? 'min-w-[3rem] max-w-[5.5rem] px-1.5 py-1' : 'min-w-[4.75rem] max-w-[8rem] px-1.5 py-1'
-        } ${blockClasses(tone)}`}
+        className={`flex cursor-pointer flex-col rounded-sm border text-left outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-2 ${
+          compact ? 'min-w-[2.75rem] max-w-[5rem] px-1 py-0.5' : 'min-w-[3.5rem] max-w-[6.5rem] px-1 py-0.5'
+        } ${kpiBlockToneClasses(tone)}`}
         aria-label={`${kpi.label}, ${formatShortYmd(ymd)}, edit`}
         onClick={() => openModal(kpi, ymd)}
         onKeyDown={(ev) => {
@@ -274,14 +268,14 @@ export function ComplianceKpiPanel({ cellId, planDate, viewMode, metricSurface }
         {viewMode === 'week' ? (
           <span className="text-[8px] font-medium text-fg/65">{formatShortYmd(ymd)}</span>
         ) : null}
-        <span className={`font-medium leading-tight text-fg/90 line-clamp-2 ${compact ? 'text-[8px]' : 'text-[9px]'}`}>
+        <span className={`font-medium leading-tight text-fg/90 line-clamp-2 ${compact ? 'text-[8px]' : 'text-[8px]'}`}>
           {viewMode === 'week' ? kpi.label : kpi.label}
         </span>
-        <span className={`font-semibold tabular-nums leading-none text-fg ${compact ? 'text-[10px]' : 'text-sm'}`}>
+        <span className={`font-semibold tabular-nums leading-none text-fg ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
           {valueLabel}
         </span>
         {targetLine ? (
-          <span className="mt-0.5 block text-[8px] font-medium tabular-nums leading-none text-fg/60">{targetLine}</span>
+          <span className="mt-px block text-[7px] font-medium tabular-nums leading-none text-fg/60">{targetLine}</span>
         ) : null}
       </div>
     )

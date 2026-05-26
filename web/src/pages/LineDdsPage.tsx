@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { Loader2, Plus } from 'lucide-react'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
-import { ShiftDdsKpiSummary } from '../features/dds/ShiftDdsKpiSummary'
+import { LineDdsKpiSummary } from '../features/dds/LineDdsKpiSummary'
 import { useShiftDdsShell } from '../features/dds/ShiftDdsShellContext'
 import {
   DdsRewardRecognitionPanel,
@@ -14,7 +14,8 @@ import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClas
 import { useAuth } from '../hooks/useAuth'
 
 export function LineDdsPage() {
-  const { status: scopeStatus, error: scopeError, cellId } = usePlan24Workspace()
+  const { status: scopeStatus, error: scopeError, cellId, cells } = usePlan24Workspace()
+  const cellName = cells.find((c) => c.id === cellId)?.name
   const { planDate, shiftKind, shifts, shellLoading, rosterError } = useShiftDdsShell()
   const { user } = useAuth()
   const plannedActionsPanelRef = useRef<LineDdsActionsPanelHandle>(null)
@@ -56,11 +57,14 @@ export function LineDdsPage() {
             <p className="mt-2 flex shrink-0 items-center gap-1 text-[11px] text-muted" role="status">
               <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading…
             </p>
-          ) : !shiftKind ? (
-            <p className="mt-2 shrink-0 text-[11px] text-muted">Select a shift to load KPIs.</p>
           ) : (
             <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
-              <ShiftDdsKpiSummary cellId={cellId} planDate={planDate} shiftKind={shiftKind} kpiSurface="line-dds" />
+              <LineDdsKpiSummary
+                cellId={cellId}
+                cellName={cellName}
+                planDate={planDate}
+                shiftKind={shiftKind}
+              />
             </div>
           )}
         </section>
@@ -71,7 +75,7 @@ export function LineDdsPage() {
               <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
                 Top losses
               </h2>
-              {!shellLoading && shiftKind ? (
+              {!shellLoading ? (
                 <button
                   type="button"
                   disabled={!user}
@@ -89,9 +93,10 @@ export function LineDdsPage() {
                 ref={topLossesPanelRef}
                 cellId={cellId}
                 planDate={planDate}
-                shiftKind={shiftKind ?? ''}
+                shiftKind={shiftKind}
                 surface="line-dds"
                 shellLoading={shellLoading}
+                allShiftsForPlanDate
               />
             </div>
           </section>
@@ -104,7 +109,7 @@ export function LineDdsPage() {
               <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
                 Planned actions (DDS)
               </h2>
-              {!shellLoading && shiftKind ? (
+              {!shellLoading ? (
                 <button
                   type="button"
                   disabled={!user}
@@ -118,9 +123,9 @@ export function LineDdsPage() {
               ) : null}
             </div>
             <div className="min-h-0 flex-1">
-              {shellLoading || !shiftKind ? (
+              {shellLoading ? (
                 <p className="text-[11px] text-muted" role="status">
-                  {shellLoading ? 'Loading roster…' : 'Select a shift.'}
+                  Loading roster…
                 </p>
               ) : (
                 <LineDdsActionsPanel
@@ -128,6 +133,7 @@ export function LineDdsPage() {
                   cellId={cellId}
                   planDate={planDate}
                   shiftKind={shiftKind}
+                  allShiftsForPlanDate
                 />
               )}
             </div>
@@ -138,7 +144,7 @@ export function LineDdsPage() {
               <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
                 Reward and recognition
               </h2>
-              {!shellLoading && shiftKind ? (
+              {!shellLoading ? (
                 <button
                   type="button"
                   disabled={!user}
@@ -156,9 +162,10 @@ export function LineDdsPage() {
                 ref={rewardRecognitionPanelRef}
                 cellId={cellId}
                 planDate={planDate}
-                shiftKind={shiftKind ?? ''}
+                shiftKind={shiftKind}
                 surface="line-dds"
                 shellLoading={shellLoading}
+                allShiftsForPlanDate
               />
             </div>
           </section>

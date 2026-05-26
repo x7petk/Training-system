@@ -11,8 +11,6 @@ import { parseDdsKpiScoring } from './ddsKpiScoring'
 import { parseDdsKpiUnit } from './ddsKpiUnits'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
 
-type CellLite = { id: string; name: string }
-
 type KpiGroup = { id: string; name: string; sort_order: number }
 
 type KpiRow = {
@@ -28,24 +26,24 @@ type KpiRow = {
 }
 
 type Props = {
-  cells: CellLite[]
+  cellId: string
+  cellName?: string
   planDate: string
   shiftKind: string
   shellLoading?: boolean
 }
 
-export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }: Props) {
-  const cellIds = useMemo(() => cells.map((c) => c.id), [cells])
+export function LineDdsKpiSummary({ cellId, cellName, planDate, shiftKind, shellLoading }: Props) {
   const [groups, setGroups] = useState<KpiGroup[]>([])
   const [kpis, setKpis] = useState<KpiRow[]>([])
-  const [overridesByCell, setOverridesByCell] = useState<Map<string, Map<string, string[]>>>(new Map())
+  const [surfaceOverrides, setSurfaceOverrides] = useState<Map<string, string[]>>(new Map())
   const [cellLines, setCellLines] = useState<DdsCellLine[]>([])
   const [lineEntries, setLineEntries] = useState<DdsKpiLineEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [epoch, setEpoch] = useState(0)
 
   const load = useCallback(async () => {
-    if (!planDate || cellIds.length === 0) {
+    if (!cellId || !planDate) {
       setGroups([])
       setKpis([])
       setLoading(false)
@@ -59,18 +57,18 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
         .select('id, kpi_group_id, label, sort_order, point_kind, display_sections, site_dds_presentation, unit, scoring')
         .order('sort_order')
         .order('label'),
-      supabase.from('dds_kpi_cell_dds_display').select('master_cell_id, kpi_id, surfaces').in('master_cell_id', cellIds),
+      supabase.from('dds_kpi_cell_dds_display').select('kpi_id, surfaces').eq('master_cell_id', cellId),
       supabase
         .from('dds_cell_lines')
         .select('id, master_cell_id, name, sort_order, active')
-        .in('master_cell_id', cellIds)
+        .eq('master_cell_id', cellId)
         .eq('active', true)
         .order('sort_order')
         .order('name'),
       supabase
         .from('dds_kpi_line_entries')
         .select('id, master_cell_id, line_id, kpi_id, value_numeric, comment')
-        .in('master_cell_id', cellIds)
+        .eq('master_cell_id', cellId)
         .eq('plan_date', planDate)
         .eq('shift_kind', shiftKind),
     ])
@@ -79,15 +77,14 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
 
     setGroups((gRes.data ?? []) as KpiGroup[])
     setKpis((kRes.data ?? []) as KpiRow[])
-    const oMap = new Map<string, Map<string, string[]>>()
-    for (const row of (oRes.data ?? []) as { master_cell_id: string; kpi_id: string; surfaces: string[] }[]) {
-      if (!oMap.has(row.master_cell_id)) oMap.set(row.master_cell_id, new Map())
-      oMap.get(row.master_cell_id)!.set(row.kpi_id, row.surfaces ?? [])
+    const oMap = new Map<string, string[]>()
+    for (const row of (oRes.data ?? []) as { kpi_id: string; surfaces: string[] }[]) {
+      oMap.set(row.kpi_id, row.surfaces ?? [])
     }
-    setOverridesByCell(oMap)
+    setSurfaceOverrides(oMap)
     setCellLines((linesRes.data ?? []) as DdsCellLine[])
     setLineEntries((lineEntRes.data ?? []) as DdsKpiLineEntry[])
-  }, [cellIds, planDate, shiftKind])
+  }, [cellId, planDate, shiftKind])
 
   useEffect(() => {
     void load()
@@ -95,66 +92,38 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
 
   useEffect(() => {
     return subscribeDdsP2pKpiRollupDone((d) => {
-      if (d.planDate !== planDate || d.shiftKind !== shiftKind) return
-      if (d.masterCellId && cellIds.includes(d.masterCellId)) setEpoch((n) => n + 1)
-    })
-  }, [cellIds, planDate, shiftKind])
-
-  const kpiVisibleOnPlantDds = useCallback(
-    (kpi: KpiRow): boolean => {
-      for (const cellId of cellIds) {
-        const cellMap = overridesByCell.get(cellId)
-        const override = cellMap?.has(kpi.id) ? cellMap.get(kpi.id)! : null
-        if (
-          kpiShowsOnDdsSurface(
-            { point_kind: kpi.point_kind, display_sections: kpi.display_sections },
-            'plant-dds',
-            override,
-          )
-        ) {
-          return true
-        }
+      if (d.masterCellId === cellId && d.planDate === planDate && d.shiftKind === shiftKind) {
+        setEpoch((n) => n + 1)
       }
-      return false
-    },
-    [cellIds, overridesByCell],
+    })
+  }, [cellId, planDate, shiftKind])
+
+  const kpiVisibleOnLineDds = useCallback(
+    (kpi: KpiRow) =>
+      kpiShowsOnDdsSurface(
+        { point_kind: kpi.point_kind, display_sections: kpi.display_sections },
+        'line-dds',
+        surfaceOverrides.has(kpi.id) ? surfaceOverrides.get(kpi.id)! : null,
+      ),
+    [surfaceOverrides],
   )
 
-  const linesByCell = useMemo(() => {
-    const m = new Map<string, DdsCellLine[]>()
-    for (const line of cellLines) {
-      const list = m.get(line.master_cell_id) ?? []
-      list.push(line)
-      m.set(line.master_cell_id, list)
-    }
-    for (const [, list] of m) {
-      list.sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
-    }
-    return m
-  }, [cellLines])
+  const lineColumns = useMemo((): ByLineTableColumn[] => {
+    return [...cellLines]
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+      .map((line) => ({
+        line,
+        cellId,
+        columnLabel: line.name,
+      }))
+  }, [cellLines, cellId])
 
-  const plantLineColumns = useMemo((): ByLineTableColumn[] => {
-    const cols: ByLineTableColumn[] = []
-    const multiCell = cells.length > 1
-    for (const cell of [...cells].sort((a, b) => a.name.localeCompare(b.name))) {
-      for (const line of linesByCell.get(cell.id) ?? []) {
-        cols.push({
-          line,
-          cellId: cell.id,
-          columnLabel: multiCell ? `${cell.name} · ${line.name}` : line.name,
-        })
-      }
-    }
-    return cols
-  }, [cells, linesByCell])
-
-  const { perCellKpiIds, byLineByGroup, excludeKpiIds } = useMemo(() => {
-    const perCell = new Set<string>()
+  const { byLineByGroup, excludeKpiIds } = useMemo(() => {
     const byLine = new Map<string, ByLineKpiDef[]>()
     const exclude = new Set<string>()
 
     for (const k of kpis) {
-      if (!kpiVisibleOnPlantDds(k)) continue
+      if (!kpiVisibleOnLineDds(k)) continue
       if (isDdsKpiSiteByLine(k.site_dds_presentation)) {
         const list = byLine.get(k.kpi_group_id) ?? []
         list.push({
@@ -168,8 +137,6 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
         exclude.add(k.id)
       } else if (isDdsKpiSiteConsolidated(k.site_dds_presentation)) {
         exclude.add(k.id)
-      } else {
-        perCell.add(k.id)
       }
     }
 
@@ -177,26 +144,26 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
       list.sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label))
     }
 
-    return { perCellKpiIds: perCell, byLineByGroup: byLine, excludeKpiIds: exclude }
-  }, [kpis, kpiVisibleOnPlantDds])
+    return { byLineByGroup: byLine, excludeKpiIds: exclude }
+  }, [kpis, kpiVisibleOnLineDds])
 
   const sortedGroups = useMemo(() => {
     const withContent = groups.filter((g) => {
       const hasByLine = (byLineByGroup.get(g.id) ?? []).length > 0
-      const hasPerCell = kpis.some(
-        (k) => k.kpi_group_id === g.id && perCellKpiIds.has(k.id) && kpiVisibleOnPlantDds(k),
+      const hasTiles = kpis.some(
+        (k) => k.kpi_group_id === g.id && kpiVisibleOnLineDds(k) && !excludeKpiIds.has(k.id),
       )
-      return hasByLine || hasPerCell
+      return hasByLine || hasTiles
     })
     return [...withContent].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
-  }, [groups, byLineByGroup, kpis, perCellKpiIds, kpiVisibleOnPlantDds])
+  }, [groups, byLineByGroup, kpis, kpiVisibleOnLineDds, excludeKpiIds])
 
   const firstByLineGroupId = useMemo(() => {
     const g = sortedGroups.find((sg) => (byLineByGroup.get(sg.id) ?? []).length > 0)
     return g?.id ?? null
   }, [sortedGroups, byLineByGroup])
 
-  const byLineTableTitle = cells.length > 1 ? 'Plant — all lines' : cells[0] ? `${cells[0].name} — by line` : 'By line'
+  const byLineCaption = cellName ? `${cellName} — by line` : 'By line'
 
   if (shellLoading || loading) {
     return (
@@ -206,14 +173,10 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
     )
   }
 
-  if (cells.length === 0) {
-    return <p className="text-[11px] text-muted">No cells in this plant.</p>
-  }
-
   if (sortedGroups.length === 0) {
     return (
       <p className="text-[11px] text-muted">
-        No KPIs on <strong className="text-fg/80">Plant DDS</strong> for this plant. Configure under Admin → KPIs / KPI
+        No KPIs on <strong className="text-fg/80">Line DDS</strong> for this cell. Configure under Admin → KPIs / KPI
         set-up.
       </p>
     )
@@ -223,7 +186,7 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
     <div className="space-y-1.5">
       {sortedGroups.map((g) => {
         const byLineKpis = byLineByGroup.get(g.id) ?? []
-        const hasPerCell = kpis.some((k) => k.kpi_group_id === g.id && perCellKpiIds.has(k.id))
+        const hasTiles = kpis.some((k) => k.kpi_group_id === g.id && kpiVisibleOnLineDds(k) && !excludeKpiIds.has(k.id))
 
         return (
           <section key={g.id}>
@@ -234,37 +197,28 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
               table={
                 byLineKpis.length > 0 ? (
                   <DdsByLineKpiTable
-                    columns={plantLineColumns}
+                    columns={lineColumns}
                     kpis={byLineKpis}
                     entries={lineEntries}
                     planDate={planDate}
                     shiftKind={shiftKind}
-                    tableTitle={g.id === firstByLineGroupId ? byLineTableTitle : undefined}
-                    emptyLinesMessage="No lines in this plant. Add lines per cell under Admin → Cell lines."
+                    tableTitle={g.id === firstByLineGroupId ? byLineCaption : undefined}
+                    emptyLinesMessage="No lines for this cell. Add lines under Admin → Cell lines."
                     onSaved={() => setEpoch((n) => n + 1)}
                   />
                 ) : undefined
               }
               tiles={
-                hasPerCell ? (
-                  <div className="flex flex-wrap gap-1">
-                    {cells.map((cell) => (
-                      <ShiftDdsKpiSummary
-                        key={cell.id}
-                        cellId={cell.id}
-                        planDate={planDate}
-                        shiftKind={shiftKind}
-                        kpiSurface="plant-dds"
-                        compact
-                        dense
-                        hideWhenEmpty
-                        excludeKpiIds={excludeKpiIds}
-                        groupId={g.id}
-                        cellBanner={cells.length > 1 ? cell.name : undefined}
-                        onVisibleChange={() => {}}
-                      />
-                    ))}
-                  </div>
+                hasTiles ? (
+                  <ShiftDdsKpiSummary
+                    cellId={cellId}
+                    planDate={planDate}
+                    shiftKind={shiftKind}
+                    kpiSurface="line-dds"
+                    compact
+                    excludeKpiIds={excludeKpiIds}
+                    groupId={g.id}
+                  />
                 ) : undefined
               }
             />

@@ -34,6 +34,12 @@ export function plan24EntryShiftKind(
   shiftKind: string,
 ): string {
   if (!isDdsPlan24ValueSource(plan24Source)) return shiftKind
-  if (kpiSurface === 'line-dds') return PLAN24_LINE_CONSOLIDATED_SHIFT_KIND
+  if (
+    kpiSurface === 'line-dds' ||
+    kpiSurface === 'plant-dds' ||
+    kpiSurface === 'site-dds'
+  ) {
+    return PLAN24_LINE_CONSOLIDATED_SHIFT_KIND
+  }
   return shiftKind
 }

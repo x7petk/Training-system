@@ -15,7 +15,7 @@ export const DDS_KPI_SITE_PRESENTATION_OPTIONS: {
   { value: 'avg', label: 'Site — consolidated average' },
   { value: 'max', label: 'Site — consolidated max' },
   { value: 'min', label: 'Site — consolidated min' },
-  { value: 'by_line', label: 'Site — by line (table)' },
+  { value: 'by_line', label: 'By line (table)' },
 ]
 
 export function parseDdsKpiSitePresentation(raw: string | null | undefined): DdsKpiSitePresentationMode | null {

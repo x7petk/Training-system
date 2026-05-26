@@ -8,8 +8,19 @@ export function Plan24ScopeBar() {
   const shiftDds = useShiftDdsShellOptional()
   const onDdsDayShiftShell = Boolean(shiftDds?.routeActive)
 
-  const { status, error, sites, plants, cells, siteId, plantId, cellId, setSiteId, setPlantId, setCellId } =
-    usePlan24Workspace()
+  const {
+    status,
+    error,
+    sites,
+    plants,
+    cells,
+    siteId,
+    plantId,
+    cellId,
+    setSiteId,
+    setPlantId,
+    setCellId,
+  } = usePlan24Workspace()
 
   const selectClass =
     'h-9 min-w-0 rounded-lg border border-border-strong bg-surface px-2.5 text-sm text-fg shadow-sm'
@@ -44,12 +55,23 @@ export function Plan24ScopeBar() {
 
   const p = location.pathname
   const complianceDayOnly = Boolean(shiftDds?.complianceDayOnly)
+  const meetingDayOnly = Boolean(shiftDds?.meetingDayOnly)
   const onSiteCompliance = p.endsWith('/site-compliance') || p.includes('/dds-process/site-compliance')
-  const showDdsDayShiftStrip = onDdsDayShiftShell && !complianceDayOnly && shiftDds && cellId
+  const onSiteDds = p.endsWith('/site-dds') || p.includes('/dds-process/site-dds')
+  const onPlantDds = p.endsWith('/plant-dds') || p.includes('/dds-process/plant-dds')
+  const showDdsDayShiftStrip = onDdsDayShiftShell && !complianceDayOnly && !meetingDayOnly && shiftDds && cellId
   const showDdsComplianceDateStrip =
-    complianceDayOnly &&
+    (complianceDayOnly || meetingDayOnly) &&
     shiftDds &&
-    (onSiteCompliance ? Boolean(siteId) : Boolean(cellId))
+    (complianceDayOnly
+      ? onSiteCompliance
+        ? Boolean(siteId)
+        : Boolean(cellId)
+      : onSiteDds
+        ? Boolean(siteId)
+        : onPlantDds
+          ? Boolean(plantId)
+          : Boolean(cellId))
   const onWdsPage = p.endsWith('/wds') || p.includes('/dds-process/wds')
   const ddsDayShiftLabel =
     p.endsWith('/site-dds') || p.includes('/dds-process/site-dds')
@@ -60,6 +82,7 @@ export function Plan24ScopeBar() {
           ? 'Line DDS'
           : 'Shift DDS'
   const complianceDateLabel = onSiteCompliance ? 'Site compliance' : 'Line compliance'
+  const dateOnlyStripLabel = complianceDayOnly ? complianceDateLabel : ddsDayShiftLabel
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-border-strong bg-surface px-3 py-2 shadow-sm sm:px-4">
@@ -175,7 +198,7 @@ export function Plan24ScopeBar() {
         {showDdsComplianceDateStrip ? (
           <>
             <span className="hidden h-6 w-px shrink-0 bg-border/80 sm:block" aria-hidden />
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/50">{complianceDateLabel}</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-fg/50">{dateOnlyStripLabel}</span>
             <div className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-border bg-surface-raised/50 p-0.5">
               <button
                 type="button"
@@ -208,10 +231,16 @@ export function Plan24ScopeBar() {
           </>
         ) : null}
 
-        {!cellId ? (
+        {!cellId && !meetingDayOnly ? (
           <span className="text-xs text-amber-700 dark:text-amber-200">
             {onDdsDayShiftShell ? `Select a cell for ${ddsDayShiftLabel}.` : 'Select a cell to use Plan 24.'}
           </span>
+        ) : null}
+        {meetingDayOnly && onPlantDds && !plantId ? (
+          <span className="text-xs text-amber-700 dark:text-amber-200">Select a plant for Plant DDS.</span>
+        ) : null}
+        {meetingDayOnly && onSiteDds && !siteId ? (
+          <span className="text-xs text-amber-700 dark:text-amber-200">Select a site for Site DDS.</span>
         ) : null}
         {onWdsPage ? (
           <button

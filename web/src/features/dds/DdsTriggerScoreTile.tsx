@@ -115,13 +115,13 @@ export function DdsTriggerScoreTile({
       <button
         type="button"
         title={`${label} triggers — click for controls`}
-        className={`inline-flex cursor-pointer flex-col rounded-md border text-left shadow-sm transition hover:brightness-[1.02] ${
-          compact ? 'min-w-[3.25rem] px-1.5 py-1' : 'min-w-[4rem] px-2 py-1'
+        className={`inline-flex cursor-pointer flex-col rounded-sm border text-left transition hover:brightness-[1.02] ${
+          compact ? 'min-w-[2.75rem] px-1 py-0.5' : 'min-w-[3.25rem] px-1.5 py-0.5'
         } ${triggerScoreBlockClasses(tone)} ${className}`}
         onClick={() => setOpen(true)}
       >
-        <span className={`font-semibold uppercase leading-none ${compact ? 'text-[8px]' : 'text-[9px]'}`}>{label}</span>
-        <span className={`font-bold tabular-nums ${compact ? 'text-sm' : 'text-base'}`}>{score}</span>
+        <span className={`font-semibold uppercase leading-none ${compact ? 'text-[7px]' : 'text-[8px]'}`}>{label}</span>
+        <span className={`font-bold tabular-nums leading-none ${compact ? 'text-[11px]' : 'text-sm'}`}>{score}</span>
       </button>
 
       {open ? (

@@ -14,6 +14,7 @@ import { addDays, localYMD } from '../../lib/dueDateUtils'
 import { MIN_PLAN_YMD, PLAN24_VISIBLE_DAYS_AHEAD } from '../plan24/plan24DateBounds'
 import { usePlan24Workspace } from '../plan24/Plan24WorkspaceContext'
 import type { DdsP2pSummaryRosterRole, DdsP2pSummaryShiftRow } from './DdsP2pSummaryBody'
+import { DDS_MEETING_SHIFT_KIND, isDdsMeetingDayPath } from './ddsMeetingDay'
 
 function sortGroups<T extends { sort_order: number; name: string }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
@@ -50,6 +51,8 @@ type Ctx = {
   routeActive: boolean
   /** Line / Site compliance: date only, no shift in scope bar. */
   complianceDayOnly: boolean
+  /** Line / Plant / Site DDS: date only; data uses {@link DDS_MEETING_SHIFT_KIND}. */
+  meetingDayOnly: boolean
   planDate: string
   setPlanDate: (ymd: string) => void
   shiftKind: string
@@ -69,6 +72,7 @@ const ShiftDdsShellContext = createContext<Ctx | undefined>(undefined)
 export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
   const location = useLocation()
   const complianceDayOnly = isDdsComplianceDayPath(location.pathname)
+  const meetingDayOnly = isDdsMeetingDayPath(location.pathname)
   const routeActive = isDdsDayShiftShellPath(location.pathname) || complianceDayOnly
 
   const { status: scopeStatus, cellId } = usePlan24Workspace()
@@ -80,7 +84,7 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
   )
 
   const [planDate, setPlanDateState] = useState(() => localYMD(new Date()))
-  const [shiftKind, setShiftKind] = useState('')
+  const [shiftKind, setShiftKind] = useState(() => (isDdsMeetingDayPath(location.pathname) ? DDS_MEETING_SHIFT_KIND : ''))
   const [shifts, setShifts] = useState<DdsP2pSummaryShiftRow[]>([])
   const [roles, setRoles] = useState<DdsP2pSummaryRosterRole[]>([])
   const [shellLoading, setShellLoading] = useState(false)
@@ -124,7 +128,7 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
     if (!routeActive || complianceDayOnly || scopeStatus !== 'ready' || !cellId) {
       setShifts([])
       setRoles([])
-      setShiftKind('')
+      setShiftKind(meetingDayOnly ? DDS_MEETING_SHIFT_KIND : '')
       setShellLoading(false)
       setRosterError(null)
       return
@@ -148,7 +152,7 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
     if (!rid) {
       setShifts([])
       setRoles([])
-      setShiftKind('')
+      setShiftKind(meetingDayOnly ? DDS_MEETING_SHIFT_KIND : '')
       setShellLoading(false)
       return
     }
@@ -169,13 +173,17 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
     }
     const shList = (shRes.data ?? []) as DdsP2pSummaryShiftRow[]
     setShifts(shList)
-    setShiftKind((prev) => {
-      if (prev && shList.some((s) => s.kind === prev)) return prev
-      return shList[0]?.kind ?? ''
-    })
+    if (meetingDayOnly) {
+      setShiftKind(DDS_MEETING_SHIFT_KIND)
+    } else {
+      setShiftKind((prev) => {
+        if (prev && shList.some((s) => s.kind === prev)) return prev
+        return shList[0]?.kind ?? ''
+      })
+    }
     setRoles(sortGroups((roRes.data ?? []) as DdsP2pSummaryRosterRole[]))
     setShellLoading(false)
-  }, [cellId, complianceDayOnly, routeActive, scopeStatus])
+  }, [cellId, complianceDayOnly, meetingDayOnly, routeActive, scopeStatus])
 
   useEffect(() => {
     void loadRosterShell()
@@ -183,15 +191,16 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
 
   const shiftTabs = useMemo(() => [...shifts], [shifts])
   useEffect(() => {
-    if (!routeActive) return
+    if (!routeActive || meetingDayOnly) return
     if (shiftTabs.length === 0) return
     if (!shiftTabs.some((s) => s.kind === shiftKind)) setShiftKind(shiftTabs[0].kind)
-  }, [routeActive, shiftKind, shiftTabs])
+  }, [routeActive, meetingDayOnly, shiftKind, shiftTabs])
 
   const value = useMemo<Ctx>(
     () => ({
       routeActive,
       complianceDayOnly,
+      meetingDayOnly,
       planDate,
       setPlanDate,
       shiftKind,
@@ -208,6 +217,7 @@ export function ShiftDdsShellProvider({ children }: { children: ReactNode }) {
     [
       routeActive,
       complianceDayOnly,
+      meetingDayOnly,
       planDate,
       setPlanDate,
       shiftKind,

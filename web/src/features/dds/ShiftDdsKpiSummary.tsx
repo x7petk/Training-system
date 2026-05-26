@@ -3,15 +3,21 @@ import { Loader2, MessageSquare } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import type { DdsKpiScoring } from './ddsKpiScoring'
-import { evaluateKpiBlock, parseDdsKpiScoring, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
+import {
+  evaluateKpiBlock,
+  kpiBlockToneClasses,
+  parseDdsKpiScoring,
+  scoringHint,
+  scoringTargetNumbersOnly,
+} from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
 import { parseDdsP2pKpiBreakdown, type DdsP2pKpiBreakdownItem } from './ddsKpiP2pRollup'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
 import { refreshKpiPlan24Rollups } from './ddsPlan24KpiRollup'
+import { DDS_MEETING_SHIFT_KIND } from './ddsMeetingDay'
 import {
   isDdsPlan24ValueSource,
-  PLAN24_LINE_CONSOLIDATED_SHIFT_KIND,
   plan24EntryShiftKind,
 } from './ddsPlan24ValueSource'
 import {
@@ -66,17 +72,51 @@ type Props = {
   groupId?: string
 }
 
-function blockClasses(tone: 'neutral' | 'good' | 'bad'): string {
-  if (tone === 'good') return 'border-emerald-600/50 bg-emerald-600/15 text-emerald-950 dark:bg-emerald-900/35 dark:text-emerald-50'
-  if (tone === 'bad') return 'border-rose-600/50 bg-rose-600/15 text-rose-950 dark:bg-rose-900/35 dark:text-rose-50'
-  return 'border-sky-600/45 bg-sky-600/12 text-sky-950 dark:bg-sky-900/35 dark:text-sky-50'
-}
-
 function placeDetailPanel(anchor: HTMLElement, maxW: number): { top: number; left: number; maxW: number } {
   const rect = anchor.getBoundingClientRect()
   const w = typeof window !== 'undefined' ? window.innerWidth : 400
   const left = Math.max(8, Math.min(rect.left, w - maxW - 8))
   return { top: rect.bottom + 6, left, maxW }
+}
+
+function kpiTileLayout(compact: boolean, dense: boolean) {
+  if (dense) {
+    return {
+      bodySpace: 'space-y-0.5',
+      groupHead: 'mb-0.5 pb-px text-[8px]',
+      wrapGap: 'gap-0.5',
+      tile: 'min-w-[2.125rem] max-w-[3.75rem] px-0.5 py-px rounded-sm shadow-none',
+      label: 'text-[7px]',
+      valueRow: 'mt-px min-h-[0.875rem]',
+      value: 'text-[9px]',
+      target: 'text-[7px]',
+      commentIcon: 'size-2.5',
+    }
+  }
+  if (compact) {
+    return {
+      bodySpace: 'space-y-1.5',
+      groupHead: 'mb-1 pb-px text-[9px]',
+      wrapGap: 'gap-1',
+      tile: 'min-w-[2.75rem] max-w-[5rem] px-1 py-0.5 rounded-sm shadow-none',
+      label: 'text-[8px]',
+      valueRow: 'mt-px min-h-[1rem]',
+      value: 'text-[10px]',
+      target: 'text-[7px]',
+      commentIcon: 'size-2.5',
+    }
+  }
+  return {
+    bodySpace: 'space-y-2',
+    groupHead: 'mb-1 pb-0.5 text-[9px]',
+    wrapGap: 'gap-1',
+    tile: 'min-w-[3.5rem] max-w-[6.5rem] px-1 py-0.5 rounded-sm shadow-none',
+    label: 'text-[8px]',
+    valueRow: 'mt-0.5 min-h-[1.125rem]',
+    value: 'text-[11px]',
+    target: 'text-[8px]',
+    commentIcon: 'size-3',
+  }
 }
 
 export function ShiftDdsKpiSummary({
@@ -119,7 +159,9 @@ export function ShiftDdsKpiSummary({
   const detailPanelRef = useRef<HTMLDivElement | null>(null)
 
   const load = useCallback(async () => {
-    if (!cellId || !planDate || !shiftKind) {
+    const meetingSurface =
+      kpiSurface === 'line-dds' || kpiSurface === 'plant-dds' || kpiSurface === 'site-dds'
+    if (!cellId || !planDate || (!meetingSurface && !shiftKind)) {
       setGroups([])
       setKpis([])
       setEntries({})
@@ -132,8 +174,8 @@ export function ShiftDdsKpiSummary({
       await refreshKpiPlan24Rollups(supabase, {
         masterCellId: cellId,
         planDate,
-        mode: kpiSurface === 'line-dds' ? 'line_consolidated' : 'per_shift',
-        shiftKind: kpiSurface === 'line-dds' ? undefined : shiftKind,
+        mode: meetingSurface ? 'line_consolidated' : 'per_shift',
+        shiftKind: meetingSurface ? undefined : shiftKind,
         updatedBy: user?.id ?? null,
       })
     } catch (e) {
@@ -141,8 +183,7 @@ export function ShiftDdsKpiSummary({
       setError(e instanceof Error ? e.message : 'Could not refresh Plan 24 KPI values')
       return
     }
-    const entryShiftKinds =
-      kpiSurface === 'line-dds' ? [shiftKind, PLAN24_LINE_CONSOLIDATED_SHIFT_KIND] : [shiftKind]
+    const entryShiftKinds = meetingSurface ? [DDS_MEETING_SHIFT_KIND] : [shiftKind]
     const [gRes, kRes, eRes, oRes] = await Promise.all([
       supabase.from('dds_kpi_groups').select('id, name, sort_order').order('sort_order').order('name'),
       supabase
@@ -356,21 +397,25 @@ export function ShiftDdsKpiSummary({
     )
   }
 
+  /** Line / Site DDS wrap each group in a section that already shows the group title. */
+  const hideGroupHeaders = Boolean(groupId)
+  const layout = kpiTileLayout(Boolean(tileCompact), Boolean(dense))
+
   const body = (
-    <div className={dense ? 'space-y-1' : 'space-y-3'}>
+    <div className={layout.bodySpace}>
       {sortedGroups.map((g) => {
         const list = kpisByGroup.get(g.id) ?? []
         if (list.length === 0) return null
         return (
           <div key={g.id}>
-            <h3
-              className={`border-b border-border/60 font-semibold uppercase tracking-wide text-muted ${
-                dense ? 'mb-0.5 pb-px text-[8px]' : 'mb-1.5 pb-0.5 text-[10px]'
-              }`}
-            >
-              {g.name}
-            </h3>
-            <div className={`flex flex-wrap ${dense ? 'gap-0.5' : 'gap-1.5'}`}>
+            {!hideGroupHeaders ? (
+              <h3
+                className={`border-b border-border/60 font-semibold uppercase tracking-wide text-muted ${layout.groupHead}`}
+              >
+                {g.name}
+              </h3>
+            ) : null}
+            <div className={`flex flex-wrap ${layout.wrapGap}`}>
               {list.map((kpi) => {
                 const e = entries[kpi.id]
                 const val = e?.value_numeric ?? null
@@ -387,13 +432,7 @@ export function ShiftDdsKpiSummary({
                     key={kpi.id}
                     role="button"
                     tabIndex={0}
-                    className={`flex cursor-pointer flex-col rounded-md border text-left shadow-sm outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-2 ${
-                      dense
-                        ? 'min-w-[2.5rem] max-w-[4.25rem] px-1 py-0.5'
-                        : tileCompact
-                          ? 'min-w-[3.25rem] max-w-[5.75rem] px-1.5 py-1'
-                          : 'min-w-[4.75rem] max-w-[8rem] px-1.5 py-1'
-                    } ${blockClasses(tone)}`}
+                    className={`flex shrink-0 cursor-pointer flex-col border text-left outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-2 ${layout.tile} ${kpiBlockToneClasses(tone)}`}
                     aria-label={`${kpi.label}, edit KPI value`}
                     onClick={() => openModal(kpi)}
                     onKeyDown={(ev) => {
@@ -403,22 +442,18 @@ export function ShiftDdsKpiSummary({
                       }
                     }}
                   >
-                    <span
-                      className={`font-medium leading-tight text-fg/90 line-clamp-2 ${dense ? 'text-[8px]' : 'text-[9px]'}`}
-                    >
+                    <span className={`font-medium leading-tight text-fg/90 line-clamp-2 ${layout.label}`}>
                       {kpi.label}
                     </span>
-                    <div className={`flex items-end justify-between gap-0.5 ${dense ? 'mt-px min-h-[1rem]' : 'mt-0.5 min-h-[1.25rem]'}`}>
+                    <div className={`flex items-end justify-between gap-0.5 ${layout.valueRow}`}>
                       <div className="min-w-0 flex-1">
-                        <span
-                          className={`font-semibold tabular-nums leading-none text-fg ${
-                            dense ? 'text-[10px]' : tileCompact ? 'text-xs' : 'text-sm'
-                          }`}
-                        >
+                        <span className={`font-semibold tabular-nums leading-none text-fg ${layout.value}`}>
                           {valueLabel}
                         </span>
                         {targetLine ? (
-                          <span className="mt-0.5 block text-[8px] font-medium tabular-nums leading-none text-fg/60">
+                          <span
+                            className={`mt-px block font-medium tabular-nums leading-none text-fg/60 ${layout.target}`}
+                          >
                             {targetLine}
                           </span>
                         ) : null}
@@ -426,7 +461,7 @@ export function ShiftDdsKpiSummary({
                       {hasCmt || hasP2pDetail ? (
                         <button
                           type="button"
-                          className="-m-0.5 inline-flex shrink-0 rounded p-0.5 text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
+                          className="-m-0.5 inline-flex shrink-0 rounded p-px text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
                           aria-label={hasP2pDetail ? 'Show P2P role comments' : 'Show KPI comment'}
                           onClick={(clickEv) => {
                             clickEv.stopPropagation()
@@ -438,7 +473,7 @@ export function ShiftDdsKpiSummary({
                             })
                           }}
                         >
-                          <MessageSquare className="size-3 shrink-0 text-accent" aria-hidden />
+                          <MessageSquare className={`${layout.commentIcon} shrink-0 text-accent`} aria-hidden />
                         </button>
                       ) : null}
                     </div>
@@ -554,8 +589,8 @@ export function ShiftDdsKpiSummary({
 
   if (cellBanner) {
     return (
-      <div className="rounded border border-border/50 bg-canvas/15 p-1">
-        <h3 className="mb-0.5 truncate border-b border-border/40 pb-px text-[9px] font-semibold uppercase tracking-wide text-muted">
+      <div className="w-max max-w-full shrink-0 rounded border border-border/50 bg-canvas/15 p-0.5">
+        <h3 className="mb-px truncate border-b border-border/40 pb-px text-[8px] font-semibold uppercase tracking-wide text-muted">
           {cellBanner}
         </h3>
         {body}

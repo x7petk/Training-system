@@ -38,10 +38,12 @@ type Props = {
   /** Plant roll-up across cells. */
   cellIds?: string[]
   plantRollup?: DdsPlantRollupMode
+  /** Line / Plant / Site DDS: all entries for the plan date. */
+  allShiftsForPlanDate?: boolean
 }
 
 export const DdsTopLossesPanel = forwardRef<DdsTopLossesPanelHandle, Props>(function DdsTopLossesPanel(
-  { cellId, cellIds, plantRollup, planDate, shiftKind, surface, shellLoading },
+  { cellId, cellIds, plantRollup, planDate, shiftKind, surface, shellLoading, allShiftsForPlanDate },
   ref,
 ) {
   const plantMode = Boolean(cellIds?.length)
@@ -75,7 +77,7 @@ export const DdsTopLossesPanel = forwardRef<DdsTopLossesPanelHandle, Props>(func
 
   const load = useCallback(async () => {
     const masterIds = plantMode ? cellIds! : cellId ? [cellId] : []
-    if (masterIds.length === 0 || !planDate || !shiftKind) {
+    if (masterIds.length === 0 || !planDate || (!allShiftsForPlanDate && !shiftKind)) {
       setEntries([])
       setLoading(false)
       return
@@ -102,15 +104,16 @@ export const DdsTopLossesPanel = forwardRef<DdsTopLossesPanelHandle, Props>(func
     }
     setCellNames(cn)
 
-    const { data: entRaw, error: entErr } = await supabase
+    let entQuery = supabase
       .from('dds_tl_entries')
       .select(
         'id, root_entry_id, master_cell_id, plan_date, shift_kind, visible_surface, created_on_surface, top_loss, amount, type_option_id, immediate_cause, immediate_action, root_cause_option_id, problem_solve_option_id, promoted_from_entry_id, promoted_from_surface, promoted_from_cell_id, created_by, updated_by, created_at, updated_at',
       )
       .in('master_cell_id', masterIds)
       .eq('plan_date', planDate)
-      .eq('shift_kind', shiftKind)
       .eq('visible_surface', effectiveSurface)
+    if (!allShiftsForPlanDate) entQuery = entQuery.eq('shift_kind', shiftKind)
+    const { data: entRaw, error: entErr } = await entQuery
       .is('deleted_at', null)
       .order('created_at', { ascending: true })
     if (entErr) {
@@ -127,14 +130,15 @@ export const DdsTopLossesPanel = forwardRef<DdsTopLossesPanelHandle, Props>(func
       })),
     )
 
-    const { data: promoRaw } = await supabase
+    let promoQuery = supabase
       .from('dds_tl_entries')
       .select('promoted_from_entry_id, visible_surface')
       .in('master_cell_id', masterIds)
       .eq('plan_date', planDate)
-      .eq('shift_kind', shiftKind)
       .is('deleted_at', null)
       .not('promoted_from_entry_id', 'is', null)
+    if (!allShiftsForPlanDate) promoQuery = promoQuery.eq('shift_kind', shiftKind)
+    const { data: promoRaw } = await promoQuery
     const promoMap = new Map<string, DdsTlSurfaceKey>()
     for (const p of promoRaw ?? []) {
       promoMap.set(
@@ -144,7 +148,7 @@ export const DdsTopLossesPanel = forwardRef<DdsTopLossesPanelHandle, Props>(func
     }
     setPromotedToTarget(promoMap)
     setLoading(false)
-  }, [cellId, cellIds, plantMode, effectiveSurface, planDate, shiftKind])
+  }, [cellId, cellIds, plantMode, effectiveSurface, planDate, shiftKind, allShiftsForPlanDate])
 
   useEffect(() => {
     void load()
@@ -297,7 +301,7 @@ export const DdsTopLossesPanel = forwardRef<DdsTopLossesPanelHandle, Props>(func
     )
   }
 
-  if (!shiftKind) {
+  if (!allShiftsForPlanDate && !shiftKind) {
     return <p className="mt-2 text-[11px] text-muted">Select a shift.</p>
   }
 

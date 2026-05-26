@@ -11,7 +11,7 @@ import {
 } from './ddsComplianceConstants'
 import { kpiShowsOnMetricSurface } from './ddsKpiMetricSurfaces'
 import { parseDdsKpiMetricScope } from './ddsKpiDdsSetupSurfaces'
-import { evaluateKpiBlock, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
+import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import { formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
 import { parseDdsKpiScoring } from './ddsKpiScoring'
 import type { DdsKpiScoring } from './ddsKpiScoring'
@@ -42,12 +42,6 @@ type Props = {
   cells: CellLite[]
   planDate: string
   viewMode: ComplianceKpiViewMode
-}
-
-function blockClasses(tone: 'neutral' | 'good' | 'bad'): string {
-  if (tone === 'good') return 'border-emerald-600/50 bg-emerald-600/15 text-emerald-950 dark:bg-emerald-900/35 dark:text-emerald-50'
-  if (tone === 'bad') return 'border-rose-600/50 bg-rose-600/15 text-rose-950 dark:bg-rose-900/35 dark:text-rose-50'
-  return 'border-sky-600/45 bg-sky-600/12 text-sky-950 dark:bg-sky-900/35 dark:text-sky-50'
 }
 
 const inputClass =
@@ -315,7 +309,7 @@ export function SiteComplianceKpiPanel({ siteId, cells, planDate, viewMode }: Pr
                           <button
                             key={ymd}
                             type="button"
-                            className={`flex min-w-[3rem] max-w-[5.5rem] flex-col rounded-md border px-1.5 py-1 text-left ${blockClasses(tone)}`}
+                            className={`flex min-w-[2.75rem] max-w-[5rem] flex-col rounded-sm border px-1 py-0.5 text-left ${kpiBlockToneClasses(tone)}`}
                             onClick={() =>
                               setModal({
                                 kpi,
@@ -347,7 +341,7 @@ export function SiteComplianceKpiPanel({ siteId, cells, planDate, viewMode }: Pr
                     <button
                       key={kpi.id}
                       type="button"
-                      className={`flex min-w-[4.75rem] max-w-[8rem] flex-col rounded-md border px-1.5 py-1 text-left ${blockClasses(tone)}`}
+                      className={`flex min-w-[3.5rem] max-w-[6.5rem] flex-col rounded-sm border px-1 py-0.5 text-left ${kpiBlockToneClasses(tone)}`}
                       onClick={() =>
                         setModal({
                           kpi,
@@ -358,10 +352,10 @@ export function SiteComplianceKpiPanel({ siteId, cells, planDate, viewMode }: Pr
                         })
                       }
                     >
-                      <span className="text-[9px] font-medium line-clamp-2">{kpi.label}</span>
-                      <span className="text-sm font-semibold tabular-nums">{valueLabel}</span>
+                      <span className="text-[8px] font-medium leading-none line-clamp-2">{kpi.label}</span>
+                      <span className="text-[11px] font-semibold tabular-nums leading-none">{valueLabel}</span>
                       {scoringTargetNumbersOnly(kpi.scoring) ? (
-                        <span className="text-[8px] text-fg/60">{scoringTargetNumbersOnly(kpi.scoring)}</span>
+                        <span className="text-[7px] leading-none text-fg/60">{scoringTargetNumbersOnly(kpi.scoring)}</span>
                       ) : null}
                     </button>
                   )

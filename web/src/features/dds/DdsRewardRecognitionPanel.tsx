@@ -50,10 +50,11 @@ type Props = {
   surface?: DdsRrSurfaceKey
   cellIds?: string[]
   plantRollup?: DdsPlantRollupMode
+  allShiftsForPlanDate?: boolean
 }
 
 export const DdsRewardRecognitionPanel = forwardRef<DdsRewardRecognitionPanelHandle, Props>(function DdsRewardRecognitionPanel(
-  { cellId, cellIds, plantRollup, planDate, shiftKind, surface, shellLoading },
+  { cellId, cellIds, plantRollup, planDate, shiftKind, surface, shellLoading, allShiftsForPlanDate },
   ref,
 ) {
   const plantMode = Boolean(cellIds?.length)
@@ -89,7 +90,7 @@ export const DdsRewardRecognitionPanel = forwardRef<DdsRewardRecognitionPanelHan
 
   const load = useCallback(async () => {
     const masterIds = plantMode ? cellIds! : cellId ? [cellId] : []
-    if (masterIds.length === 0 || !planDate || !shiftKind) {
+    if (masterIds.length === 0 || !planDate || (!allShiftsForPlanDate && !shiftKind)) {
       setEntries([])
       setLoading(false)
       return
@@ -116,17 +117,18 @@ export const DdsRewardRecognitionPanel = forwardRef<DdsRewardRecognitionPanelHan
     }
     setCellNames(cn)
 
-    const { data: entRaw, error: entErr } = await supabase
+    let entQuery = supabase
       .from('dds_rr_entries')
       .select(
         'id, root_entry_id, master_cell_id, plan_date, shift_kind, visible_surface, created_on_surface, name_mode, free_text_names, reason, value_option_id, behaviour_option_id, promoted_from_entry_id, promoted_from_surface, promoted_from_cell_id, created_by, updated_by, created_at, updated_at',
       )
       .in('master_cell_id', masterIds)
       .eq('plan_date', planDate)
-      .eq('shift_kind', shiftKind)
       .eq('visible_surface', effectiveSurface)
       .is('deleted_at', null)
       .order('created_at', { ascending: true })
+    if (!allShiftsForPlanDate) entQuery = entQuery.eq('shift_kind', shiftKind)
+    const { data: entRaw, error: entErr } = await entQuery
     if (entErr) {
       setError(entErr.message)
       setLoading(false)
@@ -163,14 +165,15 @@ export const DdsRewardRecognitionPanel = forwardRef<DdsRewardRecognitionPanelHan
       })),
     )
 
-    const { data: promoRaw } = await supabase
+    let promoQuery = supabase
       .from('dds_rr_entries')
       .select('promoted_from_entry_id, visible_surface')
       .in('master_cell_id', masterIds)
       .eq('plan_date', planDate)
-      .eq('shift_kind', shiftKind)
       .is('deleted_at', null)
       .not('promoted_from_entry_id', 'is', null)
+    if (!allShiftsForPlanDate) promoQuery = promoQuery.eq('shift_kind', shiftKind)
+    const { data: promoRaw } = await promoQuery
     const promoMap = new Map<string, DdsRrSurfaceKey>()
     for (const p of promoRaw ?? []) {
       const fromId = (p as { promoted_from_entry_id: string }).promoted_from_entry_id
@@ -180,7 +183,7 @@ export const DdsRewardRecognitionPanel = forwardRef<DdsRewardRecognitionPanelHan
     setPromotedToTarget(promoMap)
 
     setLoading(false)
-  }, [cellId, cellIds, plantMode, effectiveSurface, planDate, shiftKind])
+  }, [cellId, cellIds, plantMode, effectiveSurface, planDate, shiftKind, allShiftsForPlanDate])
 
   useEffect(() => {
     void load()
@@ -357,7 +360,7 @@ export const DdsRewardRecognitionPanel = forwardRef<DdsRewardRecognitionPanelHan
     )
   }
 
-  if (!shiftKind) {
+  if (!allShiftsForPlanDate && !shiftKind) {
     return <p className="mt-2 text-[11px] text-muted">Select a shift.</p>
   }
 

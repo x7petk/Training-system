@@ -6,26 +6,20 @@ type CellLite = { id: string; name: string }
 type Props = {
   cells: CellLite[]
   planDate: string
-  shiftKind: string
   shifts?: DdsP2pSummaryShiftRow[]
 }
 
-export function PlantDdsTriggerStrip({ cells, planDate, shiftKind, shifts }: Props) {
-  if (!shiftKind) return null
+export function PlantDdsTriggerStrip({ cells, planDate, shifts }: Props) {
+  if (cells.length === 0) return null
+  const multiCell = cells.length > 1
   return (
-    <div className="space-y-2 border-b border-border/40 pb-2">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       {cells.map((cell) => (
-        <div key={cell.id} className="flex flex-wrap items-center gap-2">
-          <span className="min-w-[5rem] shrink-0 truncate text-[10px] font-semibold uppercase text-muted">
-            {cell.name}
-          </span>
-          <DdsTriggerScoreTilesRow
-            cellId={cell.id}
-            planDate={planDate}
-            shiftKind={shiftKind}
-            shifts={shifts}
-            compact
-          />
+        <div key={cell.id} className="flex flex-wrap items-center gap-1.5">
+          {multiCell ? (
+            <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-muted">{cell.name}</span>
+          ) : null}
+          <DdsTriggerScoreTilesRow cellId={cell.id} planDate={planDate} shifts={shifts} dayRollup compact />
         </div>
       ))}
     </div>

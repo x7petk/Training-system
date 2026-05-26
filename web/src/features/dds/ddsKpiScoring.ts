@@ -132,6 +132,17 @@ export function evaluateKpiBlock(value: number | null | undefined, s: DdsKpiScor
   }
 }
 
+/** Tailwind classes for KPI blocks / by-line cells (good = green bg + black text). */
+export function kpiBlockToneClasses(tone: KpiBlockTone): string {
+  if (tone === 'good') {
+    return 'border-emerald-600/55 bg-emerald-500/35 text-black dark:border-emerald-500/50 dark:bg-emerald-500/30 dark:text-black'
+  }
+  if (tone === 'bad') {
+    return 'border-rose-600/50 bg-rose-600/15 text-rose-950 dark:bg-rose-900/35 dark:text-rose-50'
+  }
+  return 'border-sky-600/45 bg-sky-600/12 text-sky-950 dark:bg-sky-900/35 dark:text-sky-50'
+}
+
 export const DDS_KPI_SCORING_KIND_OPTIONS: { value: DdsKpiScoring['kind']; label: string }[] = [
   { value: 'no_target', label: 'No target (blue)' },
   { value: 'pass_fail', label: 'Pass / fail (1 = green, 0 = red)' },

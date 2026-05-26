@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { ShiftDdsKpiSummary } from './ShiftDdsKpiSummary'
-import { SiteDdsByLineKpiTable, type ByLineKpiDef } from './SiteDdsByLineKpiTable'
+import { DdsByLineKpiTable, type ByLineKpiDef, type ByLineTableColumn } from './DdsByLineKpiTable'
+import { DdsKpiTableTilesLayout } from './DdsKpiTableTilesLayout'
 import { SiteDdsConsolidatedKpiStrip, type ConsolidatedKpiDef } from './SiteDdsConsolidatedKpiStrip'
 import type { DdsCellLine, DdsKpiLineEntry } from './ddsCellLines'
 import { kpiShowsOnDdsSurface } from './ddsKpiDdsSetupSurfaces'
@@ -55,7 +56,7 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
   const [loading, setLoading] = useState(true)
   const [epoch, setEpoch] = useState(0)
   const load = useCallback(async () => {
-    if (!siteId || !planDate || !shiftKind || cellIds.length === 0) {
+    if (!siteId || !planDate || cellIds.length === 0) {
       setGroups([])
       setKpis([])
       setLoading(false)
@@ -169,6 +170,21 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
     return m
   }, [cellLines])
 
+  const siteLineColumns = useMemo((): ByLineTableColumn[] => {
+    const cols: ByLineTableColumn[] = []
+    const multiCell = cells.length > 1
+    for (const cell of [...cells].sort((a, b) => a.name.localeCompare(b.name))) {
+      for (const line of linesByCell.get(cell.id) ?? []) {
+        cols.push({
+          line,
+          cellId: cell.id,
+          columnLabel: multiCell ? `${cell.name} · ${line.name}` : line.name,
+        })
+      }
+    }
+    return cols
+  }, [cells, linesByCell])
+
   const { perCellKpiIds, byLineByGroup, consolidatedByGroup, cellValuesByKpi } = useMemo(() => {
     const perCell = new Set<string>()
     const byLine = new Map<string, ByLineKpiDef[]>()
@@ -249,16 +265,17 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
     return [...withContent].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
   }, [groups, consolidatedByGroup, byLineByGroup, kpis, perCellKpiIds, kpiVisibleOnSiteDds])
 
+  const firstByLineGroupId = useMemo(() => {
+    const g = sortedGroups.find((sg) => (byLineByGroup.get(sg.id) ?? []).length > 0)
+    return g?.id ?? null
+  }, [sortedGroups, byLineByGroup])
+
   if (shellLoading || loading) {
     return (
       <p className="flex items-center gap-1 text-[11px] text-muted" role="status">
         <Loader2 className="size-3.5 animate-spin" aria-hidden /> Loading…
       </p>
     )
-  }
-
-  if (!shiftKind) {
-    return <p className="text-[11px] text-muted">Select a shift.</p>
   }
 
   if (cells.length === 0) {
@@ -275,7 +292,7 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {sortedGroups.map((g) => {
         const consolidated = consolidatedByGroup.get(g.id) ?? []
         const byLineKpis = byLineByGroup.get(g.id) ?? []
@@ -283,44 +300,47 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
 
         return (
           <section key={g.id}>
-            <h3 className="mb-0.5 border-b border-border/60 pb-px text-[9px] font-semibold uppercase tracking-wide text-muted">
+            <h3 className="mb-px border-b border-border/60 pb-px text-[8px] font-semibold uppercase tracking-wide text-muted">
               {g.name}
             </h3>
-            {byLineKpis.length > 0
-              ? cells.map((cell) => (
-                  <SiteDdsByLineKpiTable
-                    key={`${g.id}-${cell.id}-byline`}
-                    cellId={cell.id}
-                    cellName={cell.name}
-                    lines={linesByCell.get(cell.id) ?? []}
+            <DdsKpiTableTilesLayout
+              table={
+                byLineKpis.length > 0 ? (
+                  <DdsByLineKpiTable
+                    columns={siteLineColumns}
                     kpis={byLineKpis}
                     entries={lineEntries}
                     planDate={planDate}
                     shiftKind={shiftKind}
+                    tableTitle={g.id === firstByLineGroupId ? 'Site — all lines' : undefined}
+                    emptyLinesMessage="No lines on this site. Add lines per cell under Admin → Cell lines."
                     onSaved={() => setEpoch((n) => n + 1)}
                   />
-                ))
-              : null}
-            {hasPerCell ? (
-              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                {cells.map((cell) => (
-                  <ShiftDdsKpiSummary
-                    key={cell.id}
-                    cellId={cell.id}
-                    planDate={planDate}
-                    shiftKind={shiftKind}
-                    kpiSurface="site-dds"
-                    compact
-                    dense
-                    hideWhenEmpty
-                    excludeKpiIds={excludeKpiIds}
-                    groupId={g.id}
-                    cellBanner={cell.name}
-                    onVisibleChange={() => {}}
-                  />
-                ))}
-              </div>
-            ) : null}
+                ) : undefined
+              }
+              tiles={
+                hasPerCell ? (
+                  <div className="flex flex-wrap gap-1">
+                    {cells.map((cell) => (
+                      <ShiftDdsKpiSummary
+                        key={cell.id}
+                        cellId={cell.id}
+                        planDate={planDate}
+                        shiftKind={shiftKind}
+                        kpiSurface="site-dds"
+                        compact
+                        dense
+                        hideWhenEmpty
+                        excludeKpiIds={excludeKpiIds}
+                        groupId={g.id}
+                        cellBanner={cell.name}
+                        onVisibleChange={() => {}}
+                      />
+                    ))}
+                  </div>
+                ) : undefined
+              }
+            />
             <SiteDdsConsolidatedKpiStrip
               siteId={siteId}
               cellIds={cellIds}

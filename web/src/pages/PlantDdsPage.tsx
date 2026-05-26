@@ -44,6 +44,7 @@ export function PlantDdsPage() {
     <div className="flex h-full min-h-0 flex-1 flex-col gap-3">
       <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-b border-border/60 pb-2">
         <h1 className="shrink-0 font-display text-lg font-semibold tracking-tight">Plant DDS</h1>
+        <PlantDdsTriggerStrip cells={plantCells} planDate={planDate} shifts={shifts} />
         <div className="min-w-0 flex-1" />
         <div
           className="inline-flex shrink-0 rounded-lg border border-border/80 bg-surface p-0.5 text-[10px] shadow-sm"
@@ -85,12 +86,6 @@ export function PlantDdsPage() {
             KPI summary
           </h2>
           <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
-            <PlantDdsTriggerStrip
-              cells={plantCells}
-              planDate={planDate}
-              shiftKind={shiftKind ?? ''}
-              shifts={shifts}
-            />
             <PlantDdsKpiSummary
               cells={plantCells}
               planDate={planDate}
@@ -110,8 +105,9 @@ export function PlantDdsPage() {
                 cellIds={plantCellIds}
                 plantRollup={rollupMode}
                 planDate={planDate}
-                shiftKind={shiftKind ?? ''}
+                shiftKind={shiftKind}
                 shellLoading={shellLoading}
+                allShiftsForPlanDate
               />
             </div>
           </section>
@@ -124,7 +120,7 @@ export function PlantDdsPage() {
               <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
                 Planned actions (DDS)
               </h2>
-              {!shellLoading && shiftKind && cellId ? (
+              {!shellLoading && cellId ? (
                 <button
                   type="button"
                   disabled={!user}
@@ -138,9 +134,9 @@ export function PlantDdsPage() {
               ) : null}
             </div>
             <div className="min-h-0 flex-1">
-              {shellLoading || !shiftKind ? (
+              {shellLoading ? (
                 <p className="text-[11px] text-muted" role="status">
-                  {shellLoading ? 'Loading roster…' : 'Select a shift.'}
+                  Loading roster…
                 </p>
               ) : (
                 <RollupDdsPlannedActionsPanel
@@ -151,6 +147,7 @@ export function PlantDdsPage() {
                   shiftKind={shiftKind}
                   uiSurface="plant-dds"
                   emptyLabel="No cells in this plant."
+                  allShiftsForPlanDate
                 />
               )}
             </div>
@@ -165,8 +162,9 @@ export function PlantDdsPage() {
                 cellIds={plantCellIds}
                 plantRollup={rollupMode}
                 planDate={planDate}
-                shiftKind={shiftKind ?? ''}
+                shiftKind={shiftKind}
                 shellLoading={shellLoading}
+                allShiftsForPlanDate
               />
             </div>
           </section>

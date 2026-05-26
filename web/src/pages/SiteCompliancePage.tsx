@@ -50,7 +50,7 @@ export function SiteCompliancePage() {
           ) : null}
         </h2>
         <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
-          <SiteDdsTriggerGrid cells={siteCellList} planDate={planDate} shiftKind="" shifts={shifts} dayRollup />
+          <SiteDdsTriggerGrid cells={siteCellList} planDate={planDate} shifts={shifts} />
           <SiteComplianceKpiPanel
             siteId={siteId}
             cells={siteCellList}

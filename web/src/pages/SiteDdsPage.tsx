@@ -40,6 +40,8 @@ export function SiteDdsPage() {
     <div className="flex h-full min-h-0 flex-1 flex-col gap-3">
       <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-b border-border/60 pb-2">
         <h1 className="shrink-0 font-display text-lg font-semibold tracking-tight">Site DDS</h1>
+        <SiteDdsTriggerGrid cells={siteCellList} planDate={planDate} shifts={shifts} />
+        <div className="min-w-0 flex-1" />
       </div>
 
       {rosterError ? <p className={`${ddsErr} shrink-0`}>{rosterError}</p> : null}
@@ -49,13 +51,7 @@ export function SiteDdsPage() {
           <h2 className="shrink-0 border-b border-border/60 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
             KPI summary
           </h2>
-          <div className="mt-1.5 min-h-0 flex-1 overflow-y-auto">
-            <SiteDdsTriggerGrid
-              cells={siteCellList}
-              planDate={planDate}
-              shiftKind={shiftKind ?? ''}
-              shifts={shifts}
-            />
+          <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
             <SiteDdsKpiSummary
               siteId={siteId}
               cells={siteCellList}
@@ -77,8 +73,9 @@ export function SiteDdsPage() {
                 cellIds={siteCellIds}
                 plantRollup="promoted_only"
                 planDate={planDate}
-                shiftKind={shiftKind ?? ''}
+                shiftKind={shiftKind}
                 shellLoading={shellLoading}
+                allShiftsForPlanDate
               />
             </div>
           </section>
@@ -94,7 +91,7 @@ export function SiteDdsPage() {
                 </h2>
                 <p className="mt-0.5 text-[9px] text-muted">Site-level actions only.</p>
               </div>
-              {!shellLoading && shiftKind && cellId ? (
+              {!shellLoading && cellId ? (
                 <button
                   type="button"
                   disabled={!user}
@@ -108,9 +105,9 @@ export function SiteDdsPage() {
               ) : null}
             </div>
             <div className="min-h-0 flex-1">
-              {shellLoading || !shiftKind ? (
+              {shellLoading ? (
                 <p className="text-[11px] text-muted" role="status">
-                  {shellLoading ? 'Loading roster…' : 'Select a shift.'}
+                  Loading roster…
                 </p>
               ) : (
                 <RollupDdsPlannedActionsPanel
@@ -121,6 +118,7 @@ export function SiteDdsPage() {
                   shiftKind={shiftKind}
                   uiSurface="site-dds"
                   emptyLabel="No cells in this site."
+                  allShiftsForPlanDate
                 />
               )}
             </div>
@@ -136,8 +134,9 @@ export function SiteDdsPage() {
                 cellIds={siteCellIds}
                 plantRollup="promoted_only"
                 planDate={planDate}
-                shiftKind={shiftKind ?? ''}
+                shiftKind={shiftKind}
                 shellLoading={shellLoading}
+                allShiftsForPlanDate
               />
             </div>
           </section>
