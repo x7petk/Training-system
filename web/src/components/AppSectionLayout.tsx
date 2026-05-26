@@ -1,5 +1,5 @@
 import { Suspense, useState, type ComponentType, type ReactNode } from 'react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
@@ -49,6 +49,8 @@ type AppSectionLayoutProps = {
   mainTop?: ReactNode
   /** When set, wraps `<Outlet />` in `<Suspense>` for lazy route segments. */
   outletFallback?: ReactNode
+  /** When false, routed content grows with the page (document scroll) instead of a fixed viewport pane. */
+  outletFillsViewport?: boolean
 }
 
 export function AppSectionLayout({
@@ -62,9 +64,12 @@ export function AppSectionLayout({
   accountFooter,
   mainTop,
   outletFallback,
+  outletFillsViewport = true,
 }: AppSectionLayoutProps) {
   const { signOut, user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const onePageOutlet = location.pathname.includes('/dds-process/pdca')
   const [desktopCollapsed, setDesktopCollapsed] = useState(
     () => typeof window !== 'undefined' && window.localStorage.getItem(storageKey) === '1',
   )
@@ -83,7 +88,11 @@ export function AppSectionLayout({
   }
 
   return (
-    <div className="flex min-h-svh flex-col md:flex-row">
+    <div
+      className={`flex flex-col md:flex-row ${
+        onePageOutlet ? 'h-svh max-h-svh overflow-hidden' : 'min-h-svh'
+      }`}
+    >
       <aside
         className={`border-b border-border bg-surface/80 backdrop-blur-md transition-[width] duration-200 md:border-b-0 md:border-r ${
           desktopCollapsed ? 'md:w-[4.25rem]' : 'md:w-56'
@@ -209,17 +218,39 @@ export function AppSectionLayout({
             <LogOut className="size-4" />
           </button>
         </header>
-        <main className="flex min-h-0 flex-1 flex-col p-4 md:p-8">
-          <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-1 flex-col">
-            {mainTop ? <div className="mb-6 shrink-0">{mainTop}</div> : null}
+        <main
+          className={`flex min-h-0 flex-1 flex-col p-4 md:p-8 ${onePageOutlet ? 'overflow-hidden' : ''}`}
+        >
+          <div
+            className={`mx-auto flex w-full max-w-7xl flex-col ${
+              onePageOutlet
+                ? 'min-h-0 flex-1 overflow-hidden'
+                : outletFillsViewport
+                  ? 'h-full min-h-0 flex-1'
+                  : 'w-full'
+            }`}
+          >
+            {mainTop ? <div className={`shrink-0 ${onePageOutlet ? 'mb-3' : 'mb-6'}`}>{mainTop}</div> : null}
             {outletFallback ? (
               <Suspense fallback={outletFallback}>
-                <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+                <div
+                  className={
+                    onePageOutlet || outletFillsViewport
+                      ? 'flex h-full min-h-0 min-w-0 flex-1 flex-col'
+                      : 'flex w-full min-w-0 flex-col'
+                  }
+                >
                   <Outlet />
                 </div>
               </Suspense>
             ) : (
-              <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+              <div
+                className={
+                  onePageOutlet || outletFillsViewport
+                    ? 'flex h-full min-h-0 min-w-0 flex-1 flex-col'
+                    : 'flex w-full min-w-0 flex-col'
+                }
+              >
                 <Outlet />
               </div>
             )}

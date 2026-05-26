@@ -1,10 +1,25 @@
-import { BarChart3, Bot, Calculator, ClipboardList, Database, Eye, Map, Network, Shield, Sparkles } from 'lucide-react'
+import {
+  BarChart3,
+  Bot,
+  Calculator,
+  ClipboardList,
+  Database,
+  Eye,
+  GitBranch,
+  ListChecks,
+  Map,
+  Network,
+  Shield,
+  Sparkles,
+} from 'lucide-react'
 import type { SectionNavItem } from '../../components/AppSectionLayout'
 
 export const AGENTS_NAV_ITEMS: SectionNavItem[] = [
   { to: '/agents/problem-solve-advisor', label: 'Problem solve advisor', icon: Sparkles, end: true },
   { to: '/agents/planner', label: 'Planner', icon: ClipboardList, end: true },
   { to: '/agents/road-map-builder', label: 'Road Map Builder', icon: Map, end: true },
+  { to: '/agents/kpi-cascade', label: 'KPI Cascade', icon: GitBranch, end: true },
+  { to: '/agents/standard-work-process', label: 'Standard Work Process', icon: ListChecks, end: true },
   { to: '/agents/ux-ui-expert', label: 'UX/UI expert', icon: Eye, end: true },
   { to: '/agents/q-and-a', label: 'Q&A', icon: Bot, end: true },
   { to: '/agents/reliability-engineer', label: 'Reliability Engineer', icon: Shield, end: true },

@@ -1,0 +1,49 @@
+.swp-flow .react-flow__edge-path {
+  stroke: #1e40af;
+  stroke-width: 2;
+  fill: none;
+}
+
+.swp-flow .react-flow__connection-path {
+  fill: none;
+}
+
+.swp-flow .react-flow__edge.selected .react-flow__edge-path {
+  stroke: #0f2f80;
+  stroke-width: 2.6;
+}
+
+.swp-flow .react-flow__connection-path {
+  stroke: #2563eb;
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+.swp-flow .react-flow__node.selected .swp-node-frame {
+  box-shadow:
+    0 0 0 2px rgba(37, 99, 235, 0.28),
+    0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+.swp-flow .react-flow__handle {
+  opacity: 0.35;
+  transition: opacity 120ms ease;
+}
+
+.swp-flow .react-flow__node:hover .react-flow__handle,
+.swp-flow .react-flow__node.selected .react-flow__handle {
+  opacity: 1;
+}
+
+.swp-flow .react-flow__attribution {
+  display: none;
+}
+
+.swp-flow .react-flow__pane,
+.swp-flow .react-flow__viewport {
+  background-color: #f8fafc;
+}
+
+.swp-flow .react-flow__resize-control.handle {
+  z-index: 20;
+}

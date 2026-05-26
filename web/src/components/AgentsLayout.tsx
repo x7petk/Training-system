@@ -11,6 +11,7 @@ export function AgentsLayout() {
       headerIconClass="bg-fuchsia-500/15 text-fuchsia-800 dark:text-fuchsia-300"
       HeaderIcon={Bot}
       navItems={AGENTS_NAV_ITEMS}
+      outletFillsViewport={false}
       outletFallback={
         <div
           className="flex min-h-[14rem] items-center justify-center rounded-2xl border border-border bg-surface-raised/50 text-sm text-muted"

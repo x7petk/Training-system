@@ -94,6 +94,7 @@ const DdsAdminEPlanSetupPage = lazy(() =>
   import('./pages/DdsAdminEPlanSetupPage').then((m) => ({ default: m.DdsAdminEPlanSetupPage })),
 )
 const WdsPage = lazy(() => import('./pages/WdsPage').then((m) => ({ default: m.WdsPage })))
+const PdcaPage = lazy(() => import('./pages/PdcaPage').then((m) => ({ default: m.PdcaPage })))
 const DdsAdminWdsKpisPage = lazy(() =>
   import('./pages/DdsAdminWdsKpisPage').then((m) => ({ default: m.DdsAdminWdsKpisPage })),
 )
@@ -121,9 +122,14 @@ import { UxUiExpertPage } from './pages/UxUiExpertPage'
 const RoadMapBuilderPage = lazy(() =>
   import('./pages/RoadMapBuilderPage').then((m) => ({ default: m.RoadMapBuilderPage })),
 )
+const KpiCascadePage = lazy(() =>
+  import('./pages/KpiCascadePage').then((m) => ({ default: m.KpiCascadePage })),
+)
+const StandardWorkProcessPage = lazy(() =>
+  import('./pages/StandardWorkProcessPage').then((m) => ({ default: m.StandardWorkProcessPage })),
+)
 import { DdsAdminRoute } from './components/DdsAdminRoute'
 import { DdsProcessLayout } from './components/DdsProcessLayout'
-import { DdsPlaceholderPage } from './pages/DdsPlaceholderPage'
 import { ProblemSolveAdminRoute } from './components/ProblemSolveAdminRoute'
 import { ProblemSolveLayout } from './components/ProblemSolveLayout'
 import { ProblemSolvePlaceholderPage } from './pages/ProblemSolvePlaceholderPage'
@@ -272,6 +278,8 @@ export default function App() {
             <Route path="problem-solve-advisor" element={<AgentsToolPage title="Problem solve advisor" />} />
             <Route path="planner" element={<AgentsToolPage title="Planner" />} />
             <Route path="road-map-builder" element={<RoadMapBuilderPage />} />
+            <Route path="kpi-cascade" element={<KpiCascadePage />} />
+            <Route path="standard-work-process" element={<StandardWorkProcessPage />} />
             <Route path="ux-ui-expert" element={<UxUiExpertPage />} />
             <Route path="q-and-a" element={<AgentsToolPage title="Q&A" />} />
             <Route path="reliability-engineer" element={<AgentsToolPage title="Reliability Engineer" />} />
@@ -306,7 +314,7 @@ export default function App() {
             <Route path="site-dds" element={<SiteDdsPage />} />
             <Route path="wds" element={<WdsPage />} />
             <Route path="e-plan" element={<EPlanPage />} />
-            <Route path="pdca" element={<DdsPlaceholderPage title="PDCA" />} />
+            <Route path="pdca" element={<PdcaPage />} />
             <Route
               path="admin"
               element={
