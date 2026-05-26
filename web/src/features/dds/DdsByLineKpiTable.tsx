@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Loader2, MessageSquare } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import type { DdsCellLine, DdsKpiLineEntry } from './ddsCellLines'
 import { lineEntryKey } from './ddsCellLines'
-import { kpiHasDdsCommentDetail } from './ddsKpiP2pRollup'
+import {
+  kpiHasDdsCommentDetail,
+  parseDdsP2pKpiBreakdown,
+  type DdsP2pKpiBreakdownItem,
+} from './ddsKpiP2pRollup'
 import type { DdsKpiScoring } from './ddsKpiScoring'
 import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
@@ -41,6 +45,22 @@ type EditModal = {
   valueStr: string
   comment: string
   entryId: string | null
+  p2pBreakdown: DdsP2pKpiBreakdownItem[]
+}
+
+type DetailPop = {
+  top: number
+  left: number
+  maxW: number
+  text: string
+  breakdown: DdsP2pKpiBreakdownItem[]
+}
+
+function placeDetailPanel(anchor: HTMLElement, maxW: number): { top: number; left: number; maxW: number } {
+  const rect = anchor.getBoundingClientRect()
+  const w = typeof window !== 'undefined' ? window.innerWidth : 400
+  const left = Math.max(8, Math.min(rect.left, w - maxW - 8))
+  return { top: rect.bottom + 6, left, maxW }
 }
 
 export function DdsByLineKpiTable({
@@ -55,7 +75,9 @@ export function DdsByLineKpiTable({
 }: Props) {
   const { user } = useAuth()
   const editTitleId = useId()
+  const detailPanelRef = useRef<HTMLDivElement>(null)
   const [modal, setModal] = useState<EditModal | null>(null)
+  const [detailPop, setDetailPop] = useState<DetailPop | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -77,6 +99,7 @@ export function DdsByLineKpiTable({
       valueStr: v != null && Number.isFinite(v) ? String(v) : '',
       comment: entry?.comment ?? '',
       entryId: entry?.id ?? null,
+      p2pBreakdown: parseDdsP2pKpiBreakdown(entry?.p2p_breakdown),
     })
   }, [entryByKey])
 
@@ -115,6 +138,23 @@ export function DdsByLineKpiTable({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [modal, saving])
+
+  useEffect(() => {
+    if (!detailPop) return
+    const onPointer = (e: MouseEvent) => {
+      if (detailPanelRef.current?.contains(e.target as Node)) return
+      setDetailPop(null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDetailPop(null)
+    }
+    window.addEventListener('mousedown', onPointer)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onPointer)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [detailPop])
 
   if (kpis.length === 0) return null
 
@@ -177,23 +217,41 @@ export function DdsByLineKpiTable({
                     const tone = evaluateKpiBlock(val, kpi.scoring)
                     const valueLabel =
                       val != null && Number.isFinite(val) ? formatKpiValueWithUnit(val, kpi.unit) : '—'
-                    const hasCmt = kpiHasDdsCommentDetail(entry?.comment, entry?.p2p_breakdown)
+                    const cmt = entry?.comment?.trim() ?? ''
+                    const breakdown = parseDdsP2pKpiBreakdown(entry?.p2p_breakdown)
+                    const showComment = kpiHasDdsCommentDetail(cmt, breakdown)
                     return (
                       <td key={`${col.cellId}-${col.line.id}`} className="p-px align-middle">
                         <button
                           type="button"
                           disabled={!user}
-                          title={hasCmt ? 'Has comment — click to edit' : undefined}
-                          className={`relative flex min-h-[1.125rem] w-full min-w-[2.125rem] cursor-pointer items-center justify-center rounded-sm border px-0.5 py-px text-center outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50 ${kpiBlockToneClasses(tone)}`}
-                          aria-label={`${kpi.label}, ${col.columnLabel}: ${valueLabel}${hasCmt ? ', has comment' : ''}. Edit value and comment.`}
+                          className={`relative flex min-h-[1.125rem] w-full min-w-[2.125rem] cursor-pointer items-center justify-center gap-px rounded-sm border px-0.5 py-px text-center outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50 ${kpiBlockToneClasses(tone)}`}
+                          aria-label={`${kpi.label}, ${col.columnLabel}: ${valueLabel}${showComment ? ', has comment' : ''}. Edit value and comment.`}
                           onClick={() => openModal(col, kpi)}
                         >
                           <span className="tabular-nums text-[9px] font-semibold leading-none">{valueLabel}</span>
-                          {hasCmt ? (
+                          {showComment ? (
                             <span
-                              className="absolute right-0.5 top-0.5 size-1 rounded-full bg-accent"
-                              aria-hidden
-                            />
+                              role="button"
+                              tabIndex={0}
+                              className="inline-flex shrink-0 rounded p-px text-muted hover:text-fg"
+                              aria-label="Show P2P comments"
+                              onClick={(clickEv) => {
+                                clickEv.stopPropagation()
+                                const pos = placeDetailPanel(clickEv.currentTarget as HTMLElement, 280)
+                                setDetailPop({ ...pos, text: cmt, breakdown })
+                              }}
+                              onKeyDown={(keyEv) => {
+                                if (keyEv.key === 'Enter' || keyEv.key === ' ') {
+                                  keyEv.preventDefault()
+                                  keyEv.stopPropagation()
+                                  const pos = placeDetailPanel(keyEv.currentTarget as HTMLElement, 280)
+                                  setDetailPop({ ...pos, text: cmt, breakdown })
+                                }
+                              }}
+                            >
+                              <MessageSquare className="size-2.5 shrink-0 text-accent" aria-hidden />
+                            </span>
                           ) : null}
                         </button>
                       </td>
@@ -205,6 +263,39 @@ export function DdsByLineKpiTable({
           </tbody>
         </table>
       </div>
+
+      {detailPop ? (
+        <div
+          ref={detailPanelRef}
+          role="dialog"
+          aria-modal="false"
+          aria-label="KPI details"
+          className="fixed z-[68] max-h-[min(50vh,20rem)] overflow-y-auto rounded-lg border border-border-strong bg-surface px-3 py-2 text-xs shadow-xl"
+          style={{ top: detailPop.top, left: detailPop.left, maxWidth: detailPop.maxW, width: detailPop.maxW }}
+        >
+          {detailPop.breakdown.length > 0 ? (
+            <div className="mb-2">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">P2P by role</div>
+              <ul className="space-y-1.5 leading-snug">
+                {detailPop.breakdown.map((b, i) => (
+                  <li key={`${b.roster_role_id}-${b.question_key}-${i}`} className="text-fg">
+                    <span className="font-semibold text-fg">{b.role_name}</span>
+                    {b.line_name ? <span className="text-muted"> · {b.line_name}</span> : null}
+                    {b.prompt ? <span className="text-muted"> · {b.prompt}</span> : null}
+                    <span className="tabular-nums text-fg/90"> · {b.value}</span>
+                    {b.comment ? <span className="text-fg/85"> — {b.comment}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {detailPop.text ? (
+            <p className="whitespace-pre-wrap leading-snug text-fg">{detailPop.text}</p>
+          ) : detailPop.breakdown.length === 0 ? (
+            <p className="text-muted">No comment.</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {modal ? (
         <div
@@ -232,6 +323,21 @@ export function DdsByLineKpiTable({
               </p>
             ) : null}
             {error ? <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">{error}</p> : null}
+            {modal.p2pBreakdown.length > 0 ? (
+              <div className="mt-3 rounded-xl border border-border/70 bg-canvas/40 px-3 py-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">From P2P</p>
+                <ul className="mt-1 space-y-1 text-[11px] leading-snug">
+                  {modal.p2pBreakdown.map((b, i) => (
+                    <li key={`${b.roster_role_id}-${i}`}>
+                      <span className="font-semibold">{b.role_name}</span>
+                      {b.prompt ? <span className="text-muted"> · {b.prompt}</span> : null}
+                      <span className="tabular-nums"> · {b.value}</span>
+                      {b.comment ? <span> — {b.comment}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <label className="mt-4 block text-xs font-medium text-muted">
               Value
               {modal.kpi.unit !== 'none' ? (

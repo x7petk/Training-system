@@ -45,6 +45,118 @@ export function kpiHasDdsCommentDetail(comment: string | null | undefined, p2pBr
   return parseDdsP2pKpiBreakdown(p2pBreakdown).some((item) => item.comment.trim())
 }
 
+export type DdsKpiLineEntryMergeRow = {
+  id: string
+  shift_kind: string
+  value_numeric: number | null
+  comment: string | null
+  p2p_breakdown: unknown
+}
+
+export type DdsKpiLineEntryMerged = {
+  id: string
+  value_numeric: number | null
+  comment: string | null
+  p2p_breakdown: DdsP2pKpiBreakdownItem[] | null
+}
+
+/** Line / Plant / Site DDS: P2P by-line rollups live on day/night rows; merge for meeting-day table. */
+export function mergeMeetingDayKpiLineEntry(rows: DdsKpiLineEntryMergeRow[]): DdsKpiLineEntryMerged | null {
+  if (rows.length === 0) return null
+  const perShift = rows.filter((r) => r.shift_kind !== DDS_MEETING_SHIFT_KIND)
+  const sources = perShift.length > 0 ? perShift : rows
+  const breakdown = sources.flatMap((r) => parseDdsP2pKpiBreakdown(r.p2p_breakdown))
+  const meetingRow = rows.find((r) => r.shift_kind === DDS_MEETING_SHIFT_KIND)
+  const primary = meetingRow ?? sources[0]!
+
+  if (breakdown.length > 0) {
+    return {
+      id: primary.id,
+      value_numeric: breakdown.reduce((sum, part) => sum + part.value, 0),
+      comment: primary.comment,
+      p2p_breakdown: breakdown,
+    }
+  }
+
+  if (!kpiHasDdsCommentDetail(primary.comment, primary.p2p_breakdown) && primary.value_numeric == null) {
+    const withValue = sources.find((r) => r.value_numeric != null)
+    if (withValue) {
+      return {
+        id: withValue.id,
+        value_numeric: withValue.value_numeric,
+        comment: withValue.comment,
+        p2p_breakdown: null,
+      }
+    }
+    return null
+  }
+
+  return {
+    id: primary.id,
+    value_numeric: primary.value_numeric,
+    comment: primary.comment,
+    p2p_breakdown: null,
+  }
+}
+
+export function mergeMeetingDayLineEntries(
+  rows: Array<{
+    id: string
+    master_cell_id: string
+    line_id: string
+    kpi_id: string
+    shift_kind: string
+    value_numeric: number | null
+    comment: string | null
+    p2p_breakdown: unknown
+  }>,
+): Array<{
+  id: string
+  master_cell_id: string
+  line_id: string
+  kpi_id: string
+  value_numeric: number | null
+  comment: string | null
+  p2p_breakdown: DdsP2pKpiBreakdownItem[] | null
+}> {
+  const groups = new Map<string, typeof rows>()
+  for (const row of rows) {
+    const key = `${row.master_cell_id}\0${row.line_id}\0${row.kpi_id}`
+    const list = groups.get(key) ?? []
+    list.push(row)
+    groups.set(key, list)
+  }
+  const out: Array<{
+    id: string
+    master_cell_id: string
+    line_id: string
+    kpi_id: string
+    value_numeric: number | null
+    comment: string | null
+    p2p_breakdown: DdsP2pKpiBreakdownItem[] | null
+  }> = []
+  for (const [, groupRows] of groups) {
+    const first = groupRows[0]!
+    const merged = mergeMeetingDayKpiLineEntry(groupRows)
+    if (
+      !merged &&
+      !groupRows.some((r) => r.value_numeric != null || kpiHasDdsCommentDetail(r.comment, r.p2p_breakdown))
+    ) {
+      continue
+    }
+    out.push({
+      id: merged?.id ?? first.id,
+      master_cell_id: first.master_cell_id,
+      line_id: first.line_id,
+      kpi_id: first.kpi_id,
+      value_numeric: merged?.value_numeric ?? first.value_numeric,
+      comment: merged?.comment ?? first.comment,
+      p2p_breakdown: merged?.p2p_breakdown ?? null,
+    })
+  }
+  return out
+}
+
 export type DdsKpiCellEntryMergeRow = {
   id: string
   shift_kind: string

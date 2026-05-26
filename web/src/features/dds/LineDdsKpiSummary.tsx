@@ -10,7 +10,7 @@ import { isDdsKpiSiteByLine, isDdsKpiSiteConsolidated } from './ddsKpiSitePresen
 import { parseDdsKpiScoring } from './ddsKpiScoring'
 import { parseDdsKpiUnit } from './ddsKpiUnits'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
-import { p2pRollupEventMatchesMeetingDay } from './ddsKpiP2pRollup'
+import { mergeMeetingDayLineEntries, p2pRollupEventMatchesMeetingDay } from './ddsKpiP2pRollup'
 
 type KpiGroup = { id: string; name: string; sort_order: number }
 
@@ -68,10 +68,9 @@ export function LineDdsKpiSummary({ cellId, cellName, planDate, shiftKind, shell
         .order('name'),
       supabase
         .from('dds_kpi_line_entries')
-        .select('id, master_cell_id, line_id, kpi_id, value_numeric, comment, p2p_breakdown')
+        .select('id, master_cell_id, line_id, kpi_id, shift_kind, value_numeric, comment, p2p_breakdown')
         .eq('master_cell_id', cellId)
-        .eq('plan_date', planDate)
-        .eq('shift_kind', shiftKind),
+        .eq('plan_date', planDate),
     ])
     setLoading(false)
     if (gRes.error || kRes.error || oRes.error || linesRes.error || lineEntRes.error) return
@@ -84,7 +83,20 @@ export function LineDdsKpiSummary({ cellId, cellName, planDate, shiftKind, shell
     }
     setSurfaceOverrides(oMap)
     setCellLines((linesRes.data ?? []) as DdsCellLine[])
-    setLineEntries((lineEntRes.data ?? []) as DdsKpiLineEntry[])
+    setLineEntries(
+      mergeMeetingDayLineEntries(
+        (lineEntRes.data ?? []) as Array<{
+          id: string
+          master_cell_id: string
+          line_id: string
+          kpi_id: string
+          shift_kind: string
+          value_numeric: number | null
+          comment: string | null
+          p2p_breakdown: unknown
+        }>,
+      ),
+    )
   }, [cellId, planDate, shiftKind])
 
   useEffect(() => {

@@ -10,7 +10,7 @@ import { isDdsKpiSiteByLine, isDdsKpiSiteConsolidated } from './ddsKpiSitePresen
 import { parseDdsKpiScoring } from './ddsKpiScoring'
 import { parseDdsKpiUnit } from './ddsKpiUnits'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
-import { p2pRollupEventMatchesMeetingDay } from './ddsKpiP2pRollup'
+import { mergeMeetingDayLineEntries, p2pRollupEventMatchesMeetingDay } from './ddsKpiP2pRollup'
 
 type CellLite = { id: string; name: string }
 
@@ -70,10 +70,9 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
         .order('name'),
       supabase
         .from('dds_kpi_line_entries')
-        .select('id, master_cell_id, line_id, kpi_id, value_numeric, comment, p2p_breakdown')
+        .select('id, master_cell_id, line_id, kpi_id, shift_kind, value_numeric, comment, p2p_breakdown')
         .in('master_cell_id', cellIds)
-        .eq('plan_date', planDate)
-        .eq('shift_kind', shiftKind),
+        .eq('plan_date', planDate),
     ])
     setLoading(false)
     if (gRes.error || kRes.error || oRes.error || linesRes.error || lineEntRes.error) return
@@ -87,7 +86,20 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
     }
     setOverridesByCell(oMap)
     setCellLines((linesRes.data ?? []) as DdsCellLine[])
-    setLineEntries((lineEntRes.data ?? []) as DdsKpiLineEntry[])
+    setLineEntries(
+      mergeMeetingDayLineEntries(
+        (lineEntRes.data ?? []) as Array<{
+          id: string
+          master_cell_id: string
+          line_id: string
+          kpi_id: string
+          shift_kind: string
+          value_numeric: number | null
+          comment: string | null
+          p2p_breakdown: unknown
+        }>,
+      ),
+    )
   }, [cellIds, planDate, shiftKind])
 
   useEffect(() => {

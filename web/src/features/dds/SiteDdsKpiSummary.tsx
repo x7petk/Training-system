@@ -17,6 +17,7 @@ import { parseDdsKpiUnit } from './ddsKpiUnits'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
 import {
   mergeMeetingDayKpiCellEntry,
+  mergeMeetingDayLineEntries,
   p2pRollupEventMatchesMeetingDay,
   type DdsP2pKpiBreakdownItem,
 } from './ddsKpiP2pRollup'
@@ -104,10 +105,9 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
         .order('name'),
       supabase
         .from('dds_kpi_line_entries')
-        .select('id, master_cell_id, line_id, kpi_id, value_numeric, comment, p2p_breakdown')
+        .select('id, master_cell_id, line_id, kpi_id, shift_kind, value_numeric, comment, p2p_breakdown')
         .in('master_cell_id', cellIds)
-        .eq('plan_date', planDate)
-        .eq('shift_kind', shiftKind),
+        .eq('plan_date', planDate),
     ])
     setLoading(false)
     if (gRes.error || kRes.error || oRes.error || eRes.error || sRes.error || linesRes.error || lineEntRes.error) {
@@ -143,7 +143,20 @@ export function SiteDdsKpiSummary({ siteId, cells, planDate, shiftKind, shellLoa
     }
     setSiteEntries(se)
     setCellLines((linesRes.data ?? []) as DdsCellLine[])
-    setLineEntries((lineEntRes.data ?? []) as DdsKpiLineEntry[])
+    setLineEntries(
+      mergeMeetingDayLineEntries(
+        (lineEntRes.data ?? []) as Array<{
+          id: string
+          master_cell_id: string
+          line_id: string
+          kpi_id: string
+          shift_kind: string
+          value_numeric: number | null
+          comment: string | null
+          p2p_breakdown: unknown
+        }>,
+      ),
+    )
   }, [siteId, cellIds, planDate, shiftKind])
 
   useEffect(() => {
