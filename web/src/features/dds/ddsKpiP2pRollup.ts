@@ -142,7 +142,7 @@ export async function refreshKpiP2pRollups(
     for (const [rosterRoleId, auditId] of latestAuditIdByRole) {
       const rows = answersByAudit.get(auditId) ?? []
       for (const ans of rows) {
-        if (ans.answer_yes_no !== false) continue
+        if (ans.answer_yes_no !== true) continue
         const qKind = ans.question_kind as 'standard' | 'soft'
         const qid = qKind === 'standard' ? ans.standard_question_id : ans.soft_question_id
         if (!qid) continue

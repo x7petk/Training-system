@@ -11,7 +11,7 @@ import { DdsP2pPlanPanel } from '../features/dds/DdsP2pPlanPanel'
 import { DdsP2pPlanDayStrip } from '../features/dds/DdsP2pPlanDayStrip'
 import { refreshKpiP2pRollups } from '../features/dds/ddsKpiP2pRollup'
 import { dispatchDdsP2pKpiRollupDone } from '../features/dds/ddsP2pKpiRollupEvents'
-import { ddsErr, ddsHint, ddsInput, ddsSection, ddsSelect, ddsStack } from '../features/dds/ddsAdminCompactClasses'
+import { ddsErr, ddsHint, ddsInput, ddsSection, ddsSelect } from '../features/dds/ddsAdminCompactClasses'
 
 type KpiGroup = { id: string; name: string; sort_order: number }
 
@@ -41,14 +41,19 @@ function sortGroups<T extends { sort_order: number; name: string }>(rows: T[]): 
 function emptyForm(questions: P2pQuestion[]): Record<string, FormAns> {
   const m: Record<string, FormAns> = {}
   for (const q of questions) {
-    m[q.key] = { yesNo: null, num: '', comment: '', kpiIncidentNum: '' }
+    m[q.key] = {
+      yesNo: q.responseKind === 'yes_no' ? false : null,
+      num: '',
+      comment: '',
+      kpiIncidentNum: '',
+    }
   }
   return m
 }
 
 function growTextarea(el: HTMLTextAreaElement) {
   el.style.height = 'auto'
-  el.style.height = `${Math.min(Math.max(el.scrollHeight, 28), 120)}px`
+  el.style.height = `${Math.min(Math.max(el.scrollHeight, 22), 96)}px`
 }
 
 export function DdsP2pPage() {
@@ -346,16 +351,23 @@ export function DdsP2pPage() {
       setError(e.message)
       return
     }
+    const qByKey = new Map(qs.map((q) => [q.key, q]))
     const next = emptyForm(qs)
     for (const row of ans ?? []) {
       const kind = row.question_kind as 'standard' | 'soft'
       const qid = kind === 'standard' ? (row.standard_question_id as string) : (row.soft_question_id as string)
       const k = ddsP2pQuestionKey(kind, qid)
-      if (!next[k]) continue
+      const meta = qByKey.get(k)
+      if (!meta || !next[k]) continue
       const qc = (row.question_comment as string | null) ?? ''
       const klc = (row.kpi_link_comment as string | null) ?? ''
       next[k] = {
-        yesNo: typeof row.answer_yes_no === 'boolean' ? row.answer_yes_no : null,
+        yesNo:
+          meta.responseKind === 'yes_no'
+            ? row.answer_yes_no === true
+            : typeof row.answer_yes_no === 'boolean'
+              ? row.answer_yes_no
+              : null,
         num: row.answer_number != null ? String(row.answer_number) : '',
         comment: qc.trim() ? qc : klc,
         kpiIncidentNum: row.kpi_link_value != null && row.kpi_link_value !== '' ? String(row.kpi_link_value) : '',
@@ -381,10 +393,7 @@ export function DdsP2pPage() {
     for (const q of questions) {
       const f = form[q.key]
       if (!f) continue
-      if (q.responseKind === 'yes_no' && f.yesNo === null) {
-        setError(`Answer every question (${q.prompt.slice(0, 40)}…)`)
-        return
-      }
+      const yesNo = q.responseKind === 'yes_no' ? f.yesNo === true : null
       if (q.responseKind === 'number_with_target') {
         const n = Number(String(f.num).trim().replace(',', '.'))
         if (!Number.isFinite(n)) {
@@ -392,7 +401,7 @@ export function DdsP2pPage() {
           return
         }
       }
-      if (q.responseKind === 'yes_no' && q.linkedKpiId && f.yesNo === false) {
+      if (q.responseKind === 'yes_no' && q.linkedKpiId && yesNo) {
         const kn = Number(String(f.kpiIncidentNum ?? '').trim().replace(',', '.'))
         if (!Number.isFinite(kn) || kn < 0) {
           setError(`Enter a non‑negative incident count for: ${q.prompt.slice(0, 40)}…`)
@@ -427,19 +436,20 @@ export function DdsP2pPage() {
     for (const q of questions) {
       const f = form[q.key]!
       if (q.responseKind === 'yes_no') {
-        const linkNo = Boolean(q.linkedKpiId) && f.yesNo === false
-        const kn = linkNo ? Number(String(f.kpiIncidentNum).trim().replace(',', '.')) : null
+        const answeredYes = f.yesNo === true
+        const linkYes = Boolean(q.linkedKpiId) && answeredYes
+        const kn = linkYes ? Number(String(f.kpiIncidentNum).trim().replace(',', '.')) : null
         const cmt = f.comment.trim() || null
         const { error: ansErr } = await supabase.from('dds_p2p_audit_answers').insert({
           audit_id: auditId,
           question_kind: q.source,
           standard_question_id: q.source === 'standard' ? q.questionId : null,
           soft_question_id: q.source === 'soft' ? q.questionId : null,
-          answer_yes_no: f.yesNo,
+          answer_yes_no: answeredYes,
           answer_number: null,
           question_comment: cmt,
-          kpi_link_value: linkNo && kn != null && Number.isFinite(kn) ? kn : null,
-          kpi_link_comment: linkNo ? cmt : null,
+          kpi_link_value: linkYes && kn != null && Number.isFinite(kn) ? kn : null,
+          kpi_link_comment: linkYes ? cmt : null,
         })
         if (ansErr) {
           setSaving(false)
@@ -499,7 +509,7 @@ export function DdsP2pPage() {
   }
 
   return (
-    <div className={`${ddsStack} min-h-0 flex-1`}>
+    <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
       {cellId && shiftKind && roleName ? (
         <DdsP2pPlanDayStrip
           cellId={cellId}
@@ -509,16 +519,16 @@ export function DdsP2pPage() {
           refreshToken={planRefreshToken}
         />
       ) : null}
-      <div className="flex min-h-0 flex-1 flex-col gap-2 lg:grid lg:max-h-[min(96dvh,1080px)] lg:min-h-[420px] lg:grid-cols-2 lg:gap-3">
-        <section className={`${ddsSection} flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden`}>
-          <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-border/60 pb-2">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden lg:grid-cols-2 lg:grid-rows-1">
+        <section className={`${ddsSection} flex min-h-0 min-w-0 flex-col overflow-hidden !p-2 sm:!p-2.5`}>
+          <div className="flex shrink-0 flex-wrap items-end gap-1.5 border-b border-border/60 pb-1.5">
             <div>
               <label className="text-[10px] font-medium text-muted">Date</label>
-              <input type="date" className={ddsInput} value={planDate} onChange={(e) => setPlanDate(e.target.value)} />
+              <input type="date" className={`${ddsInput} !mt-0 !h-7`} value={planDate} onChange={(e) => setPlanDate(e.target.value)} />
             </div>
             <div>
               <label className="text-[10px] font-medium text-muted">Shift</label>
-              <select className={ddsSelect} value={shiftKind} onChange={(e) => setShiftKind(e.target.value)}>
+              <select className={`${ddsSelect} !mt-0 !h-7`} value={shiftKind} onChange={(e) => setShiftKind(e.target.value)}>
                 {shifts.map((s) => (
                   <option key={s.kind} value={s.kind}>
                     {s.display_name?.trim() || s.kind}
@@ -528,7 +538,7 @@ export function DdsP2pPage() {
             </div>
             <div className="min-w-[8rem] flex-1">
               <label className="text-[10px] font-medium text-muted">Role</label>
-              <select className={ddsSelect} value={roleId} onChange={(e) => setRoleId(e.target.value)}>
+              <select className={`${ddsSelect} !mt-0 !h-7`} value={roleId} onChange={(e) => setRoleId(e.target.value)}>
                 {roles.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
@@ -555,22 +565,20 @@ export function DdsP2pPage() {
             </p>
           ) : (
             <>
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5">
+              <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-0.5">
                 {questionsByGroup.map((g) => (
                   <div key={g.groupName}>
-                    <div className="border-b border-border/60 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
-                      {g.groupName}
-                    </div>
-                    <ul className="mt-1 space-y-1.5">
+                    <div className="text-[9px] font-semibold uppercase tracking-wide text-muted">{g.groupName}</div>
+                    <ul className="mt-0.5">
                       {g.items.map((q) => {
                         const f = form[q.key] ?? {
-                          yesNo: null,
+                          yesNo: q.responseKind === 'yes_no' ? false : null,
                           num: '',
                           comment: '',
                           kpiIncidentNum: '',
                         }
-                        const linkedNo = Boolean(q.linkedKpiId) && q.responseKind === 'yes_no' && f.yesNo === false
-                        const commentInvalid = linkedNo && !f.comment.trim()
+                        const linkedYes = Boolean(q.linkedKpiId) && q.responseKind === 'yes_no' && f.yesNo === true
+                        const commentInvalid = linkedYes && !f.comment.trim()
                         const kindHint =
                           q.responseKind === 'yes_no'
                             ? null
@@ -578,10 +586,10 @@ export function DdsP2pPage() {
                               ? `${labelForDdsP2pResponseKind(q.responseKind)} · tgt ${q.targetNumber}`
                               : labelForDdsP2pResponseKind(q.responseKind)
                         const compactControl =
-                          'h-7 shrink-0 rounded-md border border-border bg-surface px-1.5 text-[11px] outline-none ring-accent/30 focus:border-accent/50 focus:ring-1'
+                          'h-6 shrink-0 rounded border border-border bg-surface px-1 text-[11px] outline-none ring-accent/30 focus:border-accent/50 focus:ring-1'
                         return (
-                          <li key={q.key} className="border-b border-border/35 pb-1.5 last:border-b-0 last:pb-0">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <li key={q.key} className="py-0.5">
+                            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0">
                               <span
                                 className={`min-w-0 flex-[1_1_10rem] text-[11px] leading-snug text-fg ${q.source === 'standard' ? 'font-bold' : ''}`}
                               >
@@ -599,13 +607,13 @@ export function DdsP2pPage() {
                                     onClick={() =>
                                       setForm((prev) => ({
                                         ...prev,
-                                        [q.key]: { ...f, yesNo: true, kpiIncidentNum: '' },
+                                        [q.key]: { ...f, yesNo: true },
                                       }))
                                     }
-                                    className={`h-6 min-w-[2.35rem] rounded px-2 text-[11px] font-semibold transition-colors disabled:opacity-50 ${
+                                    className={`h-5 min-w-[2.1rem] rounded px-1.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
                                       f.yesNo === true
-                                        ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-500/40 dark:bg-emerald-600'
-                                        : 'text-emerald-800 hover:bg-emerald-500/15 dark:text-emerald-300 dark:hover:bg-emerald-500/20'
+                                        ? 'bg-rose-600 text-white shadow-sm ring-1 ring-rose-500/40 dark:bg-rose-600'
+                                        : 'text-rose-800 hover:bg-rose-500/15 dark:text-rose-300 dark:hover:bg-rose-500/20'
                                     }`}
                                   >
                                     Yes
@@ -614,12 +622,15 @@ export function DdsP2pPage() {
                                     type="button"
                                     disabled={readOnlyRevision}
                                     onClick={() =>
-                                      setForm((prev) => ({ ...prev, [q.key]: { ...f, yesNo: false } }))
+                                      setForm((prev) => ({
+                                        ...prev,
+                                        [q.key]: { ...f, yesNo: false, kpiIncidentNum: '' },
+                                      }))
                                     }
-                                    className={`h-6 min-w-[2.35rem] rounded px-2 text-[11px] font-semibold transition-colors disabled:opacity-50 ${
+                                    className={`h-5 min-w-[2.1rem] rounded px-1.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
                                       f.yesNo === false
-                                        ? 'bg-rose-600 text-white shadow-sm ring-1 ring-rose-500/40 dark:bg-rose-600'
-                                        : 'text-rose-800 hover:bg-rose-500/15 dark:text-rose-300 dark:hover:bg-rose-500/20'
+                                        ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-500/40 dark:bg-emerald-600'
+                                        : 'text-emerald-800 hover:bg-emerald-500/15 dark:text-emerald-300 dark:hover:bg-emerald-500/20'
                                     }`}
                                   >
                                     No
@@ -641,38 +652,29 @@ export function DdsP2pPage() {
                                 <span className="shrink-0 text-[10px] text-muted">{kindHint}</span>
                               ) : null}
                             </div>
-                            {linkedNo ? (
-                              <div className="mt-1 space-y-1 rounded-md border border-amber-600/35 bg-amber-500/10 px-1.5 py-1 dark:bg-amber-950/25">
-                                <p className="text-[9px] font-medium text-amber-950 dark:text-amber-100/90">
-                                  Linked KPI: enter the incident count below. Use the comment under the question
-                                  (required) for details; it rolls up across roles for this shift.
-                                </p>
-                                <label className="flex min-w-[5rem] max-w-[6rem] flex-col gap-0.5">
-                                  <span className="text-[9px] text-muted">Count</span>
-                                  <input
-                                    className={`${compactControl} w-full text-right tabular-nums`}
-                                    inputMode="numeric"
-                                    placeholder="0"
-                                    disabled={readOnlyRevision}
-                                    value={f.kpiIncidentNum}
-                                    onChange={(e) =>
-                                      setForm((prev) => ({
-                                        ...prev,
-                                        [q.key]: { ...f, kpiIncidentNum: e.target.value },
-                                      }))
-                                    }
-                                  />
-                                </label>
-                              </div>
+                            {linkedYes ? (
+                              <input
+                                className={`${compactControl} mt-0.5 w-[4rem] text-right tabular-nums`}
+                                inputMode="numeric"
+                                placeholder="0"
+                                disabled={readOnlyRevision}
+                                value={f.kpiIncidentNum}
+                                onChange={(e) =>
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    [q.key]: { ...f, kpiIncidentNum: e.target.value },
+                                  }))
+                                }
+                              />
                             ) : null}
                             <textarea
-                              className={`p2p-auto-comment mt-0.5 w-full resize-none overflow-hidden rounded-md border bg-surface px-1.5 py-0.5 text-[11px] leading-snug outline-none ring-accent/30 focus:ring-1 ${
+                              className={`p2p-auto-comment mt-0.5 w-full resize-none overflow-hidden rounded border bg-surface px-1 py-px text-[11px] leading-tight outline-none ring-accent/30 focus:ring-1 ${
                                 commentInvalid
                                   ? 'border-2 border-rose-600 ring-rose-500/35 focus:border-rose-600 dark:border-rose-500'
                                   : 'border-border/80 focus:border-accent/50'
                               }`}
                               rows={1}
-                              placeholder={linkedNo ? 'Comment (required)' : 'Comment'}
+                              placeholder={linkedYes ? 'Comment (required)' : 'Comment'}
                               aria-invalid={commentInvalid}
                               disabled={readOnlyRevision}
                               value={f.comment}
@@ -688,10 +690,10 @@ export function DdsP2pPage() {
                   </div>
                 ))}
               </div>
-              <div className="mt-2 shrink-0 border-t border-border/60 pt-2">
-                <label className="text-[10px] font-medium text-muted">Overall comment</label>
+              <div className="mt-1 shrink-0 border-t border-border/60 pt-1.5">
+                <label className="text-[9px] font-medium text-muted">Overall comment</label>
                 <textarea
-                  className="p2p-auto-comment mt-0.5 w-full resize-none overflow-hidden rounded-md border border-border bg-surface px-1.5 py-0.5 text-[11px] leading-snug outline-none ring-accent/30 focus:border-accent/50 focus:ring-1"
+                  className="p2p-auto-comment mt-0.5 w-full resize-none overflow-hidden rounded border border-border bg-surface px-1 py-px text-[11px] leading-tight outline-none ring-accent/30 focus:border-accent/50 focus:ring-1"
                   rows={1}
                   disabled={readOnlyRevision}
                   value={sheetComment}
@@ -702,16 +704,16 @@ export function DdsP2pPage() {
                   type="button"
                   disabled={saving || readOnlyRevision || questions.length === 0}
                   onClick={() => void submit()}
-                  className="mt-2 inline-flex h-8 items-center rounded-md bg-accent px-3 text-xs font-semibold text-accent-fg disabled:opacity-40"
+                  className="mt-1.5 inline-flex h-7 items-center rounded-md bg-accent px-2.5 text-xs font-semibold text-accent-fg disabled:opacity-40"
                 >
                   {saving ? 'Submitting…' : 'Submit'}
                 </button>
-                <p className="mt-1 text-[10px] text-muted">Each submit appends an immutable revision (audit trail).</p>
+                <p className="mt-0.5 text-[9px] text-muted">Each submit appends an immutable revision (audit trail).</p>
                 {readOnlyRevision ? (
-                  <p className="mt-1 text-[10px] text-amber-800 dark:text-amber-200">Read-only historical revision. Latest is editable.</p>
+                  <p className="mt-0.5 text-[9px] text-amber-800 dark:text-amber-200">Read-only historical revision. Latest is editable.</p>
                 ) : null}
                 {audits.length > 0 ? (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
                     <label htmlFor="p2p-revision" className="text-[9px] font-medium text-muted">
                       Revision
                     </label>
@@ -734,6 +736,7 @@ export function DdsP2pPage() {
           )}
         </section>
         {roleName && shiftKind ? (
+          <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <DdsP2pPlanPanel
             cellId={cellId}
             planDate={planDate}
@@ -746,15 +749,16 @@ export function DdsP2pPage() {
             onSuccessMsg={handlePlanPanelSuccess}
             onPlanDataChanged={bumpPlanStats}
           />
+          </div>
         ) : (
-          <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border p-4 text-[11px] text-muted">
+          <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-border p-3 text-[11px] text-muted">
             Select role and shift to load your plan.
           </div>
         )}
       </div>
-      {planErr ? <p className={ddsErr}>{planErr}</p> : null}
+      {planErr ? <p className={`${ddsErr} shrink-0`}>{planErr}</p> : null}
       {planSuccess ? (
-        <p className="mt-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">{planSuccess}</p>
+        <p className="shrink-0 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">{planSuccess}</p>
       ) : null}
     </div>
   )

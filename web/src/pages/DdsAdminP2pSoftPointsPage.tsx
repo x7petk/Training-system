@@ -468,7 +468,7 @@ export function DdsAdminP2pSoftPointsPage() {
                   {newKind === 'yes_no' ? (
                     <div className="sm:col-span-2">
                       <label htmlFor="cell-soft-new-kpi" className="text-[10px] font-medium text-muted">
-                        Roll up to KPI when answer is No (optional)
+                        Roll up to KPI when answer is Yes (optional)
                       </label>
                       <select
                         id="cell-soft-new-kpi"
@@ -583,7 +583,7 @@ export function DdsAdminP2pSoftPointsPage() {
                             {d.response_kind === 'yes_no' ? (
                               <div className="sm:col-span-2 lg:col-span-3">
                                 <label className="text-[10px] font-medium text-muted" htmlFor={`cell-soft-kpi-${row.id}`}>
-                                  Roll up to KPI when answer is No (optional)
+                                  Roll up to KPI when answer is Yes (optional)
                                 </label>
                                 <select
                                   id={`cell-soft-kpi-${row.id}`}

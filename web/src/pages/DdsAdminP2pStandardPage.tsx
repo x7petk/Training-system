@@ -337,7 +337,7 @@ export function DdsAdminP2pStandardPage() {
             {newKind === 'yes_no' ? (
               <div className="sm:col-span-2">
                 <label htmlFor="p2p-new-q-kpi" className="text-[10px] font-medium text-muted">
-                  Roll up to KPI when answer is No (optional)
+                  Roll up to KPI when answer is Yes (optional)
                 </label>
                 <select
                   id="p2p-new-q-kpi"
@@ -452,7 +452,7 @@ export function DdsAdminP2pStandardPage() {
                       {d.response_kind === 'yes_no' ? (
                         <div className="sm:col-span-2 lg:col-span-3">
                           <label className="text-[10px] font-medium text-muted" htmlFor={`p2p-q-kpi-${row.id}`}>
-                            Roll up to KPI when answer is No (optional)
+                            Roll up to KPI when answer is Yes (optional)
                           </label>
                           <select
                             id={`p2p-q-kpi-${row.id}`}

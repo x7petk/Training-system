@@ -178,6 +178,8 @@ export function Plan24Grid(props: {
   onEventMove: (eventId: string, startAt: Date, endAt: Date, roleName: string) => void
   onDropUnassigned: (eventId: string, roleName: string, startAt: Date) => void
   onRoleHeaderClick?: (roleName: string) => void
+  /** Override outer shell classes (default: bordered card). */
+  className?: string
 }) {
   const {
     windowStart,
@@ -190,6 +192,7 @@ export function Plan24Grid(props: {
     onEventMove,
     onDropUnassigned,
     onRoleHeaderClick,
+    className,
   } = props
   const totalMin = Math.max(15, minutesBetween(windowStart, windowEnd))
 
@@ -513,7 +516,12 @@ export function Plan24Grid(props: {
   const nowTopPx = nowMinFromStart !== null ? nowMinFromStart * pixelsPerMinute : null
 
   return (
-    <div className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border-strong bg-surface shadow-sm">
+    <div
+      className={
+        className ??
+        'relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border-strong bg-surface shadow-sm'
+      }
+    >
       {/* Horizontal scroll wraps header + body so column widths stay identical (no scrollbar mismatch). */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-auto overflow-y-hidden">
         <div
@@ -526,7 +534,7 @@ export function Plan24Grid(props: {
           >
             <div className="min-w-0 border-r border-border bg-surface-raised/25" aria-hidden />
             {roles.map((r) => (
-              <div key={r.name} className="min-w-0 border-l border-border px-1.5 py-2 text-center">
+              <div key={r.name} className={`min-w-0 border-l border-border px-1.5 text-center ${onRoleHeaderClick ? 'py-2' : 'py-1'}`}>
                 {onRoleHeaderClick ? (
                   <button
                     type="button"

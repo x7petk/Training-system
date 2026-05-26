@@ -429,8 +429,8 @@ export function DdsP2pPlanPanel({
   }, [cellId, userId, viewPlanDate, viewShiftKind, adhocStart, adhocEndMin, adhocRole, adhocTitle, onError, onSuccessMsg, onPlanDataChanged, refresh])
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border bg-surface">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-2 py-1.5">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-1.5 py-1">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted">My plan</h2>
         <div className="flex shrink-0 items-center gap-1.5">
           <div
@@ -476,32 +476,33 @@ export function DdsP2pPlanPanel({
           </div>
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden p-1.5">
         {!viewShiftKind || shifts.length === 0 ? (
           <p className="text-[11px] text-muted">Select a shift to show the Plan 24-style timeline.</p>
         ) : (
-          <div className="flex min-h-[min(58dvh,480px)] min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-border/70 bg-surface-raised/20">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border border-border/70 bg-surface-raised/20">
             {gridEvents.length === 0 && !loading ? (
-              <p className="shrink-0 px-2 py-1 text-[10px] text-muted">No checks on the plan for this role, date, and shift.</p>
+              <p className="shrink-0 px-1.5 py-0.5 text-[10px] text-muted">No checks on the plan for this role, date, and shift.</p>
             ) : null}
             <div className="min-h-0 flex-1 overflow-hidden">
               <Plan24Grid
-              windowStart={windowBounds.start}
-              windowEnd={windowBounds.end}
-              roles={roleCols}
-              events={gridEvents}
-              onBackgroundClick={onBackgroundClick}
-              onEventClick={(ev) => setDetailEv(ev)}
-              onEventMove={onEventMove}
-              onDropUnassigned={onDropUnassigned}
-            />
+                className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-transparent shadow-none"
+                windowStart={windowBounds.start}
+                windowEnd={windowBounds.end}
+                roles={roleCols}
+                events={gridEvents}
+                onBackgroundClick={onBackgroundClick}
+                onEventClick={(ev) => setDetailEv(ev)}
+                onEventMove={onEventMove}
+                onDropUnassigned={onDropUnassigned}
+              />
             </div>
           </div>
         )}
         {tasks.length > 0 ? (
-          <div className="shrink-0 border-t border-border/60 pt-2">
-            <p className="mb-0.5 text-[10px] font-semibold uppercase text-muted">My tasks</p>
-            <ul className="max-h-32 space-y-0.5 overflow-y-auto">
+          <div className="shrink-0 border-t border-border/60 pt-1">
+            <p className="mb-0.5 text-[9px] font-semibold uppercase text-muted">My tasks</p>
+            <ul className="max-h-20 space-y-0 overflow-y-auto">
               {tasks.map((t) => (
                 <li key={t.id} className="flex items-start gap-1.5 text-[11px]">
                   <input

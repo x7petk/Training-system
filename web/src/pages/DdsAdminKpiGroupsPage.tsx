@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import {
   DDS_KPI_DISPLAY_SECTION_OPTIONS,
@@ -41,6 +41,7 @@ export function DdsAdminKpiGroupsPage() {
   const [newSections, setNewSections] = useState<DdsKpiDisplaySectionKey[]>(() => defaultKpiDisplaySections())
   const [drafts, setDrafts] = useState<Record<string, { name: string; sections: DdsKpiDisplaySectionKey[] }>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [reorderingId, setReorderingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -111,6 +112,31 @@ export function DdsAdminKpiGroupsPage() {
     else await load()
   }
 
+  async function moveGroup(id: string, direction: -1 | 1) {
+    const index = rows.findIndex((r) => r.id === id)
+    if (index < 0) return
+    const target = index + direction
+    if (target < 0 || target >= rows.length) return
+
+    setError(null)
+    const nextRows = [...rows]
+    const [item] = nextRows.splice(index, 1)
+    nextRows.splice(target, 0, item!)
+    setRows(nextRows)
+    setReorderingId(id)
+
+    const updates = nextRows.map((row, idx) =>
+      supabase.from('dds_kpi_groups').update({ sort_order: idx }).eq('id', row.id),
+    )
+    const results = await Promise.all(updates)
+    const failed = results.find((res) => res.error)
+    setReorderingId(null)
+    if (failed?.error) {
+      setError(failed.error.message)
+      await load()
+    }
+  }
+
   function toggleNewSection(key: DdsKpiDisplaySectionKey) {
     setNewSections((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
   }
@@ -174,22 +200,28 @@ export function DdsAdminKpiGroupsPage() {
 
       <section className={ddsSection}>
         <h2 className={ddsH2}>Existing groups</h2>
+        <p className="mt-0.5 text-[11px] leading-snug text-muted">
+          Order here controls how groups appear across DDS (Shift / Line / Plant / Site DDS, P2P, compliance, and Admin → KPIs).
+        </p>
         {loading ? (
           <p className="mt-2 text-xs text-muted">Loading…</p>
         ) : rows.length === 0 ? (
           <p className="mt-2 text-xs text-muted">No KPI groups yet.</p>
         ) : (
           <ul className="mt-2 space-y-2">
-            {rows.map((row) => {
+            {rows.map((row, idx) => {
               const d = drafts[row.id]
               if (!d) return null
               return (
                 <li key={row.id} className={ddsInset}>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
-                      <label className="text-[10px] font-medium text-muted" htmlFor={`dds-kpi-name-${row.id}`}>
-                        Name
-                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-medium tabular-nums text-muted">#{idx + 1}</span>
+                        <label className="text-[10px] font-medium text-muted" htmlFor={`dds-kpi-name-${row.id}`}>
+                          Name
+                        </label>
+                      </div>
                       <input
                         id={`dds-kpi-name-${row.id}`}
                         className={ddsInput}
@@ -199,11 +231,31 @@ export function DdsAdminKpiGroupsPage() {
                         }
                       />
                     </div>
-                    <div className="flex shrink-0 gap-1.5">
+                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        title="Move up"
+                        aria-label={`Move ${row.name} up`}
+                        className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border text-muted hover:bg-black/[0.04] disabled:opacity-40 dark:hover:bg-white/[0.06]"
+                        disabled={idx === 0 || reorderingId === row.id}
+                        onClick={() => void moveGroup(row.id, -1)}
+                      >
+                        <ArrowUp className="size-3.5" aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        title="Move down"
+                        aria-label={`Move ${row.name} down`}
+                        className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border text-muted hover:bg-black/[0.04] disabled:opacity-40 dark:hover:bg-white/[0.06]"
+                        disabled={idx === rows.length - 1 || reorderingId === row.id}
+                        onClick={() => void moveGroup(row.id, 1)}
+                      >
+                        <ArrowDown className="size-3.5" aria-hidden />
+                      </button>
                       <button
                         type="button"
                         className={ddsBtnGhost}
-                        disabled={savingId === row.id}
+                        disabled={savingId === row.id || reorderingId === row.id}
                         onClick={() => void saveRow(row.id)}
                       >
                         {savingId === row.id ? 'Saving…' : 'Save'}

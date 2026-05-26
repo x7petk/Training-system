@@ -607,6 +607,19 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
       }
     }
 
+    for (const q of matrixQ) {
+      if (q.responseKind !== 'yes_no') continue
+      for (const rid of q.roleIds) {
+        if (!latestByRole.has(rid) || nextCells[rid]?.[q.key]) continue
+        nextCells[rid]![q.key] = {
+          responseKind: 'yes_no',
+          yesNo: false,
+          num: null,
+          comment: '',
+        }
+      }
+    }
+
     setMatrixQuestions(matrixQ)
     setCells(nextCells)
     setMatrixLoading(false)
@@ -861,13 +874,10 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                       const hasCmt = Boolean(cmt)
                       let main: ReactNode = '\u00a0'
                       if (q.responseKind === 'yes_no') {
-                        if (snap && typeof snap.yesNo === 'boolean') {
-                          main =
-                            snap.yesNo === true ? (
-                              <span className="font-bold text-emerald-600">Y</span>
-                            ) : (
-                              <span className="font-bold text-rose-600">N</span>
-                            )
+                        if (snap?.yesNo === true) {
+                          main = <span className="font-bold text-rose-600">Y</span>
+                        } else if (submitted || snap != null) {
+                          main = <span className="font-bold text-emerald-600">N</span>
                         }
                       } else if (snap != null && snap.num != null && Number.isFinite(snap.num)) {
                         main = <span className="tabular-nums text-fg">{formatNum(snap.num)}</span>
