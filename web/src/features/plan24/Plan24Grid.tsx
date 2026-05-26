@@ -6,7 +6,9 @@ import {
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type ReactElement,
 } from 'react'
+import { AlertTriangle, Bug, XCircle } from 'lucide-react'
 import { addMinutes, minutesBetween } from './plan24ShiftUtils'
 import { isPlan24DdsAction } from './plan24DdsUtils'
 import type { Plan24EventRow } from './plan24Types'
@@ -76,6 +78,37 @@ function familyScheduledClass(eventType: string | null | undefined): string {
   if (t === 'quality_check')
     return 'border-violet-900/40 bg-violet-700 text-violet-50 dark:border-violet-800/60 dark:bg-violet-800 dark:text-violet-50'
   return 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
+}
+
+function raisedIssueInfo(ev: Plan24EventRow): { kind: 'deviation' | 'defect' | 'fail'; sourceLabel: string; icon: ReactElement } | null {
+  if (!ev.linked_issue_id) return null
+  const et = String(ev.event_type ?? '').toLowerCase()
+  const lk = String(ev.linked_issue_kind ?? '').toLowerCase()
+
+  // Prefer linked_issue_kind when available, but event_type is the most reliable indicator of which "engine" raised it.
+  if (lk === 'deviation' || et === 'cl_check') {
+    return {
+      kind: 'deviation',
+      sourceLabel: 'Raised Deviation (from CL)',
+      icon: <AlertTriangle className="size-3.5 text-current" aria-hidden />,
+    }
+  }
+  if (lk === 'dh_defect' || et === 'cil_check') {
+    return {
+      kind: 'defect',
+      sourceLabel: 'Raised Defect (from CIL)',
+      icon: <Bug className="size-3.5 text-current" aria-hidden />,
+    }
+  }
+  if (lk === 'quality_fail' || et === 'quality_check') {
+    return {
+      kind: 'fail',
+      sourceLabel: 'Raised Fail (from Quality)',
+      icon: <XCircle className="size-3.5 text-current" aria-hidden />,
+    }
+  }
+
+  return null
 }
 
 function isClCilQualityFamily(eventType: string | null | undefined): boolean {
@@ -547,6 +580,7 @@ export function Plan24Grid(props: {
                   end: minutesBetween(windowStart, new Date(ev.end_at)),
                 }))
                 const layout = assignLanes(layoutItems)
+                const itemsById = new Map(layoutItems.map((x) => [x.id, x]))
                 const isHoverDrop = dragUi && dragUi.hoverRole === r.name && dragUi.sourceRole !== dragUi.hoverRole
                 const previewMin = dragUi?.previewMin ?? null
                 const previewTopPx = previewMin !== null ? previewMin * pixelsPerMinute : 0
@@ -591,9 +625,17 @@ export function Plan24Grid(props: {
                       const topMin = minutesBetween(windowStart, start)
                       const top = topMin * pixelsPerMinute
                       const lane = layout.get(ev.id)
-                      const lc = lane?.laneCount ?? 1
                       const ln = lane?.lane ?? 0
-                      const innerLeft = `${(ln / lc) * 100}%`
+                      const cur = itemsById.get(ev.id)
+                      const curStart = cur?.start ?? topMin
+                      const curEnd = cur?.end ?? minutesBetween(windowStart, end)
+                      // IMPORTANT: laneCount from assignLanes is global for the whole column.
+                      // For visual clarity, only split width when this event actually overlaps others.
+                      const overlaps = layoutItems.filter((x) => x.start < curEnd && x.end > curStart)
+                      const overlapLaneNums = [...new Set(overlaps.map((x) => layout.get(x.id)?.lane ?? 0))].sort((a, b) => a - b)
+                      const lc = Math.max(1, overlapLaneNums.length)
+                      const lanePos = Math.max(0, overlapLaneNums.indexOf(ln))
+                      const innerLeft = `${(lanePos / lc) * 100}%`
                       const innerW = `${(1 / lc) * 100}%`
                       const isAdHoc = ev.source === 'ad_hoc'
                       const isDds = isPlan24DdsAction(ev)
@@ -635,7 +677,9 @@ export function Plan24Grid(props: {
                       const hVisual = hMin * pixelsPerMinute
                       const isCheck = isPlan24EventCheck(ev) || isPlan24DdsAction(ev)
                       const canResizeEnd = isCheck && !!gridRoleKey(ev)
-                      const tip = `${ev.title}\n${formatClock(start)}–${formatClock(end)}\n${statusLabel}${isAdHoc ? ' · Ad hoc' : ''}`
+                      const raisedInfo = raisedIssueInfo(ev)
+                      const raisedLine = raisedInfo ? `\n${raisedInfo.sourceLabel}` : ''
+                      const tip = `${ev.title}\n${formatClock(start)}–${formatClock(end)}\n${statusLabel}${isAdHoc ? ' · Ad hoc' : ''}${raisedLine}`
                       const donePatternStyle: CSSProperties | undefined = isDone
                         ? isClCilQualityFamily(ev.event_type) && !isDds
                           ? familyCompletedStripeStyle()
@@ -647,7 +691,7 @@ export function Plan24Grid(props: {
                         <div
                           key={ev.id}
                           data-plan24-event
-                          className={`group absolute flex flex-col overflow-hidden rounded-md border text-left text-[11px] font-medium leading-tight shadow-sm transition-opacity ${statusClass} ${isAdHoc ? 'border-dashed' : ''} ${isDragging ? 'z-[6]' : ''} ${resizeUi?.eventId === ev.id ? 'z-[7]' : ''}`}
+                          className={`group absolute flex flex-col overflow-hidden rounded-md border text-left text-[10px] font-medium leading-tight shadow-sm transition-opacity ${statusClass} ${isAdHoc ? 'border-dashed' : ''} ${isDragging ? 'z-[6]' : ''} ${resizeUi?.eventId === ev.id ? 'z-[7]' : ''}`}
                           style={{
                             top: topPx,
                             height: hVisual,
@@ -670,7 +714,7 @@ export function Plan24Grid(props: {
                             type="button"
                             aria-label={`${ev.title}, ${formatClock(start)} to ${formatClock(end)}, ${statusLabel}${isAdHoc ? ', ad hoc' : ''}`}
                             title={tip}
-                            className={`relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col items-stretch justify-start overflow-hidden border-0 px-1 py-0.5 text-left text-[11px] font-medium leading-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70 ${canResizeEnd ? 'rounded-t-md rounded-b-none' : 'rounded-md'} ${isDragging ? 'cursor-grabbing' : 'cursor-grab hover:ring-2 hover:ring-inset hover:ring-accent/40'}`}
+                            className={`relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col items-stretch justify-start overflow-hidden border-0 px-1 py-0.5 text-left text-[10px] font-medium leading-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70 ${canResizeEnd ? 'rounded-t-md rounded-b-none' : 'rounded-md'} ${isDragging ? 'cursor-grabbing' : 'cursor-grab hover:ring-2 hover:ring-inset hover:ring-accent/40'}`}
                             onPointerDown={(pe) => {
                               pe.stopPropagation()
                               startMove(ev, r.name, pe)
@@ -696,10 +740,18 @@ export function Plan24Grid(props: {
                                 }`}
                               />
                             ) : null}
+                            {raisedInfo ? (
+                              <span
+                                aria-hidden
+                                className="pointer-events-none absolute left-1 top-1 z-[2] inline-flex size-3 items-center justify-center rounded bg-black/15 dark:bg-white/10"
+                              >
+                                {raisedInfo.icon}
+                              </span>
+                            ) : null}
                             <span
                               className={`pointer-events-none relative z-[2] min-h-0 w-full min-w-0 flex-1 truncate text-left ${
                                 isDone ? 'line-through decoration-2 decoration-current/55' : ''
-                              }`}
+                              } ${raisedInfo ? 'pl-3' : ''}`}
                             >
                               {ev.title}
                             </span>
