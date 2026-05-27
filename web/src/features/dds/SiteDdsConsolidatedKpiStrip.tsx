@@ -13,6 +13,7 @@ import {
   sitePresentationLabel,
   type DdsKpiSiteRollupMode,
 } from './ddsKpiSitePresentation'
+import { DDS_KPI_TILE_CLASS } from './ddsKpiTableLayout'
 
 export type ConsolidatedKpiDef = {
   id: string
@@ -144,7 +145,7 @@ export function SiteDdsConsolidatedKpiStrip({
               key={kpi.id}
               role="button"
               tabIndex={0}
-              className={`flex min-w-[2.75rem] max-w-[5rem] cursor-pointer flex-col rounded-sm border px-1 py-px text-left outline-none ring-accent/30 focus-visible:ring-2 ${kpiBlockToneClasses(tone)}`}
+              className={`${DDS_KPI_TILE_CLASS} ${kpiBlockToneClasses(tone)}`}
               onClick={() =>
                 setModal({
                   kpi,

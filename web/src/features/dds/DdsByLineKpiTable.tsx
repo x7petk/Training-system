@@ -21,6 +21,14 @@ import {
 import type { DdsKpiUnit } from './ddsKpiUnits'
 import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit } from './ddsKpiUnits'
 import { DdsKpiValueField } from './DdsKpiValueField'
+import {
+  DDS_KPI_TABLE_CLASS,
+  DDS_KPI_METRIC_TD_CLASS,
+  DDS_KPI_METRIC_TH_CLASS,
+  DDS_KPI_VALUE_BUTTON_CLASS,
+  DDS_KPI_VALUE_COL_CLASS,
+  DDS_KPI_VALUE_TH_CLASS,
+} from './ddsKpiTableLayout'
 
 export type ByLineKpiDef = {
   id: string
@@ -204,16 +212,14 @@ export function DdsByLineKpiTable({
         {error && !modal ? (
           <p className="px-1.5 py-0.5 text-[9px] text-rose-700 dark:text-rose-300">{error}</p>
         ) : null}
-        <table className="w-full min-w-0 border-collapse text-[9px] leading-tight">
+        <table className={DDS_KPI_TABLE_CLASS}>
           <thead>
             <tr className="border-b border-border/60 bg-surface-raised/50">
-              <th className="sticky left-0 z-[1] max-w-[5.5rem] min-w-[3.75rem] border-r border-border/50 bg-surface-raised/80 px-1 py-px text-left text-[8px] font-semibold text-muted">
-                Metric
-              </th>
+              <th className={DDS_KPI_METRIC_TH_CLASS}>Metric</th>
               {columns.map((col) => (
                 <th
                   key={`${col.cellId}-${col.line.id}`}
-                  className="min-w-[2.25rem] max-w-[3.75rem] px-0.5 py-px text-center text-[8px] font-semibold leading-none text-muted"
+                  className={DDS_KPI_VALUE_TH_CLASS}
                   title={col.columnLabel}
                 >
                   <span className="line-clamp-2 break-words">{col.columnLabel}</span>
@@ -230,7 +236,7 @@ export function DdsByLineKpiTable({
               const rowTargetLine = hasPerLineTargets ? '' : scoringTargetNumbersOnly(kpi.scoring)
               return (
                 <tr key={kpi.id} className="border-b border-border/40 last:border-b-0">
-                  <td className="sticky left-0 z-[1] max-w-[5.5rem] border-r border-border/50 bg-canvas/80 px-1 py-px">
+                  <td className={DDS_KPI_METRIC_TD_CLASS}>
                     <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-0.5">
                       <span className="font-medium leading-none text-fg">{kpi.label}</span>
                       {rowTargetLine ? (
@@ -253,11 +259,11 @@ export function DdsByLineKpiTable({
                     const breakdown = parseDdsP2pKpiBreakdown(entry?.p2p_breakdown)
                     const showComment = kpiHasDdsCommentDetail(cmt, breakdown)
                     return (
-                      <td key={`${col.cellId}-${col.line.id}`} className="p-px align-middle">
+                      <td key={`${col.cellId}-${col.line.id}`} className={DDS_KPI_VALUE_COL_CLASS}>
                         <button
                           type="button"
                           disabled={!user}
-                          className={`relative flex min-h-[1.125rem] w-full min-w-[2.125rem] cursor-pointer items-center justify-center gap-px rounded-sm border px-0.5 py-px text-center outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50 ${kpiBlockToneClasses(tone)}`}
+                          className={`${DDS_KPI_VALUE_BUTTON_CLASS} ${kpiBlockToneClasses(tone)}`}
                           aria-label={`${kpi.label}, ${col.columnLabel}: ${valueLabel}${showComment ? ', has comment' : ''}. Edit value and comment.`}
                           onClick={() => openModal(col, kpi)}
                         >

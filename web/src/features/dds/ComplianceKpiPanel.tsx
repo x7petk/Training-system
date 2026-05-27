@@ -3,9 +3,9 @@ import { Loader2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import type { DdsKpiScoring } from './ddsKpiScoring'
-import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
+import { evaluateKpiBlock, kpiBlockToneClasses, formatKpiDisplayValue, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
 import type { DdsKpiUnit } from './ddsKpiUnits'
-import { DDS_KPI_UNIT_OPTIONS, formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
+import { DDS_KPI_UNIT_OPTIONS, parseDdsKpiUnit } from './ddsKpiUnits'
 import { DdsKpiValueField } from './DdsKpiValueField'
 import { parseDdsKpiScoring } from './ddsKpiScoring'
 import {
@@ -248,7 +248,7 @@ export function ComplianceKpiPanel({ cellId, planDate, viewMode, metricSurface }
     const val = e?.value_numeric ?? null
     const tone = evaluateKpiBlock(val, kpi.scoring)
     const targetLine = scoringTargetNumbersOnly(kpi.scoring)
-    const valueLabel = val != null && Number.isFinite(val) ? formatKpiValueWithUnit(val, kpi.unit) : '—'
+    const valueLabel = formatKpiDisplayValue(val, kpi.scoring, kpi.unit)
     return (
       <div
         key={`${kpi.id}-${ymd}`}
@@ -335,19 +335,34 @@ export function ComplianceKpiPanel({ cellId, planDate, viewMode, metricSurface }
                       <td className="sticky left-0 z-[1] bg-surface py-1 pr-2 font-medium text-fg">{kpi.label}</td>
                       {dateKeys.map((ymd) => (
                         <td key={ymd} className="px-1 py-1">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            className={inputClass}
-                            value={tableDraft[kpi.id]?.[ymd] ?? ''}
-                            onChange={(e) =>
-                              setTableDraft((d) => ({
-                                ...d,
-                                [kpi.id]: { ...(d[kpi.id] ?? {}), [ymd]: e.target.value },
-                              }))
-                            }
-                            aria-label={`${kpi.label} ${ymd}`}
-                          />
+                          {kpi.scoring.kind === 'pass_fail' ? (
+                            <DdsKpiValueField
+                              scoring={kpi.scoring}
+                              compact
+                              valueStr={tableDraft[kpi.id]?.[ymd] ?? ''}
+                              onChange={(valueStr) =>
+                                setTableDraft((d) => ({
+                                  ...d,
+                                  [kpi.id]: { ...(d[kpi.id] ?? {}), [ymd]: valueStr },
+                                }))
+                              }
+                              disabled={saving || !user}
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              className={inputClass}
+                              value={tableDraft[kpi.id]?.[ymd] ?? ''}
+                              onChange={(e) =>
+                                setTableDraft((d) => ({
+                                  ...d,
+                                  [kpi.id]: { ...(d[kpi.id] ?? {}), [ymd]: e.target.value },
+                                }))
+                              }
+                              aria-label={`${kpi.label} ${ymd}`}
+                            />
+                          )}
                         </td>
                       ))}
                       <td className="py-1 pl-1">

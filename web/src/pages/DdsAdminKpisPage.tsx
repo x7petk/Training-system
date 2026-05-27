@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { DDS_KPI_POINT_KINDS, type DdsKpiPointKind, isDdsKpiPointKind } from '../features/dds/ddsKpiPointKinds'
 import {
@@ -108,6 +108,7 @@ export function DdsAdminKpisPage() {
   const [drafts, setDrafts] = useState<Record<string, KpiDraft>>({})
   const [allLines, setAllLines] = useState<AdminLineWithCell[]>([])
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [reorderingId, setReorderingId] = useState<string | null>(null)
 
   const loadAllLines = useCallback(async () => {
     const { data, error: qErr } = await supabase
@@ -334,6 +335,31 @@ export function DdsAdminKpisPage() {
     else await loadKpis(groupId)
   }
 
+  async function moveKpi(id: string, direction: -1 | 1) {
+    const index = rows.findIndex((r) => r.id === id)
+    if (index < 0) return
+    const target = index + direction
+    if (target < 0 || target >= rows.length) return
+
+    setError(null)
+    const nextRows = [...rows]
+    const [item] = nextRows.splice(index, 1)
+    nextRows.splice(target, 0, item!)
+    setRows(nextRows)
+    setReorderingId(id)
+
+    const updates = nextRows.map((row, idx) =>
+      supabase.from('dds_kpis').update({ sort_order: idx }).eq('id', row.id),
+    )
+    const results = await Promise.all(updates)
+    const failed = results.find((res) => res.error)
+    setReorderingId(null)
+    if (failed?.error) {
+      setError(failed.error.message)
+      await loadKpis(groupId)
+    }
+  }
+
   function setDraft(id: string, patch: Partial<KpiDraft>) {
     setDrafts((prev) => {
       const cur = prev[id]
@@ -548,22 +574,28 @@ export function DdsAdminKpisPage() {
 
       <section className={ddsSection}>
         <h2 className={ddsH2}>KPIs in this group</h2>
+        <p className="mt-0.5 text-[11px] leading-snug text-muted">
+          Order here controls how metrics appear in this group on Line, Plant, Site, and Shift DDS (top to bottom in tables).
+        </p>
         {loadingKpis ? (
           <p className="mt-2 text-xs text-muted">Loading…</p>
         ) : rows.length === 0 ? (
           <p className="mt-2 text-xs text-muted">No KPIs yet for this group.</p>
         ) : (
           <ul className="mt-2 space-y-3">
-            {rows.map((row) => {
+            {rows.map((row, idx) => {
               const d = drafts[row.id]
               if (!d) return null
               return (
                 <li key={row.id} className={ddsInset}>
                   <div className="grid gap-2 lg:grid-cols-[1fr_6.5rem_6.5rem_6.5rem_auto] lg:items-end">
                     <div className="min-w-0">
-                      <label className="text-[10px] font-medium text-muted" htmlFor={`dds-kpi-label-${row.id}`}>
-                        Label
-                      </label>
+                      <div className="mb-0.5 flex items-center gap-2">
+                        <span className="text-[10px] font-medium tabular-nums text-muted">#{idx + 1}</span>
+                        <label className="text-[10px] font-medium text-muted" htmlFor={`dds-kpi-label-${row.id}`}>
+                          Label
+                        </label>
+                      </div>
                       <input
                         id={`dds-kpi-label-${row.id}`}
                         className={ddsInput}
@@ -622,16 +654,42 @@ export function DdsAdminKpisPage() {
                         ))}
                       </select>
                     </div>
-                    <div className="flex gap-1.5 lg:justify-end">
+                    <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">
+                      <button
+                        type="button"
+                        title="Move up"
+                        aria-label={`Move ${row.label} up`}
+                        className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border text-muted hover:bg-black/[0.04] disabled:opacity-40 dark:hover:bg-white/[0.06]"
+                        disabled={idx === 0 || reorderingId === row.id}
+                        onClick={() => void moveKpi(row.id, -1)}
+                      >
+                        <ArrowUp className="size-3.5" aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        title="Move down"
+                        aria-label={`Move ${row.label} down`}
+                        className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-border text-muted hover:bg-black/[0.04] disabled:opacity-40 dark:hover:bg-white/[0.06]"
+                        disabled={idx === rows.length - 1 || reorderingId === row.id}
+                        onClick={() => void moveKpi(row.id, 1)}
+                      >
+                        <ArrowDown className="size-3.5" aria-hidden />
+                      </button>
                       <button
                         type="button"
                         className={ddsBtnGhostGrow}
-                        disabled={savingId === row.id}
+                        disabled={savingId === row.id || reorderingId === row.id}
                         onClick={() => void saveRow(row.id)}
                       >
                         {savingId === row.id ? 'Saving…' : 'Save'}
                       </button>
-                      <button type="button" className={ddsBtnDanger} title="Delete KPI" onClick={() => void removeRow(row)}>
+                      <button
+                        type="button"
+                        className={ddsBtnDanger}
+                        title="Delete KPI"
+                        disabled={reorderingId === row.id}
+                        onClick={() => void removeRow(row)}
+                      >
                         <Trash2 className="size-3.5" aria-hidden />
                       </button>
                     </div>

@@ -11,8 +11,8 @@ import {
 } from './ddsComplianceConstants'
 import { kpiShowsOnMetricSurface } from './ddsKpiMetricSurfaces'
 import { parseDdsKpiMetricScope } from './ddsKpiDdsSetupSurfaces'
-import { evaluateKpiBlock, kpiBlockToneClasses, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
-import { formatKpiValueWithUnit, parseDdsKpiUnit } from './ddsKpiUnits'
+import { evaluateKpiBlock, kpiBlockToneClasses, formatKpiDisplayValue, scoringHint, scoringTargetNumbersOnly } from './ddsKpiScoring'
+import { parseDdsKpiUnit } from './ddsKpiUnits'
 import { DdsKpiValueField } from './DdsKpiValueField'
 import { parseDdsKpiScoring } from './ddsKpiScoring'
 import type { DdsKpiScoring } from './ddsKpiScoring'
@@ -252,18 +252,33 @@ export function SiteComplianceKpiPanel({ siteId, cells, planDate, viewMode }: Pr
                       <td className="py-1 pr-2 font-medium">{kpi.label}</td>
                       {dateKeys.map((ymd) => (
                         <td key={ymd} className="px-1 py-1">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            className={inputClass}
-                            value={tableDraft[kpi.id]?.[ymd] ?? ''}
-                            onChange={(e) =>
-                              setTableDraft((d) => ({
-                                ...d,
-                                [kpi.id]: { ...(d[kpi.id] ?? {}), [ymd]: e.target.value },
-                              }))
-                            }
-                          />
+                          {kpi.scoring.kind === 'pass_fail' ? (
+                            <DdsKpiValueField
+                              scoring={kpi.scoring}
+                              compact
+                              valueStr={tableDraft[kpi.id]?.[ymd] ?? ''}
+                              onChange={(valueStr) =>
+                                setTableDraft((d) => ({
+                                  ...d,
+                                  [kpi.id]: { ...(d[kpi.id] ?? {}), [ymd]: valueStr },
+                                }))
+                              }
+                              disabled={saving || !user}
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              className={inputClass}
+                              value={tableDraft[kpi.id]?.[ymd] ?? ''}
+                              onChange={(e) =>
+                                setTableDraft((d) => ({
+                                  ...d,
+                                  [kpi.id]: { ...(d[kpi.id] ?? {}), [ymd]: e.target.value },
+                                }))
+                              }
+                            />
+                          )}
                         </td>
                       ))}
                       <td className="py-1">
@@ -311,8 +326,7 @@ export function SiteComplianceKpiPanel({ siteId, cells, planDate, viewMode }: Pr
                         const e = entries[entryKey(kpi.id, ymd)]
                         const val = e?.value_numeric ?? null
                         const tone = evaluateKpiBlock(val, kpi.scoring)
-                        const valueLabel =
-                          val != null && Number.isFinite(val) ? formatKpiValueWithUnit(val, kpi.unit) : '—'
+                        const valueLabel = formatKpiDisplayValue(val, kpi.scoring, kpi.unit)
                         return (
                           <button
                             key={ymd}
@@ -344,8 +358,7 @@ export function SiteComplianceKpiPanel({ siteId, cells, planDate, viewMode }: Pr
                   const e = entries[entryKey(kpi.id, planDate)]
                   const val = e?.value_numeric ?? null
                   const tone = evaluateKpiBlock(val, kpi.scoring)
-                  const valueLabel =
-                    val != null && Number.isFinite(val) ? formatKpiValueWithUnit(val, kpi.unit) : '—'
+                  const valueLabel = formatKpiDisplayValue(val, kpi.scoring, kpi.unit)
                   const targetLine = scoringTargetNumbersOnly(kpi.scoring)
                   return (
                     <button

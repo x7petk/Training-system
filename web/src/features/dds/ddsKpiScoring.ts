@@ -3,6 +3,9 @@
  * UI: Shift DDS shows green/red blocks from `evaluateKpiBlock`; no target → blue.
  */
 
+import type { DdsKpiUnit } from './ddsKpiUnits'
+import { formatKpiValueWithUnit } from './ddsKpiUnits'
+
 export type DdsKpiScoring =
   | { kind: 'no_target' }
   | { kind: 'pass_fail' }
@@ -85,6 +88,24 @@ export function scoringTargetNumbersOnly(s: DdsKpiScoring): string {
     default:
       return ''
   }
+}
+
+/** Display label for pass/fail KPI values (stored as 1 = pass, 0 = fail). */
+export function formatKpiPassFailDisplay(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  if (value === 1) return 'Yes'
+  if (value === 0) return 'No'
+  return '—'
+}
+
+export function formatKpiDisplayValue(
+  value: number | null | undefined,
+  scoring: DdsKpiScoring,
+  unit: DdsKpiUnit,
+): string {
+  if (scoring.kind === 'pass_fail') return formatKpiPassFailDisplay(value)
+  if (value == null || !Number.isFinite(value)) return '—'
+  return formatKpiValueWithUnit(value, unit)
 }
 
 export function parseDdsKpiScoring(raw: unknown): DdsKpiScoring {
