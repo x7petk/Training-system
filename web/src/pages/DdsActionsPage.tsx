@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { localYMD } from '../lib/dueDateUtils'
 import { usePlan24Workspace } from '../features/plan24/Plan24WorkspaceContext'
 import { DdsActionSurfacesField } from '../features/dds/DdsActionSurfacesField'
+import { DdsActionTimelineBar } from '../features/dds/DdsActionTimelineBar'
 import {
   DDS_ACTION_UI_SURFACE_KEYS,
   formatDdsActionSurfacesSummary,
@@ -359,6 +360,18 @@ export function DdsActionsPage() {
     refresh,
   ])
 
+  const handleTimesChange = useCallback(
+    async (eventId: string, startAt: Date, endAt: Date) => {
+      const { error } = await supabase
+        .from('plan24_events')
+        .update({ start_at: startAt.toISOString(), end_at: endAt.toISOString() })
+        .eq('id', eventId)
+      if (error) setLoadErr(error.message)
+      else void refresh()
+    },
+    [refresh],
+  )
+
   async function updateStatus(id: string, status: Plan24EventRow['status']) {
     const patch: Record<string, unknown> = { status }
     if (status === 'complete' && user?.id) {
@@ -597,12 +610,6 @@ export function DdsActionsPage() {
               <p className="text-sm text-muted">No DDS actions for this day and shift.</p>
             ) : (
               sortedDayEvents.map((ev) => {
-                const start = new Date(ev.start_at)
-                const end = new Date(ev.end_at)
-                const startMin = Math.max(0, minutesBetween(windowBounds.start, start))
-                const durMin = Math.max(2, minutesBetween(start, end))
-                const leftPct = (startMin / totalMin) * 100
-                const widthPct = (durMin / totalMin) * 100
                 const owner = ev.assigned_person_id ? peopleById.get(ev.assigned_person_id) : undefined
                 const ownerLab = owner ? personLabel(owner) : '—'
                 return (
@@ -617,23 +624,22 @@ export function DdsActionsPage() {
                     </div>
                     <div className="relative min-h-[36px] min-w-0 flex-1 rounded-lg bg-surface-raised/30">
                       <div className="pointer-events-none absolute inset-0 rounded-lg bg-[repeating-linear-gradient(to_right,transparent_0,transparent_calc(100%/24-1px),rgba(0,0,0,0.06)_calc(100%/24-1px),rgba(0,0,0,0.06)_calc(100%/24))]" />
-                      <button
-                        type="button"
-                        title="Open details"
-                        className={`absolute top-1 bottom-1 min-w-[6px] rounded-md border text-left text-[10px] font-medium leading-none shadow-sm transition hover:brightness-105 ${
-                          ev.status === 'complete'
-                            ? 'border-emerald-800/50 bg-emerald-600 text-emerald-50'
-                            : ev.status === 'not_required'
-                              ? 'border-zinc-500/50 bg-zinc-400 text-zinc-950'
-                              : 'border-orange-800/50 bg-orange-500 text-orange-950'
-                        }`}
-                        style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 0.8)}%` }}
-                        onClick={() => setDetailEv(ev)}
-                      >
-                        <span className="sr-only">
-                          {ev.title}, {formatPlan24Clock(start)} to {formatPlan24Clock(end)}
-                        </span>
-                      </button>
+                      <DdsActionTimelineBar
+                        eventId={ev.id}
+                        title={ev.title}
+                        status={ev.status}
+                        planDate={ev.plan_date}
+                        shiftKind={ev.shift_kind}
+                        startAt={ev.start_at}
+                        endAt={ev.end_at}
+                        windowStart={windowBounds.start}
+                        totalMin={totalMin}
+                        shifts={shifts}
+                        minWidthPct={0.8}
+                        barClassName="top-1 bottom-1 rounded-md text-[10px]"
+                        onOpen={() => setDetailEv(ev)}
+                        onTimesChange={(id, startAt, endAt) => void handleTimesChange(id, startAt, endAt)}
+                      />
                     </div>
                     <div className="flex w-[7.5rem] shrink-0 flex-col justify-center gap-1">
                       <select
