@@ -82,10 +82,10 @@ export function PlantDdsPage() {
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(12rem,40%)_minmax(0,1fr)] lg:grid-rows-1 lg:items-stretch lg:gap-4">
         <section className={`${ddsSection} flex min-h-0 flex-1 flex-col overflow-hidden lg:min-h-0`}>
-          <h2 className="shrink-0 border-b border-border/60 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+          <h2 className="shrink-0 border-b border-border/60 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
             KPI summary
           </h2>
-          <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+          <div className="mt-1 min-h-0 flex-1 overflow-y-auto">
             <PlantDdsKpiSummary
               cells={plantCells}
               planDate={planDate}

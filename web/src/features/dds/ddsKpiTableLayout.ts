@@ -10,13 +10,25 @@ export const DDS_KPI_METRIC_TH_CLASS = `${DDS_KPI_METRIC_COL_CLASS} bg-surface-r
 
 export const DDS_KPI_METRIC_TD_CLASS = `${DDS_KPI_METRIC_COL_CLASS} bg-canvas/80`
 
+export const DDS_KPI_METRIC_TD_COMPACT_CLASS = `${DDS_KPI_METRIC_COL_CLASS} bg-canvas/80 py-0`
+
 export const DDS_KPI_VALUE_COL_CLASS = 'w-[3.25rem] min-w-[3.25rem] max-w-[3.25rem] p-px align-middle'
+
+export const DDS_KPI_VALUE_COL_COMPACT_CLASS = 'w-[3rem] min-w-[3rem] max-w-[3rem] p-0 align-middle'
 
 export const DDS_KPI_VALUE_TH_CLASS = `${DDS_KPI_VALUE_COL_CLASS} text-center text-[8px] font-semibold leading-none text-muted`
 
 /** Value entry block — same footprint in by-cell and by-line tables. */
 export const DDS_KPI_VALUE_BUTTON_CLASS =
-  'relative mx-auto flex min-h-[1.375rem] w-[3.125rem] min-w-[3.125rem] max-w-[3.125rem] cursor-pointer flex-col items-center justify-center gap-px rounded-sm border px-0.5 py-px text-center outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50'
+  'relative mx-auto flex min-h-[1.375rem] w-[3.125rem] min-w-[3.125rem] max-w-[3.125rem] cursor-pointer flex-row items-center justify-center gap-0.5 rounded-sm border px-0.5 py-px text-center outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50'
+
+/** Tighter rows for Line / Plant DDS KPI summary. */
+export const DDS_KPI_VALUE_BUTTON_COMPACT_CLASS =
+  'relative mx-auto flex h-[1.125rem] min-h-[1.125rem] w-[3rem] min-w-[3rem] max-w-[3rem] cursor-pointer flex-row items-center justify-center gap-0.5 rounded-sm border px-0.5 py-0 text-center outline-none ring-accent/30 transition hover:brightness-[1.02] focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-50'
+
+export const DDS_KPI_TABLE_WRAPPER_CLASS = 'mt-0.5 overflow-x-auto rounded border border-border/60'
+
+export const DDS_KPI_TABLE_WRAPPER_COMPACT_CLASS = 'overflow-x-auto rounded border border-border/60'
 
 /** Site consolidated KPI tiles (non-table). */
 export const DDS_KPI_TILE_CLASS =

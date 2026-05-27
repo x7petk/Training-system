@@ -24,10 +24,15 @@ import { DdsKpiValueField } from './DdsKpiValueField'
 import {
   DDS_KPI_TABLE_CLASS,
   DDS_KPI_METRIC_TD_CLASS,
+  DDS_KPI_METRIC_TD_COMPACT_CLASS,
   DDS_KPI_METRIC_TH_CLASS,
   DDS_KPI_VALUE_BUTTON_CLASS,
+  DDS_KPI_VALUE_BUTTON_COMPACT_CLASS,
   DDS_KPI_VALUE_COL_CLASS,
+  DDS_KPI_VALUE_COL_COMPACT_CLASS,
   DDS_KPI_VALUE_TH_CLASS,
+  DDS_KPI_TABLE_WRAPPER_CLASS,
+  DDS_KPI_TABLE_WRAPPER_COMPACT_CLASS,
 } from './ddsKpiTableLayout'
 
 export type ByLineKpiDef = {
@@ -54,6 +59,8 @@ type Props = {
   emptyLinesMessage?: string
   /** Per-line scoring overrides keyed by lineKpiScoringKey(kpiId, lineId). */
   lineScoringByKey?: Map<string, DdsKpiScoring>
+  /** Tighter rows for Line / Plant DDS. */
+  compact?: boolean
   onSaved: () => void
 }
 
@@ -91,6 +98,7 @@ export function DdsByLineKpiTable({
   tableTitle,
   emptyLinesMessage = 'No lines configured. Add lines under Admin → Cell lines.',
   lineScoringByKey,
+  compact = false,
   onSaved,
 }: Props) {
   const { user } = useAuth()
@@ -190,6 +198,11 @@ export function DdsByLineKpiTable({
 
   if (kpis.length === 0) return null
 
+  const metricTdClass = compact ? DDS_KPI_METRIC_TD_COMPACT_CLASS : DDS_KPI_METRIC_TD_CLASS
+  const valueColClass = compact ? DDS_KPI_VALUE_COL_COMPACT_CLASS : DDS_KPI_VALUE_COL_CLASS
+  const valueButtonClass = compact ? DDS_KPI_VALUE_BUTTON_COMPACT_CLASS : DDS_KPI_VALUE_BUTTON_CLASS
+  const tableWrapperClass = compact ? DDS_KPI_TABLE_WRAPPER_COMPACT_CLASS : DDS_KPI_TABLE_WRAPPER_CLASS
+
   if (columns.length === 0) {
     return (
       <div className="mt-0.5 rounded border border-dashed border-border/70 bg-canvas/30 px-1.5 py-1">
@@ -203,7 +216,7 @@ export function DdsByLineKpiTable({
 
   return (
     <>
-      <div className="mt-0.5 overflow-x-auto rounded border border-border/60">
+      <div className={tableWrapperClass}>
         {tableTitle ? (
           <p className="border-b border-border/60 bg-canvas/40 px-1.5 py-px text-[8px] font-semibold uppercase tracking-wide text-muted">
             {tableTitle}
@@ -236,7 +249,7 @@ export function DdsByLineKpiTable({
               const rowTargetLine = hasPerLineTargets ? '' : scoringTargetNumbersOnly(kpi.scoring)
               return (
                 <tr key={kpi.id} className="border-b border-border/40 last:border-b-0">
-                  <td className={DDS_KPI_METRIC_TD_CLASS}>
+                  <td className={metricTdClass}>
                     <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-0.5">
                       <span className="font-medium leading-none text-fg">{kpi.label}</span>
                       {rowTargetLine ? (
@@ -259,43 +272,43 @@ export function DdsByLineKpiTable({
                     const breakdown = parseDdsP2pKpiBreakdown(entry?.p2p_breakdown)
                     const showComment = kpiHasDdsCommentDetail(cmt, breakdown)
                     return (
-                      <td key={`${col.cellId}-${col.line.id}`} className={DDS_KPI_VALUE_COL_CLASS}>
+                      <td key={`${col.cellId}-${col.line.id}`} className={valueColClass}>
                         <button
                           type="button"
                           disabled={!user}
-                          className={`${DDS_KPI_VALUE_BUTTON_CLASS} ${kpiBlockToneClasses(tone)}`}
+                          className={`${valueButtonClass} ${kpiBlockToneClasses(tone)}`}
                           aria-label={`${kpi.label}, ${col.columnLabel}: ${valueLabel}${showComment ? ', has comment' : ''}. Edit value and comment.`}
                           onClick={() => openModal(col, kpi)}
                         >
-                          <span className="flex flex-col items-center gap-px leading-none">
+                          <span className="inline-flex min-w-0 items-center justify-center gap-0.5 leading-none">
                             {hasPerLineTargets && cellTargetLine ? (
-                              <span className="text-[6px] font-medium tabular-nums opacity-75">{cellTargetLine}</span>
+                              <span className="shrink-0 text-[6px] font-medium tabular-nums opacity-75">{cellTargetLine}</span>
                             ) : null}
-                            <span className="tabular-nums text-[9px] font-semibold">{valueLabel}</span>
-                          </span>
-                          {showComment ? (
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              className="inline-flex shrink-0 rounded p-px text-muted hover:text-fg"
-                              aria-label="Show P2P comments"
-                              onClick={(clickEv) => {
-                                clickEv.stopPropagation()
-                                const pos = placeDetailPanel(clickEv.currentTarget as HTMLElement, 280)
-                                setDetailPop({ ...pos, text: cmt, breakdown })
-                              }}
-                              onKeyDown={(keyEv) => {
-                                if (keyEv.key === 'Enter' || keyEv.key === ' ') {
-                                  keyEv.preventDefault()
-                                  keyEv.stopPropagation()
-                                  const pos = placeDetailPanel(keyEv.currentTarget as HTMLElement, 280)
+                            <span className="shrink-0 tabular-nums text-[9px] font-semibold">{valueLabel}</span>
+                            {showComment ? (
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                className="inline-flex shrink-0 rounded p-px text-muted hover:text-fg"
+                                aria-label="Show P2P comments"
+                                onClick={(clickEv) => {
+                                  clickEv.stopPropagation()
+                                  const pos = placeDetailPanel(clickEv.currentTarget as HTMLElement, 280)
                                   setDetailPop({ ...pos, text: cmt, breakdown })
-                                }
-                              }}
-                            >
-                              <MessageSquare className="size-2.5 shrink-0 text-accent" aria-hidden />
-                            </span>
-                          ) : null}
+                                }}
+                                onKeyDown={(keyEv) => {
+                                  if (keyEv.key === 'Enter' || keyEv.key === ' ') {
+                                    keyEv.preventDefault()
+                                    keyEv.stopPropagation()
+                                    const pos = placeDetailPanel(keyEv.currentTarget as HTMLElement, 280)
+                                    setDetailPop({ ...pos, text: cmt, breakdown })
+                                  }
+                                }}
+                              >
+                                <MessageSquare className="size-2.5 shrink-0 text-accent" aria-hidden />
+                              </span>
+                            ) : null}
+                          </span>
                         </button>
                       </td>
                     )

@@ -284,17 +284,17 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       {sortedGroups.map((g) => {
         const byLineKpis = byLineByGroup.get(g.id) ?? []
         const perCellKpis = perCellByGroup.get(g.id) ?? []
 
         return (
           <section key={g.id}>
-            <h3 className="mb-px border-b border-border/60 pb-px text-[8px] font-semibold uppercase tracking-wide text-muted">
+            <h3 className="mb-0 border-b border-border/60 pb-0 text-[8px] font-semibold uppercase tracking-wide text-muted">
               {g.name}
             </h3>
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {byLineKpis.length > 0 ? (
                 <DdsByLineKpiTable
                   columns={plantLineColumns}
@@ -303,6 +303,7 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
                   planDate={planDate}
                   shiftKind={shiftKind}
                   lineScoringByKey={lineScoringByKey}
+                  compact
                   emptyLinesMessage="No lines in this plant. Add lines per cell under Admin → Cell lines."
                   onSaved={() => setEpoch((n) => n + 1)}
                 />
@@ -315,6 +316,7 @@ export function PlantDdsKpiSummary({ cells, planDate, shiftKind, shellLoading }:
                   planDate={planDate}
                   shiftKind={shiftKind}
                   kpiSurface="plant-dds"
+                  compact
                   onSaved={() => setEpoch((n) => n + 1)}
                 />
               ) : null}
