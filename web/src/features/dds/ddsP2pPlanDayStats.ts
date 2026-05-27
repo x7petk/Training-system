@@ -23,6 +23,7 @@ export const P2P_PLAN_CHECK_FAMILIES: {
 ]
 
 export type P2pPlanEventRow = {
+  id?: string
   plan_date: string
   event_type: string
   status: string
@@ -30,6 +31,69 @@ export type P2pPlanEventRow = {
   linked_issue_kind: string | null
   linked_issue_id?: string | null
   cil_template_id?: string | null
+}
+
+export type P2pPlanCilDefectRow = {
+  id: string
+  cil_template_id: string | null
+  cil_template_task_id: string | null
+  plan24_event_id?: string | null
+  role_name?: string | null
+}
+
+/** Task-level CL deviation or quality fail (not linked on plan24_events). */
+export type P2pPlanTaskIssueRow = {
+  id: string
+  plan24_event_id?: string | null
+  role_name?: string | null
+  plan24_sub_task_id?: string | null
+}
+
+function isLinkedPlanIssue(issueId: string, events: P2pPlanEventRow[]): boolean {
+  const linkedIds = new Set(
+    events.filter((e) => e.linked_issue_id).map((e) => e.linked_issue_id as string),
+  )
+  return linkedIds.has(issueId)
+}
+
+/** Task-level plan issue belongs to this role (deviation / quality fail from CL or Quality steps). */
+export function planTaskIssueBelongsToRole(
+  issue: P2pPlanTaskIssueRow,
+  events: P2pPlanEventRow[],
+  planDate: string,
+  roleName: string,
+  expectedEventType: 'cl_check' | 'quality_check',
+): boolean {
+  if (isLinkedPlanIssue(issue.id, events)) return false
+  if (!issue.plan24_sub_task_id && !issue.plan24_event_id) return false
+
+  if (issue.plan24_event_id) {
+    return events.some(
+      (e) =>
+        e.id === issue.plan24_event_id &&
+        e.plan_date === planDate &&
+        String(e.event_type ?? '').toLowerCase() === expectedEventType &&
+        p2pPlanEventMatchesRole(e.role_name, roleName),
+    )
+  }
+  if (issue.role_name?.trim()) {
+    return p2pPlanEventMatchesRole(issue.role_name, roleName)
+  }
+  return false
+}
+
+export function countUnlinkedTaskIssuesForRole(
+  issues: P2pPlanTaskIssueRow[],
+  events: P2pPlanEventRow[],
+  planDate: string,
+  roleName: string,
+  expectedEventType: 'cl_check' | 'quality_check',
+): number {
+  let n = 0
+  for (const issue of issues) {
+    if (planTaskIssueBelongsToRole(issue, events, planDate, roleName, expectedEventType)) n += 1
+  }
+  return n
 }
 
 export type P2pPlanFamilyTrend = {
@@ -140,33 +204,56 @@ export function buildP2pPlanRoleIssueCounts(
   return roleNames.map((name) => byRole.get(name)!)
 }
 
-/** CIL task-level defects (no event link) attributed via template + role plan events. */
+/** Task-level CIL defect belongs to this role (not linked on plan24_events). */
+export function cilDefectBelongsToRole(
+  defect: P2pPlanCilDefectRow,
+  events: P2pPlanEventRow[],
+  planDate: string,
+  roleName: string,
+): boolean {
+  if (isLinkedPlanIssue(defect.id, events)) return false
+  if (!defect.cil_template_task_id || !defect.cil_template_id) return false
+
+  if (defect.plan24_event_id) {
+    return events.some(
+      (e) =>
+        e.id === defect.plan24_event_id &&
+        e.plan_date === planDate &&
+        p2pPlanEventMatchesRole(e.role_name, roleName),
+    )
+  }
+  if (defect.role_name?.trim()) {
+    return p2pPlanEventMatchesRole(defect.role_name, roleName)
+  }
+
+  // Legacy template-only defects: attribute only when one role has this template on the day.
+  const rolesWithTpl = [
+    ...new Set(
+      events
+        .filter(
+          (e) =>
+            e.plan_date === planDate &&
+            e.event_type === 'cil_check' &&
+            e.cil_template_id === defect.cil_template_id,
+        )
+        .map((e) => (e.role_name ?? '').trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ]
+  if (rolesWithTpl.length !== 1) return false
+  return p2pPlanEventMatchesRole(rolesWithTpl[0], roleName)
+}
+
+/** CIL task-level defects (no event link) attributed to the raising role / plan event. */
 export function countUnlinkedCilDefectsForRole(
-  defects: { id: string; cil_template_id: string | null; cil_template_task_id: string | null }[],
+  defects: P2pPlanCilDefectRow[],
   events: P2pPlanEventRow[],
   planDate: string,
   roleName: string,
 ): number {
-  const linkedIds = new Set(
-    events.filter((e) => e.linked_issue_id).map((e) => e.linked_issue_id as string),
-  )
-  const tplIds = new Set(
-    events
-      .filter(
-        (e) =>
-          e.plan_date === planDate &&
-          e.event_type === 'cil_check' &&
-          p2pPlanEventMatchesRole(e.role_name, roleName) &&
-          e.cil_template_id,
-      )
-      .map((e) => e.cil_template_id as string),
-  )
-  if (tplIds.size === 0) return 0
   let n = 0
   for (const d of defects) {
-    if (linkedIds.has(d.id)) continue
-    if (!d.cil_template_task_id || !d.cil_template_id) continue
-    if (tplIds.has(d.cil_template_id)) n += 1
+    if (cilDefectBelongsToRole(d, events, planDate, roleName)) n += 1
   }
   return n
 }

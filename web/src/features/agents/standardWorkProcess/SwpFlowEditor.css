@@ -1,3 +1,7 @@
+.swp-flow {
+  width: 100%;
+}
+
 .swp-flow .react-flow__edge-path {
   stroke: #1e40af;
   stroke-width: 2;

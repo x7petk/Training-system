@@ -19,6 +19,7 @@ import { supabase } from '../lib/supabase'
 import { localYMD } from '../lib/dueDateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { Plan24Grid, PLAN24_DRAG_MIME } from '../features/plan24/Plan24Grid'
+import { buildTaskIssueEventIds, mergeTaskIssueEventIdSets } from '../features/plan24/plan24TaskIssueIcons'
 import { Plan24EventDetailModal } from '../features/plan24/Plan24EventDetailModal'
 import { addMinutes, formatPlan24Clock, minutesBetween, patternDayIndex, shiftWindowBounds, type ShiftRow } from '../features/plan24/plan24ShiftUtils'
 import type {
@@ -110,6 +111,7 @@ export function Plan24Page() {
   const [shifts, setShifts] = useState<ShiftRow[]>([])
   const [roles, setRoles] = useState<Plan24RosterRoleRow[]>([])
   const [events, setEvents] = useState<Plan24EventRow[]>([])
+  const [taskIssueEventIds, setTaskIssueEventIds] = useState<Set<string>>(() => new Set())
   const [assignments, setAssignments] = useState<Plan24RoleAssignmentRow[]>([])
   const [patternSlots, setPatternSlots] = useState<Plan24PatternSlotRow[]>([])
   const [roleTeamDefaults, setRoleTeamDefaults] = useState<Plan24RoleTeamDefaultRow[]>([])
@@ -400,6 +402,7 @@ export function Plan24Page() {
       setShifts([])
       setRoles([])
       setEvents([])
+      setTaskIssueEventIds(new Set())
       setAssignments([])
       setPatternSlots([])
       setRoleTeamDefaults([])
@@ -407,7 +410,7 @@ export function Plan24Page() {
       setLoading(false)
       return
     }
-    const [shRes, roleRes, evRes, asRes, peRes, patRes, teamRes] = await Promise.all([
+    const [shRes, roleRes, evRes, asRes, peRes, patRes, teamRes, cilDefRes, devRes, qfRes] = await Promise.all([
       supabase
         .from('plan24_roster_shifts')
         .select('kind, start_local, end_local, display_name')
@@ -434,13 +437,58 @@ export function Plan24Page() {
       supabase.from('people').select('id, display_name, first_name, last_name').order('display_name').limit(400),
       supabase.from('plan24_pattern_slots').select('*').eq('roster_id', r.id),
       supabase.from('plan24_teams').select('*').eq('roster_id', r.id).order('sort_order'),
+      supabase
+        .from('dh_defects')
+        .select('plan24_event_id, role_name, cil_template_id, cil_template_task_id')
+        .eq('master_cell_id', cellId)
+        .in('status', ['open', 'in_progress'])
+        .is('deleted_at', null),
+      supabase
+        .from('deviations')
+        .select('plan24_event_id, role_name')
+        .eq('master_cell_id', cellId)
+        .in('status', ['open', 'in_progress'])
+        .is('deleted_at', null),
+      supabase
+        .from('quality_fails')
+        .select('plan24_event_id, role_name')
+        .eq('master_cell_id', cellId)
+        .in('status', ['open', 'in_progress'])
+        .is('deleted_at', null),
     ])
     if (shRes.error) setLoadErr(shRes.error.message)
     else setShifts((shRes.data ?? []) as ShiftRow[])
     if (roleRes.error) setLoadErr(roleRes.error.message)
     else setRoles((roleRes.data ?? []) as Plan24RosterRoleRow[])
     if (evRes.error) setLoadErr(evRes.error.message)
-    else setEvents((evRes.data ?? []) as Plan24EventRow[])
+    else {
+      const evRows = (evRes.data ?? []) as Plan24EventRow[]
+      setEvents(evRows)
+      const defectRows = (cilDefRes.error ? [] : cilDefRes.data ?? []) as {
+        plan24_event_id: string | null
+        role_name: string | null
+        cil_template_id: string | null
+        cil_template_task_id: string | null
+      }[]
+      const deviationRows = (devRes.error ? [] : devRes.data ?? []) as {
+        plan24_event_id: string | null
+        role_name: string | null
+      }[]
+      const qualityFailRows = (qfRes.error ? [] : qfRes.data ?? []) as {
+        plan24_event_id: string | null
+        role_name: string | null
+      }[]
+      setTaskIssueEventIds(
+        mergeTaskIssueEventIdSets(
+          buildTaskIssueEventIds(evRows, defectRows, 'cil_check'),
+          buildTaskIssueEventIds(evRows, deviationRows, 'cl_check'),
+          buildTaskIssueEventIds(evRows, qualityFailRows, 'quality_check'),
+        ),
+      )
+    }
+    if (cilDefRes.error) setLoadErr(cilDefRes.error.message)
+    if (devRes.error) setLoadErr(devRes.error.message)
+    if (qfRes.error) setLoadErr(qfRes.error.message)
     if (asRes.error) setLoadErr(asRes.error.message)
     else setAssignments((asRes.data ?? []) as Plan24RoleAssignmentRow[])
     if (peRes.error) setLoadErr(peRes.error.message)
@@ -992,6 +1040,7 @@ export function Plan24Page() {
               windowEnd={windowBounds.end}
               roles={roleColsView}
               events={gridPlacedEventsView}
+              taskIssueEventIds={taskIssueEventIds}
               gridRoleKey={resolveGridRoleKey}
               onBackgroundClick={onBackgroundClick}
               onEventClick={openDetail}

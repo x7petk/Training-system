@@ -80,31 +80,60 @@ function familyScheduledClass(eventType: string | null | undefined): string {
   return 'border-sky-950/40 bg-sky-950 text-sky-50 dark:border-sky-800/60 dark:bg-sky-950 dark:text-sky-100'
 }
 
-function raisedIssueInfo(ev: Plan24EventRow): { kind: 'deviation' | 'defect' | 'fail'; sourceLabel: string; icon: ReactElement } | null {
-  if (!ev.linked_issue_id) return null
-  const et = String(ev.event_type ?? '').toLowerCase()
-  const lk = String(ev.linked_issue_kind ?? '').toLowerCase()
+function raisedIssueInfo(
+  ev: Plan24EventRow,
+  taskIssueEventIds?: ReadonlySet<string>,
+): { kind: 'deviation' | 'defect' | 'fail'; sourceLabel: string; icon: ReactElement } | null {
+  if (ev.linked_issue_id) {
+    const et = String(ev.event_type ?? '').toLowerCase()
+    const lk = String(ev.linked_issue_kind ?? '').toLowerCase()
 
-  // Prefer linked_issue_kind when available, but event_type is the most reliable indicator of which "engine" raised it.
-  if (lk === 'deviation' || et === 'cl_check') {
-    return {
-      kind: 'deviation',
-      sourceLabel: 'Raised Deviation (from CL)',
-      icon: <AlertTriangle className="size-3.5 text-current" aria-hidden />,
+    // Prefer linked_issue_kind when available, but event_type is the most reliable indicator of which "engine" raised it.
+    if (lk === 'deviation' || et === 'cl_check') {
+      return {
+        kind: 'deviation',
+        sourceLabel: 'Raised Deviation (from CL)',
+        icon: <AlertTriangle className="size-3.5 text-current" aria-hidden />,
+      }
+    }
+    if (lk === 'dh_defect' || et === 'cil_check') {
+      return {
+        kind: 'defect',
+        sourceLabel: 'Raised Defect (from CIL)',
+        icon: <Bug className="size-3.5 text-current" aria-hidden />,
+      }
+    }
+    if (lk === 'quality_fail' || et === 'quality_check') {
+      return {
+        kind: 'fail',
+        sourceLabel: 'Raised Fail (from Quality)',
+        icon: <XCircle className="size-3.5 text-current" aria-hidden />,
+      }
     }
   }
-  if (lk === 'dh_defect' || et === 'cil_check') {
-    return {
-      kind: 'defect',
-      sourceLabel: 'Raised Defect (from CIL)',
-      icon: <Bug className="size-3.5 text-current" aria-hidden />,
+
+  if (taskIssueEventIds?.has(ev.id)) {
+    const et = String(ev.event_type ?? '').toLowerCase()
+    if (et === 'cl_check') {
+      return {
+        kind: 'deviation',
+        sourceLabel: 'Open deviation (CL step)',
+        icon: <AlertTriangle className="size-3.5 text-current" aria-hidden />,
+      }
     }
-  }
-  if (lk === 'quality_fail' || et === 'quality_check') {
-    return {
-      kind: 'fail',
-      sourceLabel: 'Raised Fail (from Quality)',
-      icon: <XCircle className="size-3.5 text-current" aria-hidden />,
+    if (et === 'cil_check') {
+      return {
+        kind: 'defect',
+        sourceLabel: 'Open defect (CIL task)',
+        icon: <Bug className="size-3.5 text-current" aria-hidden />,
+      }
+    }
+    if (et === 'quality_check') {
+      return {
+        kind: 'fail',
+        sourceLabel: 'Open fail (Quality step)',
+        icon: <XCircle className="size-3.5 text-current" aria-hidden />,
+      }
     }
   }
 
@@ -170,6 +199,8 @@ export function Plan24Grid(props: {
   windowEnd: Date
   roles: Plan24GridRoleCol[]
   events: Plan24EventRow[]
+  /** Plan events with open task-level deviations / defects / fails (not linked_issue). */
+  taskIssueEventIds?: ReadonlySet<string>
   /** Column key for layout / drag; defaults to `role_name`. */
   gridRoleKey?: (ev: Plan24EventRow) => string
   onBackgroundClick: (roleName: string, startAt: Date) => void
@@ -193,6 +224,7 @@ export function Plan24Grid(props: {
     onDropUnassigned,
     onRoleHeaderClick,
     className,
+    taskIssueEventIds,
   } = props
   const totalMin = Math.max(15, minutesBetween(windowStart, windowEnd))
 
@@ -685,7 +717,7 @@ export function Plan24Grid(props: {
                       const hVisual = hMin * pixelsPerMinute
                       const isCheck = isPlan24EventCheck(ev) || isPlan24DdsAction(ev)
                       const canResizeEnd = isCheck && !!gridRoleKey(ev)
-                      const raisedInfo = raisedIssueInfo(ev)
+                      const raisedInfo = raisedIssueInfo(ev, taskIssueEventIds)
                       const raisedLine = raisedInfo ? `\n${raisedInfo.sourceLabel}` : ''
                       const tip = `${ev.title}\n${formatClock(start)}–${formatClock(end)}\n${statusLabel}${isAdHoc ? ' · Ad hoc' : ''}${raisedLine}`
                       const donePatternStyle: CSSProperties | undefined = isDone

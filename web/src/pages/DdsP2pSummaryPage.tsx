@@ -11,7 +11,7 @@ import {
   type DdsP2pSummaryShiftRow,
 } from '../features/dds/DdsP2pSummaryBody'
 import { DdsTriggerScoreTilesRow } from '../features/dds/DdsTriggerScoreTilesRow'
-import { ddsErr, ddsHint, ddsInput, ddsSection, ddsSelect, ddsStack } from '../features/dds/ddsAdminCompactClasses'
+import { ddsErr, ddsHint, ddsInput, ddsSection, ddsSelect } from '../features/dds/ddsAdminCompactClasses'
 
 function sortGroups<T extends { sort_order: number; name: string }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
@@ -99,9 +99,9 @@ export function DdsP2pSummaryPage() {
   }
 
   return (
-    <div className={`${ddsStack} min-h-0 flex-1`}>
-      <section className={`${ddsSection} flex min-h-0 flex-1 flex-col overflow-hidden`}>
-        <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-border/60 pb-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <section className={`${ddsSection} flex min-h-0 flex-1 flex-col overflow-hidden !p-2 sm:!p-2.5`}>
+        <div className="flex shrink-0 flex-wrap items-end gap-1.5 border-b border-border/60 pb-1">
           <DdsTriggerScoreTilesRow
             cellId={cellId}
             planDate={planDate}

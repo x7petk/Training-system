@@ -10,6 +10,8 @@ type DefectRow = {
   status: string
   created_at: string
   cil_template_task_id: string | null
+  plan24_event_id: string | null
+  role_name: string | null
 }
 
 const WHEN_OPTS: { v: NonNullable<Plan24SubTask['when_condition']>; label: string }[] = [
@@ -58,7 +60,7 @@ export function Plan24CilRoutePanel(props: {
     }
     const { data, error } = await supabase
       .from('dh_defects')
-      .select('id, title, status, created_at, cil_template_task_id')
+      .select('id, title, status, created_at, cil_template_task_id, plan24_event_id, role_name')
       .eq('master_cell_id', cellId)
       .eq('cil_template_id', tplId)
       .in('status', ['open', 'in_progress'])
@@ -69,8 +71,18 @@ export function Plan24CilRoutePanel(props: {
       setDefects([])
       return
     }
-    setDefects((data ?? []) as DefectRow[])
-  }, [cellId, tplId])
+    const rows = (data ?? []) as DefectRow[]
+    const roleKey = (event.role_name ?? '').trim().toLowerCase()
+    setDefects(
+      rows.filter((d) => {
+        if (d.plan24_event_id) return d.plan24_event_id === event.id
+        if (d.role_name?.trim()) {
+          return d.role_name.trim().toLowerCase() === roleKey
+        }
+        return true
+      }),
+    )
+  }, [cellId, event.id, event.role_name, tplId])
 
   useEffect(() => {
     void loadDefects()

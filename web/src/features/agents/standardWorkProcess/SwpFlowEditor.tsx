@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow,
+  ReactFlowProvider,
   addEdge,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   type Connection,
   type Edge,
   type Node,
@@ -93,6 +95,22 @@ function rfNodeToFlowNode(n: Node<SwpRfNodeData>): SwpFlowNode {
   }
 }
 
+function measureContainerWidth(el: HTMLElement): number {
+  const rect = el.getBoundingClientRect()
+  const w = rect.width || el.clientWidth
+  return w > 0 ? Math.round(w) : 0
+}
+
+/** Reset React Flow pan offset when column width changes (avoids stale viewport on resize). */
+function SwpFlowViewportSync({ columnWidth }: { columnWidth: number }) {
+  const { setViewport } = useReactFlow()
+  useLayoutEffect(() => {
+    if (columnWidth <= 0) return
+    setViewport({ x: 0, y: 0, zoom: 1 })
+  }, [columnWidth, setViewport])
+  return null
+}
+
 export function SwpFlowEditor({
   systemName,
   flow,
@@ -104,12 +122,19 @@ export function SwpFlowEditor({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
+  const nodesRef = useRef<Node<SwpRfNodeData>[]>([])
+  const edgesRef = useRef<Edge[]>([])
+  const loadedSystemIdRef = useRef<string | null>(null)
+  const lastAlignedColumnWidthRef = useRef(0)
   const [viewportWidth, setViewportWidth] = useState(0)
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<SwpRfNodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<SwpContextMenuState | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  nodesRef.current = nodes
+  edgesRef.current = edges
 
   const columnWidth = viewportWidth > 0 ? columnWidthForViewport(viewportWidth) : 0
   const canvasHeight = useMemo(() => boardHeightFromNodes(nodes), [nodes])
@@ -119,28 +144,44 @@ export function SwpFlowEditor({
   useLayoutEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width ?? el.clientWidth
-      if (w > 0) setViewportWidth(w)
-    })
+
+    let raf = 0
+    const syncWidth = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const w = measureContainerWidth(el)
+        if (w > 0) setViewportWidth(w)
+      })
+    }
+
+    syncWidth()
+    const ro = new ResizeObserver(() => syncWidth())
     ro.observe(el)
-    setViewportWidth(el.clientWidth)
-    return () => ro.disconnect()
+    window.addEventListener('resize', syncWidth)
+    window.addEventListener('app-section-sidebar-toggle', syncWidth)
+    return () => {
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+      window.removeEventListener('resize', syncWidth)
+      window.removeEventListener('app-section-sidebar-toggle', syncWidth)
+    }
   }, [])
 
   const applyFlow = useCallback(
     (nextFlow: SwpProcessFlow, immediate = false) => {
       const migrated = migrateFlowToColumnLayout(nextFlow, viewportWidth || undefined)
-      setNodes(flowToNodes(migrated))
-      setEdges(flowToEdges(migrated))
+      const col = columnWidth > 0 ? columnWidth : columnWidthForViewport(viewportWidth || 1260)
+      const rfNodes = alignRfNodes(flowToNodes(migrated), col)
+      setNodes(rfNodes)
+      setEdges(flowToEdges({ ...migrated, nodes: rfNodes.map(rfNodeToFlowNode) }))
       if (immediate) {
-        onFlowChange(migrated)
+        onFlowChange({ ...migrated, nodes: rfNodes.map(rfNodeToFlowNode) })
       } else {
         if (saveTimer.current) clearTimeout(saveTimer.current)
         saveTimer.current = setTimeout(() => onFlowChange(migrated), 400)
       }
     },
-    [onFlowChange, setEdges, setNodes, viewportWidth],
+    [columnWidth, onFlowChange, setEdges, setNodes, viewportWidth],
   )
 
   const emitFlow = useCallback(
@@ -153,17 +194,33 @@ export function SwpFlowEditor({
     [flow.systemId, flow.subtitle, onFlowChange],
   )
 
-  useEffect(() => {
-    const migrated = migrateFlowToColumnLayout(flow, viewportWidth || undefined)
-    setNodes(flowToNodes(migrated))
-    setEdges(flowToEdges(migrated))
-    setSelectedNodeId(null)
-  }, [flow.systemId, setNodes, setEdges])
+  const refreshEdges = useCallback(
+    (nds: Node<SwpRfNodeData>[], eds: Edge[]) =>
+      flowToEdges(reactFlowToFlow(flow.systemId, flow.subtitle, nds, eds)),
+    [flow.subtitle, flow.systemId],
+  )
 
   useLayoutEffect(() => {
-    if (columnWidth <= 0) return
-    setNodes((nds) => alignRfNodes(nds, columnWidth))
-  }, [columnWidth, setNodes])
+    if (flow.systemId !== loadedSystemIdRef.current) {
+      loadedSystemIdRef.current = flow.systemId
+      const migrated = migrateFlowToColumnLayout(flow, viewportWidth || undefined)
+      const rfNodes =
+        columnWidth > 0 ? alignRfNodes(flowToNodes(migrated), columnWidth) : flowToNodes(migrated)
+      setNodes(rfNodes)
+      setEdges(flowToEdges({ ...migrated, nodes: rfNodes.map(rfNodeToFlowNode) }))
+      setSelectedNodeId(null)
+      lastAlignedColumnWidthRef.current = columnWidth
+      return
+    }
+
+    if (columnWidth <= 0 || columnWidth === lastAlignedColumnWidthRef.current) return
+    lastAlignedColumnWidthRef.current = columnWidth
+    const nds = nodesRef.current
+    if (nds.length === 0) return
+    const aligned = alignRfNodes(nds, columnWidth)
+    setNodes(aligned)
+    setEdges(refreshEdges(aligned, edgesRef.current))
+  }, [columnWidth, flow, refreshEdges, setEdges, setNodes, viewportWidth])
 
   const onLabelChange = useCallback(
     (nodeId: string, label: string) => {
@@ -176,12 +233,6 @@ export function SwpFlowEditor({
       })
     },
     [edges, emitFlow, setNodes],
-  )
-
-  const refreshEdges = useCallback(
-    (nds: Node<SwpRfNodeData>[], eds: Edge[]) =>
-      flowToEdges(reactFlowToFlow(flow.systemId, flow.subtitle, nds, eds)),
-    [flow.subtitle, flow.systemId],
   )
 
   const onNodeResize = useCallback(
@@ -474,63 +525,57 @@ export function SwpFlowEditor({
         />
 
         <div ref={containerRef} className="relative w-full bg-slate-50">
-          <div
-            className="relative bg-slate-50"
-            style={{
-              width: viewportWidth > 0 ? viewportWidth : '100%',
-              height: canvasHeight,
-            }}
-          >
+          <div className="relative w-full bg-slate-50" style={{ height: canvasHeight }}>
             {columnWidth > 0 ? (
               <SwpLaneHeaderRow roles={roles} columnWidth={columnWidth} />
             ) : null}
             <div
-              className="relative [&_.react-flow]:z-10 [&_.react-flow__pane]:cursor-default"
-              style={{
-                width: viewportWidth > 0 ? viewportWidth : '100%',
-                height: canvasHeight,
-              }}
+              className="relative w-full [&_.react-flow]:z-10 [&_.react-flow__pane]:cursor-default"
+              style={{ height: canvasHeight }}
             >
               {columnWidth > 0 ? (
                 <SwpColumnLanes height={canvasHeight} columnWidth={columnWidth} />
               ) : null}
-              <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onNodeDragStop={onNodeDragStop}
-                onNodeClick={onNodeClick}
-                onPaneContextMenu={onPaneContextMenu}
-                onSelectionChange={onSelectionChange}
-                nodeTypes={swpNodeTypes}
-                connectionMode={ConnectionMode.Loose}
-                defaultEdgeOptions={{
-                  type: 'straight',
-                  style: { stroke: '#1e40af', strokeWidth: 2 },
-                  markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-                }}
-                fitView={false}
-                minZoom={1}
-                maxZoom={1}
-                zoomOnScroll={false}
-                panOnDrag={[1, 2]}
-                panOnScroll={false}
-                preventScrolling={false}
-                nodesDraggable
-                nodesConnectable={false}
-                elementsSelectable
-                selectNodesOnDrag={false}
-                defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-                translateExtent={[
-                  [0, 0],
-                  [viewportWidth || 1200, canvasHeight],
-                ]}
-                proOptions={{ hideAttribution: true }}
-                className="swp-flow !bg-slate-50"
-                style={{ width: '100%', height: canvasHeight }}
-              />
+              <ReactFlowProvider>
+                <SwpFlowViewportSync columnWidth={columnWidth} />
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onNodeDragStop={onNodeDragStop}
+                  onNodeClick={onNodeClick}
+                  onPaneContextMenu={onPaneContextMenu}
+                  onSelectionChange={onSelectionChange}
+                  nodeTypes={swpNodeTypes}
+                  connectionMode={ConnectionMode.Loose}
+                  defaultEdgeOptions={{
+                    type: 'straight',
+                    style: { stroke: '#1e40af', strokeWidth: 2 },
+                    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+                  }}
+                  fitView={false}
+                  minZoom={1}
+                  maxZoom={1}
+                  zoomOnScroll={false}
+                  panOnDrag={[1, 2]}
+                  panOnScroll={false}
+                  preventScrolling={false}
+                  nodesDraggable
+                  nodesConnectable={false}
+                  elementsSelectable
+                  selectNodesOnDrag={false}
+                  defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+                  translateExtent={[
+                    [0, 0],
+                    [viewportWidth || 1200, canvasHeight],
+                  ]}
+                  proOptions={{ hideAttribution: true }}
+                  className="swp-flow !bg-slate-50"
+                  style={{ width: '100%', height: canvasHeight }}
+                />
+              </ReactFlowProvider>
             </div>
           </div>
 

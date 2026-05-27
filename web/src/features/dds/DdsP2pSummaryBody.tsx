@@ -28,10 +28,15 @@ import {
   buildP2pPlanFamilyTrends,
   buildP2pPlanRoleIssueCounts,
   countUnlinkedCilDefectsForRole,
+  countUnlinkedTaskIssuesForRole,
+  cilDefectBelongsToRole,
+  planTaskIssueBelongsToRole,
   p2pPlanCompletionTone,
+  p2pPlanEventMatchesRole,
   p2pPlanRaisedCountClass,
   planDateUtcBounds,
   type P2pPlanEventRow,
+  type P2pPlanTaskIssueRow,
 } from './ddsP2pPlanDayStats'
 
 export type DdsP2pSummaryShiftRow = {
@@ -79,6 +84,18 @@ function placeDetailPanel(anchor: HTMLElement, maxW: number): { top: number; lef
   const left = Math.max(8, Math.min(rect.left, w - maxW - 8))
   return { top: rect.bottom + 6, left, maxW }
 }
+
+const P2P_SUMMARY_TABLE_CLASS = 'w-max min-w-full border-collapse text-left text-[10px] leading-tight'
+const P2P_SUMMARY_QUESTION_TH_CLASS =
+  'sticky left-0 z-[2] min-w-[9rem] max-w-[12rem] border-r border-border/80 bg-surface-raised/95 px-1.5 py-0.5 font-semibold text-muted backdrop-blur-sm'
+const P2P_SUMMARY_ROW_LABEL_CLASS =
+  'sticky left-0 z-[1] max-w-[12rem] border-r border-border/80 bg-surface px-1.5 py-0.5 text-left align-middle font-semibold leading-tight backdrop-blur-sm'
+const P2P_SUMMARY_QUESTION_ROW_CLASS =
+  'sticky left-0 z-[1] max-w-[12rem] border-r border-border/80 bg-surface px-1.5 py-px text-left align-middle font-normal leading-tight backdrop-blur-sm'
+const P2P_SUMMARY_ROLE_TH_CLASS = 'min-w-[3.75rem] whitespace-nowrap px-1 py-0.5 text-center font-semibold text-[10px] text-fg'
+const P2P_SUMMARY_CELL_CLASS = 'border-l border-border/40 px-0.5 py-px text-center align-middle text-[10px]'
+const P2P_SUMMARY_VALUE_WRAP_CLASS =
+  'inline-flex min-h-[1.125rem] min-w-[3rem] items-center justify-center gap-0.5 rounded-sm px-0.5 py-0'
 
 export type DdsP2pSummaryBodyHandle = {
   openPrefs: () => void
@@ -156,8 +173,10 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
   const [sheetCommentByRoleId, setSheetCommentByRoleId] = useState<Record<string, string>>({})
   const [planStatsEvents, setPlanStatsEvents] = useState<PlanStatsEventRow[]>([])
   const [planStatsDefects, setPlanStatsDefects] = useState<
-    { id: string; cil_template_id: string | null; cil_template_task_id: string | null }[]
+    { id: string; cil_template_id: string | null; cil_template_task_id: string | null; plan24_event_id?: string | null; role_name?: string | null }[]
   >([])
+  const [planStatsTaskDeviations, setPlanStatsTaskDeviations] = useState<P2pPlanTaskIssueRow[]>([])
+  const [planStatsTaskQualityFails, setPlanStatsTaskQualityFails] = useState<P2pPlanTaskIssueRow[]>([])
   const [planStatsDeviationById, setPlanStatsDeviationById] = useState<
     Record<string, { id: string; title: string; description: string | null; status: string; priority: string }>
   >({})
@@ -208,7 +227,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
       setPlanStatsError(null)
       try {
         const { start, end } = planDateUtcBounds(planDate)
-        const [evRes, defRes] = await Promise.all([
+        const [evRes, defRes, devRes, qfRes] = await Promise.all([
           supabase
             .from('plan24_events')
             .select(
@@ -221,7 +240,21 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
             .in('event_type', ['check', 'cl_check', 'cil_check', 'quality_check']),
           supabase
             .from('dh_defects')
-            .select('id, title, description, status, priority, cil_template_id, cil_template_task_id, created_at')
+            .select('id, title, description, status, priority, cil_template_id, cil_template_task_id, plan24_event_id, role_name, created_at')
+            .eq('master_cell_id', cellId)
+            .is('deleted_at', null)
+            .gte('created_at', start)
+            .lt('created_at', end),
+          supabase
+            .from('deviations')
+            .select('id, title, description, status, priority, plan24_event_id, role_name, plan24_sub_task_id, created_at')
+            .eq('master_cell_id', cellId)
+            .is('deleted_at', null)
+            .gte('created_at', start)
+            .lt('created_at', end),
+          supabase
+            .from('quality_fails')
+            .select('id, title, description, status, priority, plan24_event_id, role_name, plan24_sub_task_id, created_at')
             .eq('master_cell_id', cellId)
             .is('deleted_at', null)
             .gte('created_at', start)
@@ -230,6 +263,8 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
         if (cancelled) return
         if (evRes.error) throw evRes.error
         if (defRes.error) throw defRes.error
+        if (devRes.error) throw devRes.error
+        if (qfRes.error) throw qfRes.error
         const evs = (evRes.data ?? []) as PlanStatsEventRow[]
         const defects = (defRes.data ?? []) as {
           id: string
@@ -239,9 +274,47 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
           priority: string
           cil_template_id: string | null
           cil_template_task_id: string | null
+          plan24_event_id: string | null
+          role_name: string | null
+        }[]
+        const deviations = (devRes.data ?? []) as {
+          id: string
+          title: string
+          description: string | null
+          status: string
+          priority: string
+          plan24_event_id: string | null
+          role_name: string | null
+          plan24_sub_task_id: string | null
+        }[]
+        const qualityFails = (qfRes.data ?? []) as {
+          id: string
+          title: string
+          description: string | null
+          status: string
+          priority: string
+          plan24_event_id: string | null
+          role_name: string | null
+          plan24_sub_task_id: string | null
         }[]
         setPlanStatsEvents(evs)
         setPlanStatsDefects(defects)
+        setPlanStatsTaskDeviations(
+          deviations.map((d) => ({
+            id: d.id,
+            plan24_event_id: d.plan24_event_id,
+            role_name: d.role_name,
+            plan24_sub_task_id: d.plan24_sub_task_id,
+          })),
+        )
+        setPlanStatsTaskQualityFails(
+          qualityFails.map((f) => ({
+            id: f.id,
+            plan24_event_id: f.plan24_event_id,
+            role_name: f.role_name,
+            plan24_sub_task_id: f.plan24_sub_task_id,
+          })),
+        )
 
         const devIds = [...new Set(evs.filter((e) => (e.linked_issue_kind ?? '').toLowerCase() === 'deviation' && e.linked_issue_id).map((e) => e.linked_issue_id as string))]
         const failIds = [
@@ -251,7 +324,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
           ...new Set(evs.filter((e) => (e.linked_issue_kind ?? '').toLowerCase() === 'dh_defect' && e.linked_issue_id).map((e) => e.linked_issue_id as string)),
         ]
 
-        const [devRes, qfRes] = await Promise.all([
+        const [linkedDevRes, linkedQfRes] = await Promise.all([
           devIds.length
             ? supabase.from('deviations').select('id, title, description, status, priority').in('id', devIds)
             : Promise.resolve({ data: [], error: null }),
@@ -260,15 +333,21 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
             : Promise.resolve({ data: [], error: null }),
         ])
         if (cancelled) return
-        const derr = devRes.error ?? qfRes.error
+        const derr = linkedDevRes.error ?? linkedQfRes.error
         if (derr) throw derr
 
         const devMap: Record<string, { id: string; title: string; description: string | null; status: string; priority: string }> = {}
-        for (const row of (devRes.data ?? []) as any[]) devMap[String(row.id)] = row
+        for (const row of deviations) devMap[String(row.id)] = row
+        for (const row of (linkedDevRes.data ?? []) as any[]) {
+          if (!devMap[String(row.id)]) devMap[String(row.id)] = row
+        }
         setPlanStatsDeviationById(devMap)
 
         const failMap: Record<string, { id: string; title: string; description: string | null; status: string; priority: string }> = {}
-        for (const row of (qfRes.data ?? []) as any[]) failMap[String(row.id)] = row
+        for (const row of qualityFails) failMap[String(row.id)] = row
+        for (const row of (linkedQfRes.data ?? []) as any[]) {
+          if (!failMap[String(row.id)]) failMap[String(row.id)] = row
+        }
         setPlanStatsFailById(failMap)
 
         const defectMap: Record<string, { id: string; title: string; description: string | null; status: string; priority: string }> = {}
@@ -289,6 +368,8 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
         setPlanStatsError(e instanceof Error ? e.message : 'Could not load plan stats')
         setPlanStatsEvents([])
         setPlanStatsDefects([])
+        setPlanStatsTaskDeviations([])
+        setPlanStatsTaskQualityFails([])
         setPlanStatsDeviationById({})
         setPlanStatsDefectById({})
         setPlanStatsFailById({})
@@ -319,22 +400,25 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
   }
 
   function buildIssueList(roleName: string, kind: 'deviation' | 'dh_defect' | 'quality_fail'): string[] {
-    const rows = planStatsEvents.filter((e) => (e.role_name ?? '').trim() === roleName.trim())
+    const rows = planStatsEvents.filter((e) => p2pPlanEventMatchesRole(e.role_name, roleName))
     const ids = rows
       .filter((e) => (e.linked_issue_kind ?? '').toLowerCase() === kind && e.linked_issue_id)
       .map((e) => e.linked_issue_id as string)
     const uniq = [...new Set(ids)]
-    if (kind === 'dh_defect') {
-      // Include task-level unlinked defects for the same CIL templates on this day.
-      const tplIds = new Set(
-        rows
-          .filter((e) => e.event_type === 'cil_check' && e.cil_template_id)
-          .map((e) => e.cil_template_id as string),
-      )
-      for (const d of planStatsDefects) {
-        if (!d.cil_template_id || !d.cil_template_task_id) continue
-        if (!tplIds.has(d.cil_template_id)) continue
+    if (kind === 'deviation') {
+      for (const d of planStatsTaskDeviations) {
+        if (!planTaskIssueBelongsToRole(d, planStatsEvents, planDate, roleName, 'cl_check')) continue
         if (!uniq.includes(d.id)) uniq.push(d.id)
+      }
+    } else if (kind === 'dh_defect') {
+      for (const d of planStatsDefects) {
+        if (!cilDefectBelongsToRole(d, planStatsEvents, planDate, roleName)) continue
+        if (!uniq.includes(d.id)) uniq.push(d.id)
+      }
+    } else if (kind === 'quality_fail') {
+      for (const f of planStatsTaskQualityFails) {
+        if (!planTaskIssueBelongsToRole(f, planStatsEvents, planDate, roleName, 'quality_check')) continue
+        if (!uniq.includes(f.id)) uniq.push(f.id)
       }
     }
     if (uniq.length === 0) return ['None raised.']
@@ -367,6 +451,30 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
     }
     return map
   }, [planStatsDefects, planStatsEvents, planDate, roleNames])
+
+  const planExtraDeviationsByRole = useMemo(() => {
+    const map = new Map<string, number>()
+    if (planStatsTaskDeviations.length === 0 || planStatsEvents.length === 0) return map
+    for (const rn of roleNames) {
+      map.set(
+        rn,
+        countUnlinkedTaskIssuesForRole(planStatsTaskDeviations, planStatsEvents, planDate, rn, 'cl_check'),
+      )
+    }
+    return map
+  }, [planStatsTaskDeviations, planStatsEvents, planDate, roleNames])
+
+  const planExtraQualityFailsByRole = useMemo(() => {
+    const map = new Map<string, number>()
+    if (planStatsTaskQualityFails.length === 0 || planStatsEvents.length === 0) return map
+    for (const rn of roleNames) {
+      map.set(
+        rn,
+        countUnlinkedTaskIssuesForRole(planStatsTaskQualityFails, planStatsEvents, planDate, rn, 'quality_check'),
+      )
+    }
+    return map
+  }, [planStatsTaskQualityFails, planStatsEvents, planDate, roleNames])
 
   const planCompletionByRole = useMemo(() => {
     const map = new Map<string, { cl: number; cil: number; quality: number; check: number }>()
@@ -706,20 +814,17 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
           .
         </p>
       ) : roleCols.length === 0 || questionRows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-surface-raised/30 p-4 text-center text-xs text-muted">
+        <div className="rounded-lg border border-dashed border-border bg-surface-raised/30 p-2 text-center text-xs text-muted">
           <p className="text-fg/80">All roles or questions are hidden.</p>
           {prefsHint}
         </div>
       ) : (
         <>
-          <div className="mt-2 min-h-0 flex-1 overflow-auto rounded-lg border border-border/70">
-            <table className="w-max min-w-full border-collapse text-left text-[11px]">
+          <div className="mt-1 min-h-0 flex-1 overflow-auto rounded-md border border-border/70">
+            <table className={P2P_SUMMARY_TABLE_CLASS}>
               <thead>
                 <tr className="border-b border-border bg-surface-raised/50">
-                  <th
-                    className="sticky left-0 z-[2] min-w-[10rem] max-w-[14rem] border-r border-border/80 bg-surface-raised/95 px-2 py-1.5 font-semibold text-muted backdrop-blur-sm"
-                    scope="col"
-                  >
+                  <th className={P2P_SUMMARY_QUESTION_TH_CLASS} scope="col">
                     Question
                   </th>
                   {roleCols.map((r) => {
@@ -727,9 +832,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                     return (
                       <th
                         key={r.id}
-                        className={`min-w-[4.5rem] whitespace-nowrap px-1.5 py-1.5 text-center font-semibold text-fg ${
-                          submitted ? roleColSubmittedClass : ''
-                        }`}
+                        className={`${P2P_SUMMARY_ROLE_TH_CLASS} ${submitted ? roleColSubmittedClass : ''}`}
                         scope="col"
                         title={submitted ? 'P2P submitted for this role' : 'P2P not submitted yet'}
                       >
@@ -755,16 +858,15 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                     key={`${r.label}-${ix}`}
                     className="border-b border-border/50 odd:bg-surface/40 bg-surface-raised/20"
                   >
-                    <th
-                      scope="row"
-                      className="sticky left-0 z-[1] max-w-[14rem] border-r border-border/80 bg-surface px-2 py-1.5 text-left align-middle font-semibold leading-snug backdrop-blur-sm"
-                    >
+                    <th scope="row" className={P2P_SUMMARY_ROW_LABEL_CLASS}>
                       {r.label}
                     </th>
                     {roleCols.map((rc) => {
                       const rn = rc.name.trim()
                       const issueRow = planIssueCountByRole.get(rn)
                       const extraDef = planExtraDefectsByRole.get(rn) ?? 0
+                      const extraDev = planExtraDeviationsByRole.get(rn) ?? 0
+                      const extraQf = planExtraQualityFailsByRole.get(rn) ?? 0
                       const comp = planCompletionByRole.get(rn)
                       const showLoading = planStatsLoading && !planStatsError
                       if (r.kind === 'cl' || r.kind === 'cil' || r.kind === 'quality' || r.kind === 'check') {
@@ -779,16 +881,13 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                                 ? 'quality_check'
                                 : 'check'
                         return (
-                          <td
-                            key={rc.id}
-                            className="border-l border-border/40 px-0.5 py-1 text-center align-middle text-[10px]"
-                          >
+                          <td key={rc.id} className={P2P_SUMMARY_CELL_CLASS}>
                             {pct == null || tone == null ? (
                               <span className="text-muted">—</span>
                             ) : (
                               <button
                                 type="button"
-                                className="inline-flex items-center justify-center gap-1 rounded px-1 py-0.5 hover:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/[0.06]"
+                                className="inline-flex items-center justify-center gap-0.5 rounded px-0.5 py-0 hover:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/[0.06]"
                                 title="Click to view incomplete checks"
                                 onClick={(e) => {
                                   e.stopPropagation()
@@ -797,7 +896,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                                   setDetailPop({ ...pos, body: [`${rc.name} — ${r.label}`, '', ...lines].join('\n') })
                                 }}
                               >
-                                <span className={`inline-block h-2 w-2 rounded ${tone.bar}`} aria-hidden />
+                                <span className={`inline-block h-1.5 w-1.5 rounded ${tone.bar}`} aria-hidden />
                                 <span className="tabular-nums font-bold text-black dark:text-black">{pct}%</span>
                               </button>
                             )}
@@ -807,23 +906,20 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
 
                       const count =
                         r.kind === 'deviations'
-                          ? issueRow?.deviations ?? 0
+                          ? (issueRow?.deviations ?? 0) + extraDev
                           : r.kind === 'defects'
                             ? (issueRow?.defects ?? 0) + extraDef
                             : r.kind === 'qualityFails'
-                              ? issueRow?.qualityFails ?? 0
+                              ? (issueRow?.qualityFails ?? 0) + extraQf
                               : 0
                       return (
-                        <td
-                          key={rc.id}
-                          className="border-l border-border/40 px-0.5 py-1 text-center align-middle text-[10px]"
-                        >
+                        <td key={rc.id} className={P2P_SUMMARY_CELL_CLASS}>
                           {showLoading ? (
                             <span className="text-muted">—</span>
                           ) : (
                             <button
                               type="button"
-                              className={`rounded px-1 py-0.5 tabular-nums font-bold hover:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/[0.06] ${p2pPlanRaisedCountClass(count)}`}
+                              className={`rounded px-0.5 py-0 tabular-nums font-bold hover:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/[0.06] ${p2pPlanRaisedCountClass(count)}`}
                               title="Click to view raised items"
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -850,11 +946,13 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                   <tr key={q.key} className="border-b border-border/50 odd:bg-surface/40">
                     <th
                       scope="row"
-                      className="sticky left-0 z-[1] max-w-[14rem] border-r border-border/80 bg-surface px-2 py-1 text-left align-top font-normal leading-snug backdrop-blur-sm"
+                      className={P2P_SUMMARY_QUESTION_ROW_CLASS}
                       title={`${q.groupName} — ${q.prompt}`}
                     >
-                      <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted">{q.groupName}</span>
-                      <span className="text-fg">{q.prompt}</span>
+                      <span className="line-clamp-2 text-[10px]">
+                        <span className="font-semibold text-muted">{q.groupName}: </span>
+                        <span className="text-fg">{q.prompt}</span>
+                      </span>
                     </th>
                     {roleCols.map((r) => {
                       const submitted = submittedRoleIds.has(r.id)
@@ -863,7 +961,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                         return (
                           <td
                             key={r.id}
-                            className={`border-l border-border/40 px-1 py-1 text-center align-middle text-[10px] text-muted ${colClass}`}
+                            className={`${P2P_SUMMARY_CELL_CLASS} text-muted ${colClass}`}
                           >
                             N/A
                           </td>
@@ -883,15 +981,12 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                         main = <span className="tabular-nums text-fg">{formatNum(snap.num)}</span>
                       }
                       return (
-                        <td
-                          key={r.id}
-                          className={`border-l border-border/40 px-0.5 py-0.5 text-center align-middle ${colClass}`}
-                        >
-                          <div className="inline-flex min-h-[1.75rem] min-w-[3.25rem] items-center justify-center gap-0.5 rounded-md px-1 py-0.5">
+                        <td key={r.id} className={`${P2P_SUMMARY_CELL_CLASS} ${colClass}`}>
+                          <div className={P2P_SUMMARY_VALUE_WRAP_CLASS}>
                             <span className="tabular-nums">{main}</span>
                             <button
                               type="button"
-                              className="inline-flex rounded p-0.5 text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
+                              className="inline-flex rounded p-px text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
                               aria-label="Show question comment"
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -902,7 +997,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                                 })
                               }}
                             >
-                              <MessageSquare className={`size-3.5 shrink-0 ${hasCmt ? 'text-accent' : 'text-muted/30'}`} aria-hidden />
+                              <MessageSquare className={`size-3 shrink-0 ${hasCmt ? 'text-accent' : 'text-muted/30'}`} aria-hidden />
                             </button>
                           </div>
                         </td>
@@ -911,11 +1006,8 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                   </tr>
                 ))}
                 <tr className="border-b border-border bg-surface-raised/25">
-                  <th
-                    scope="row"
-                    className="sticky left-0 z-[1] max-w-[14rem] border-r border-border/80 bg-surface px-2 py-1.5 text-left align-middle font-semibold text-fg backdrop-blur-sm"
-                  >
-                    <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted">P2P</span>
+                  <th scope="row" className={P2P_SUMMARY_ROW_LABEL_CLASS}>
+                    <span className="text-[9px] font-semibold uppercase tracking-wide text-muted">P2P </span>
                     Overall comment
                   </th>
                   {roleCols.map((r) => {
@@ -924,11 +1016,8 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                     const submitted = submittedRoleIds.has(r.id)
                     const colClass = submitted ? roleColSubmittedClass : ''
                     return (
-                      <td
-                        key={r.id}
-                        className={`border-l border-border/40 px-0.5 py-0.5 text-center align-middle ${colClass}`}
-                      >
-                        <div className="inline-flex min-h-[1.75rem] min-w-[3.25rem] items-center justify-center gap-0.5 rounded-md px-1 py-0.5">
+                      <td key={r.id} className={`${P2P_SUMMARY_CELL_CLASS} ${colClass}`}>
+                        <div className={P2P_SUMMARY_VALUE_WRAP_CLASS}>
                           {hasSheet ? (
                             <span className="font-bold text-rose-600">N</span>
                           ) : (
@@ -936,7 +1025,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                           )}
                           <button
                             type="button"
-                            className="inline-flex rounded p-0.5 text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
+                            className="inline-flex rounded p-px text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
                             aria-label="Show overall comment"
                             onClick={(e) => {
                               e.stopPropagation()
@@ -947,7 +1036,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                               })
                             }}
                           >
-                            <MessageSquare className={`size-3.5 shrink-0 ${hasSheet ? 'text-accent' : 'text-muted/30'}`} aria-hidden />
+                            <MessageSquare className={`size-3 shrink-0 ${hasSheet ? 'text-accent' : 'text-muted/30'}`} aria-hidden />
                           </button>
                         </div>
                       </td>

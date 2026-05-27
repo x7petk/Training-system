@@ -98,7 +98,7 @@ export function ShiftDdsPage() {
 
       <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_auto] gap-3 lg:grid-cols-1 lg:grid-rows-[minmax(0,1fr)_auto] lg:gap-4">
         <section
-          className={`${ddsSection} flex h-full min-h-0 min-w-0 flex-col overflow-hidden`}
+          className={`${ddsSection} flex h-full min-h-0 min-w-0 flex-col overflow-hidden !p-2 sm:!p-2.5`}
           aria-label={rightMode === 'p2p' ? 'P2P summary' : 'Plan 24'}
         >
           {shellLoading ? (

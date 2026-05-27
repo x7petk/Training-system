@@ -5,6 +5,7 @@ import {
   buildP2pPlanFamilyTrends,
   buildP2pPlanRoleIssueCounts,
   countUnlinkedCilDefectsForRole,
+  countUnlinkedTaskIssuesForRole,
   p2pPlanCompletionTone,
   p2pPlanRaisedCountClass,
   planDateUtcBounds,
@@ -68,16 +69,18 @@ export function DdsP2pPlanDayStrip({
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [events, setEvents] = useState<P2pPlanEventRow[]>([])
   const [extraDefectCount, setExtraDefectCount] = useState(0)
+  const [extraDeviationCount, setExtraDeviationCount] = useState(0)
+  const [extraQualityFailCount, setExtraQualityFailCount] = useState(0)
 
   const fetchEvents = useCallback(async () => {
     const dates = trendDateRange(planDate)
     const fromDate = dates[0]!
     const { start, end } = planDateUtcBounds(planDate)
-    const [evRes, defRes] = await Promise.all([
+    const [evRes, defRes, devRes, qfRes] = await Promise.all([
       supabase
         .from('plan24_events')
         .select(
-          'plan_date, shift_kind, event_type, status, role_name, linked_issue_kind, linked_issue_id, cil_template_id',
+          'id, plan_date, shift_kind, event_type, status, role_name, linked_issue_kind, linked_issue_id, cil_template_id',
         )
         .eq('master_cell_id', cellId)
         .eq('shift_kind', shiftKind)
@@ -87,7 +90,21 @@ export function DdsP2pPlanDayStrip({
         .in('event_type', ['check', 'cl_check', 'cil_check', 'quality_check']),
       supabase
         .from('dh_defects')
-        .select('id, cil_template_id, cil_template_task_id')
+        .select('id, cil_template_id, cil_template_task_id, plan24_event_id, role_name')
+        .eq('master_cell_id', cellId)
+        .is('deleted_at', null)
+        .gte('created_at', start)
+        .lt('created_at', end),
+      supabase
+        .from('deviations')
+        .select('id, plan24_event_id, role_name, plan24_sub_task_id')
+        .eq('master_cell_id', cellId)
+        .is('deleted_at', null)
+        .gte('created_at', start)
+        .lt('created_at', end),
+      supabase
+        .from('quality_fails')
+        .select('id, plan24_event_id, role_name, plan24_sub_task_id')
         .eq('master_cell_id', cellId)
         .is('deleted_at', null)
         .gte('created_at', start)
@@ -97,25 +114,61 @@ export function DdsP2pPlanDayStrip({
     const evs = (evRes.data ?? []) as P2pPlanEventRow[]
     setEvents(evs)
     if (defRes.error) throw defRes.error
+    if (devRes.error) throw devRes.error
+    if (qfRes.error) throw qfRes.error
     const extraDefects = roleName.trim()
       ? countUnlinkedCilDefectsForRole(
           (defRes.data ?? []) as {
             id: string
             cil_template_id: string | null
             cil_template_task_id: string | null
+            plan24_event_id: string | null
+            role_name: string | null
           }[],
           evs,
           planDate,
           roleName,
         )
       : 0
+    const extraDeviations = roleName.trim()
+      ? countUnlinkedTaskIssuesForRole(
+          (devRes.data ?? []) as {
+            id: string
+            plan24_event_id: string | null
+            role_name: string | null
+            plan24_sub_task_id: string | null
+          }[],
+          evs,
+          planDate,
+          roleName,
+          'cl_check',
+        )
+      : 0
+    const extraQualityFails = roleName.trim()
+      ? countUnlinkedTaskIssuesForRole(
+          (qfRes.data ?? []) as {
+            id: string
+            plan24_event_id: string | null
+            role_name: string | null
+            plan24_sub_task_id: string | null
+          }[],
+          evs,
+          planDate,
+          roleName,
+          'quality_check',
+        )
+      : 0
     setExtraDefectCount(extraDefects)
+    setExtraDeviationCount(extraDeviations)
+    setExtraQualityFailCount(extraQualityFails)
   }, [cellId, planDate, shiftKind, roleName])
 
   const loadFull = useCallback(async () => {
     if (!cellId || !planDate || !shiftKind) {
       setEvents([])
       setExtraDefectCount(0)
+      setExtraDeviationCount(0)
+      setExtraQualityFailCount(0)
       return
     }
     setLoading(true)
@@ -148,6 +201,8 @@ export function DdsP2pPlanDayStrip({
       setLoadErr(e instanceof Error ? e.message : 'Could not load plan stats')
       setEvents([])
       setExtraDefectCount(0)
+      setExtraDeviationCount(0)
+      setExtraQualityFailCount(0)
     } finally {
       setLoading(false)
     }
@@ -183,11 +238,11 @@ export function DdsP2pPlanDayStrip({
     const rows = buildP2pPlanRoleIssueCounts(events, planDate, [roleName])
     const row = rows[0]
     return {
-      deviations: row?.deviations ?? 0,
+      deviations: (row?.deviations ?? 0) + extraDeviationCount,
       defects: (row?.defects ?? 0) + extraDefectCount,
-      qualityFails: row?.qualityFails ?? 0,
+      qualityFails: (row?.qualityFails ?? 0) + extraQualityFailCount,
     }
-  }, [events, planDate, roleName, extraDefectCount])
+  }, [events, planDate, roleName, extraDefectCount, extraDeviationCount, extraQualityFailCount])
 
   if (!cellId || !shiftKind) return null
 
