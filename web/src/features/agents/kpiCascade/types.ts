@@ -33,6 +33,8 @@ export type KpiCascadeLevel = CatalogBase & {
 
 export type KpiCascadeKpi = CatalogBase & {
   measure?: string
+  /** Forums where this KPI is discussed (Admin → KPIs). */
+  forumIds?: string[]
   /** Optional explicit link to `dds_kpis.id` for live sync */
   ddsKpiId?: string
   /** Default 1-based board line when no per-level override */

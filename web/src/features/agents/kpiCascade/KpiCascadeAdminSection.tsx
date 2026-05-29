@@ -44,7 +44,7 @@ const ADMIN_TABS: {
     id: 'kpis',
     label: 'KPIs',
     icon: BarChart3,
-    blurb: 'Metrics for cascade blocks. Set DDS link for live sync.',
+    blurb: 'Metrics for cascade blocks. Link each KPI to one or more forums for filtering.',
   },
 ]
 
@@ -143,6 +143,7 @@ export function KpiCascadeAdminSection({ workspace, onUpdate, onReset }: Props) 
       {adminTab === 'kpis' ? (
         <KpisAdminPanel
           kpis={workspace.kpis}
+          forums={workspace.forums}
           onChange={(kpis) => updateWorkspace({ kpis })}
         />
       ) : null}

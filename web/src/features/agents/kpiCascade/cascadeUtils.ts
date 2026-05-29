@@ -4,6 +4,7 @@ import type {
   CascadeBoardColumn,
   CascadeForumMetric,
   CascadeForumMetricGroup,
+  CascadeKpiOverlayItem,
   CascadeLink,
   CascadeMetric,
   CascadeMetricGroup,
@@ -213,6 +214,128 @@ export function canLinkForumMetrics(
   return fromIdx >= 0 && toIdx >= 0 && toIdx < fromIdx
 }
 
+export function kpiCatalogForumIds(kpi: KpiCascadeKpi): string[] {
+  return kpi.forumIds?.filter(Boolean) ?? []
+}
+
+export function kpiMatchesForumFilter(
+  kpiId: string,
+  forumSet: Set<string>,
+  kpis: KpiCascadeKpi[],
+): boolean {
+  if (forumSet.size === 0) return true
+  const kpi = kpis.find((k) => k.id === kpiId)
+  if (!kpi) return false
+  const ids = kpiCatalogForumIds(kpi)
+  if (ids.length === 0) return false
+  return ids.some((fid) => forumSet.has(fid))
+}
+
+/** KPI Cascade metric ids for Forum Cascade filters (catalog KPI + optional link expansion). */
+export function forumCascadeOverlayMetricIds(
+  cascadeMetrics: CascadeMetric[],
+  selectedKpiIds: string[],
+  activeLevelIds: Set<string>,
+  onlyConnected: boolean,
+  links: CascadeLink[],
+): { closure: Set<string>; focus: Set<string> } {
+  if (selectedKpiIds.length === 0) {
+    return { closure: new Set(), focus: new Set() }
+  }
+  const kpiSet = new Set(selectedKpiIds)
+  const seedIds = cascadeMetrics
+    .filter((m) => activeLevelIds.has(m.levelId) && kpiSet.has(m.kpiId))
+    .map((m) => m.id)
+  const focus = new Set(seedIds)
+  const closure = onlyConnected
+    ? collectTransitiveLinkedMetricIds(seedIds, links)
+    : focus
+  return { closure, focus }
+}
+
+/** Undirected transitive closure of KPI cascade metric links. */
+export function collectTransitiveLinkedMetricIds(
+  seedIds: string[],
+  links: CascadeLink[],
+): Set<string> {
+  const result = new Set<string>()
+  const queue = [...seedIds]
+  while (queue.length > 0) {
+    const id = queue.pop()!
+    if (result.has(id)) continue
+    result.add(id)
+    for (const l of links) {
+      if (l.fromMetricId === id && !result.has(l.toMetricId)) queue.push(l.toMetricId)
+      if (l.toMetricId === id && !result.has(l.fromMetricId)) queue.push(l.fromMetricId)
+    }
+  }
+  return result
+}
+
+export function cascadeMetricMatchesForum(
+  metric: CascadeMetric,
+  forumId: string,
+  workspace: KpiCascadeWorkspace,
+): boolean {
+  const kpi = workspace.kpis.find((k) => k.id === metric.kpiId)
+  if (!kpi) return false
+  const linked = kpiCatalogForumIds(kpi)
+  if (linked.length > 0) return linked.includes(forumId)
+  const level = workspace.levels.find((l) => l.id === metric.levelId)
+  return level?.forumIds?.includes(forumId) ?? false
+}
+
+export function buildKpiOverlaysForForumBox(
+  forumId: string,
+  levelId: string,
+  closureMetricIds: Set<string>,
+  focusMetricIds: Set<string>,
+  cascadeMetrics: CascadeMetric[],
+  workspace: KpiCascadeWorkspace,
+): CascadeKpiOverlayItem[] {
+  const levelLabel =
+    workspace.levels.find((l) => l.id === levelId)?.name ?? 'Level'
+  const items: CascadeKpiOverlayItem[] = []
+  for (const m of cascadeMetrics) {
+    if (!closureMetricIds.has(m.id)) continue
+    if (!cascadeMetricMatchesForum(m, forumId, workspace)) continue
+    const kpi = workspace.kpis.find((k) => k.id === m.kpiId)
+    items.push({
+      metricId: m.id,
+      kpiId: m.kpiId,
+      label: `${levelLabel} · ${kpi?.name ?? 'KPI'}`,
+      measure: kpi?.measure ?? '',
+      budget: m.budget,
+      fact: m.fact,
+      isFocus: focusMetricIds.has(m.id),
+    })
+  }
+  items.sort((a, b) => {
+    if (a.isFocus !== b.isFocus) return a.isFocus ? -1 : 1
+    return a.label.localeCompare(b.label)
+  })
+  return items
+}
+
+function metricMatchesCascadeFilters(
+  m: CascadeMetric,
+  levelSet: Set<string>,
+  kpiSet: Set<string> | null,
+  forumSet: Set<string>,
+  searchQuery: string,
+  kpis: KpiCascadeKpi[],
+): boolean {
+  if (!levelSet.has(m.levelId)) return false
+  if (kpiSet && !kpiSet.has(m.kpiId)) return false
+  if (!kpiMatchesForumFilter(m.kpiId, forumSet, kpis)) return false
+  const q = searchQuery.trim().toLowerCase()
+  if (q) {
+    const name = kpiLabel(m.kpiId, kpis).toLowerCase()
+    if (!name.includes(q)) return false
+  }
+  return true
+}
+
 export function filterMetrics(
   metrics: CascadeMetric[],
   filters: CascadeViewFilters,
@@ -227,33 +350,33 @@ export function filterMetrics(
 
   const forumSet = new Set(filters.forumIds)
   const kpiSet = filters.kpiIds.length > 0 ? new Set(filters.kpiIds) : null
-  const q = filters.searchQuery.trim().toLowerCase()
 
-  let visible = metrics.filter((m) => {
-    if (!levelSet.has(m.levelId)) return false
-    if (kpiSet && !kpiSet.has(m.kpiId)) return false
-    if (forumSet.size > 0) {
-      const level = workspace.levels.find((l) => l.id === m.levelId)
-      const levelForums = level?.forumIds ?? []
-      if (!levelForums.some((fid) => forumSet.has(fid))) return false
-    }
-    if (q) {
-      const name = kpiLabel(m.kpiId, workspace.kpis).toLowerCase()
-      if (!name.includes(q)) return false
-    }
-    return true
-  })
+  const inScope = (m: CascadeMetric) => levelSet.has(m.levelId)
 
-  if (filters.onlyConnected && links.length > 0) {
-    const connected = new Set<string>()
-    for (const l of links) {
-      connected.add(l.fromMetricId)
-      connected.add(l.toMetricId)
-    }
-    visible = visible.filter((m) => connected.has(m.id))
+  const selected = metrics.filter((m) =>
+    metricMatchesCascadeFilters(m, levelSet, kpiSet, forumSet, filters.searchQuery, workspace.kpis),
+  )
+
+  if (!filters.onlyConnected || links.length === 0) {
+    return selected
   }
 
-  return visible
+  const seedIds = selected.map((m) => m.id)
+  if (seedIds.length === 0) {
+    const linkedIds = new Set<string>()
+    for (const l of links) {
+      linkedIds.add(l.fromMetricId)
+      linkedIds.add(l.toMetricId)
+    }
+    return metrics.filter((m) => inScope(m) && linkedIds.has(m.id))
+  }
+
+  const closure = collectTransitiveLinkedMetricIds(seedIds, links)
+  return metrics.filter((m) => inScope(m) && closure.has(m.id))
+}
+
+export function filterLinksToMetrics(links: CascadeLink[], visibleIds: Set<string>): CascadeLink[] {
+  return links.filter((l) => visibleIds.has(l.fromMetricId) && visibleIds.has(l.toMetricId))
 }
 
 export function metricsForLevel(metrics: CascadeMetric[], levelId: string): CascadeMetric[] {

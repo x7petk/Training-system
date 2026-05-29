@@ -96,6 +96,14 @@ function migrateBoardRowsByLevel(raw: unknown): Record<string, number> | undefin
   return Object.keys(out).length ? out : undefined
 }
 
+function migrateKpiForumIds(r: Record<string, unknown>): string[] | undefined {
+  if (Array.isArray(r.forumIds)) {
+    const ids = r.forumIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
+    return ids.length ? ids : undefined
+  }
+  return undefined
+}
+
 function migrateKpi(raw: unknown): KpiCascadeKpi | null {
   const r = asRecord(raw)
   if (!r || typeof r.id !== 'string' || typeof r.name !== 'string') return null
@@ -109,6 +117,7 @@ function migrateKpi(raw: unknown): KpiCascadeKpi | null {
         : typeof r.code === 'string'
           ? r.code
           : undefined,
+    forumIds: migrateKpiForumIds(r),
     ddsKpiId: typeof r.ddsKpiId === 'string' ? r.ddsKpiId : undefined,
     boardRow: typeof r.boardRow === 'number' ? Math.max(1, Math.floor(r.boardRow)) : undefined,
     boardRowsByLevel: migrateBoardRowsByLevel(r.boardRowsByLevel),
@@ -191,13 +200,20 @@ function migrateCascade(raw: unknown): Partial<CascadeBuilderState> | undefined 
     groups: migrateList(c.groups, migrateGroup),
     metrics: migrateList(c.metrics, migrateMetric),
     links: migrateList(c.links, migrateLink),
-    filters: {
-      levelIds: Array.isArray(f?.levelIds) ? f.levelIds.filter((x): x is string => typeof x === 'string') : [],
-      kpiIds: Array.isArray(f?.kpiIds) ? f.kpiIds.filter((x): x is string => typeof x === 'string') : [],
-      forumIds: Array.isArray(f?.forumIds) ? f.forumIds.filter((x): x is string => typeof x === 'string') : [],
-      onlyConnected: f?.onlyConnected === true,
-      searchQuery: typeof f?.searchQuery === 'string' ? f.searchQuery : '',
-    },
+    filters: migrateCascadeFilters(f),
+  }
+}
+
+function migrateCascadeFilters(f: Record<string, unknown> | null | undefined) {
+  return {
+    levelIds: Array.isArray(f?.levelIds) ? f.levelIds.filter((x): x is string => typeof x === 'string') : [],
+    kpiIds: Array.isArray(f?.kpiIds) ? f.kpiIds.filter((x): x is string => typeof x === 'string') : [],
+    forumIds: Array.isArray(f?.forumIds) ? f.forumIds.filter((x): x is string => typeof x === 'string') : [],
+    focusMetricIds: Array.isArray(f?.focusMetricIds)
+      ? f.focusMetricIds.filter((x): x is string => typeof x === 'string')
+      : [],
+    onlyConnected: f?.onlyConnected === true,
+    searchQuery: typeof f?.searchQuery === 'string' ? f.searchQuery : '',
   }
 }
 
@@ -272,13 +288,7 @@ function migrateForumCascade(
     groups: migrateList(c.groups, (item) => migrateForumGroup(item, levels)),
     metrics: migrateList(c.metrics, (item) => migrateForumMetric(item, levels)),
     links: migrateList(c.links, migrateLink),
-    filters: {
-      levelIds: Array.isArray(f?.levelIds) ? f.levelIds.filter((x): x is string => typeof x === 'string') : [],
-      kpiIds: Array.isArray(f?.kpiIds) ? f.kpiIds.filter((x): x is string => typeof x === 'string') : [],
-      forumIds: Array.isArray(f?.forumIds) ? f.forumIds.filter((x): x is string => typeof x === 'string') : [],
-      onlyConnected: f?.onlyConnected === true,
-      searchQuery: typeof f?.searchQuery === 'string' ? f.searchQuery : '',
-    },
+    filters: migrateCascadeFilters(f),
   }
 }
 

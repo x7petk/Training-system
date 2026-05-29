@@ -3,6 +3,7 @@ import type { CascadeViewFilters } from '../cascadeTypes'
 import type { KpiCascadeForum, KpiCascadeKpi, KpiCascadeLevel } from '../types'
 
 type Props = {
+  mode: 'kpi-cascade' | 'forum-cascade'
   filters: CascadeViewFilters
   levels: KpiCascadeLevel[]
   kpis: KpiCascadeKpi[]
@@ -19,12 +20,18 @@ function MultiFilter({
   options,
   selected,
   onToggle,
+  onSelectAll,
+  onClear,
 }: {
   label: string
   options: { id: string; name: string }[]
   selected: string[]
   onToggle: (id: string) => void
+  onSelectAll?: () => void
+  onClear?: () => void
 }) {
+  const allSelected = options.length > 0 && options.every((o) => selected.includes(o.id))
+
   return (
     <details className="group relative">
       <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-border bg-canvas px-3 py-1.5 text-sm font-medium text-fg hover:bg-surface-raised [&::-webkit-details-marker]:hidden">
@@ -33,7 +40,37 @@ function MultiFilter({
           <span className="rounded-full bg-accent/15 px-1.5 text-xs text-accent">{selected.length}</span>
         ) : null}
       </summary>
-      <div className="absolute left-0 z-30 mt-1 max-h-48 min-w-[12rem] overflow-y-auto rounded-lg border border-border bg-canvas py-1 shadow-lg">
+      <div className="absolute left-0 z-30 mt-1 max-h-56 min-w-[14rem] overflow-hidden rounded-lg border border-border bg-canvas shadow-lg">
+        {options.length > 0 && (onSelectAll || onClear) ? (
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+            {onSelectAll ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  onSelectAll()
+                }}
+                disabled={allSelected}
+                className="text-xs font-medium text-accent hover:underline disabled:cursor-default disabled:text-muted disabled:no-underline"
+              >
+                Select all
+              </button>
+            ) : null}
+            {onClear && selected.length > 0 ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  onClear()
+                }}
+                className="text-xs font-medium text-muted hover:text-fg hover:underline"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="max-h-48 overflow-y-auto py-1">
         {options.length === 0 ? (
           <p className="px-3 py-2 text-xs text-muted">None configured</p>
         ) : (
@@ -52,12 +89,20 @@ function MultiFilter({
             </label>
           ))
         )}
+        </div>
       </div>
     </details>
   )
 }
 
-export function CascadeFilterBar({ filters, levels, kpis, forums, onChange }: Props) {
+export function CascadeFilterBar({
+  mode,
+  filters,
+  levels,
+  kpis,
+  forums,
+  onChange,
+}: Props) {
   const activeLevels = levels.filter((l) => l.active)
   const activeKpis = kpis.filter((k) => k.active)
   const activeForums = forums.filter((f) => f.active)
@@ -75,24 +120,48 @@ export function CascadeFilterBar({ filters, levels, kpis, forums, onChange }: Pr
           className="w-full rounded-lg border border-border bg-canvas py-1.5 pl-8 pr-3 text-sm"
         />
       </div>
-      <MultiFilter
-        label="Levels"
-        options={activeLevels.map((l) => ({ id: l.id, name: l.name }))}
-        selected={filters.levelIds}
-        onToggle={(id) => onChange({ ...filters, levelIds: toggleId(filters.levelIds, id) })}
-      />
-      <MultiFilter
-        label="KPIs"
-        options={activeKpis.map((k) => ({ id: k.id, name: k.name }))}
-        selected={filters.kpiIds}
-        onToggle={(id) => onChange({ ...filters, kpiIds: toggleId(filters.kpiIds, id) })}
-      />
-      <MultiFilter
-        label="Forums"
-        options={activeForums.map((f) => ({ id: f.id, name: f.name }))}
-        selected={filters.forumIds}
-        onToggle={(id) => onChange({ ...filters, forumIds: toggleId(filters.forumIds, id) })}
-      />
+      {mode === 'kpi-cascade' ? (
+        <>
+          <MultiFilter
+            label="Levels"
+            options={activeLevels.map((l) => ({ id: l.id, name: l.name }))}
+            selected={filters.levelIds}
+            onToggle={(id) => onChange({ ...filters, levelIds: toggleId(filters.levelIds, id) })}
+          />
+          <MultiFilter
+            label="KPIs"
+            options={activeKpis.map((k) => ({ id: k.id, name: k.name }))}
+            selected={filters.kpiIds}
+            onToggle={(id) => onChange({ ...filters, kpiIds: toggleId(filters.kpiIds, id) })}
+            onSelectAll={() => onChange({ ...filters, kpiIds: activeKpis.map((k) => k.id) })}
+            onClear={() => onChange({ ...filters, kpiIds: [] })}
+          />
+          <MultiFilter
+            label="Forums"
+            options={activeForums.map((f) => ({ id: f.id, name: f.name }))}
+            selected={filters.forumIds}
+            onToggle={(id) => onChange({ ...filters, forumIds: toggleId(filters.forumIds, id) })}
+          />
+        </>
+      ) : (
+        <MultiFilter
+          label="Metrics"
+          options={activeKpis.map((k) => ({ id: k.id, name: k.name }))}
+          selected={filters.kpiIds}
+          onToggle={(id) => onChange({ ...filters, kpiIds: toggleId(filters.kpiIds, id) })}
+          onSelectAll={() => onChange({ ...filters, kpiIds: activeKpis.map((k) => k.id) })}
+          onClear={() => onChange({ ...filters, kpiIds: [] })}
+        />
+      )}
+      {mode === 'forum-cascade' && activeKpis.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => onChange({ ...filters, kpiIds: activeKpis.map((k) => k.id) })}
+          className="rounded-lg border border-border bg-canvas px-3 py-1.5 text-sm font-medium text-fg hover:bg-surface-raised"
+        >
+          All metrics
+        </button>
+      ) : null}
       <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-canvas px-3 py-1.5 text-sm">
         <input
           type="checkbox"
@@ -100,7 +169,7 @@ export function CascadeFilterBar({ filters, levels, kpis, forums, onChange }: Pr
           onChange={(e) => onChange({ ...filters, onlyConnected: e.target.checked })}
           className="rounded border-border"
         />
-        <span className="font-medium text-fg">Only connected</span>
+        <span className="font-medium text-fg">Include connected</span>
       </label>
       {(filters.levelIds.length > 0 ||
         filters.kpiIds.length > 0 ||
@@ -114,6 +183,7 @@ export function CascadeFilterBar({ filters, levels, kpis, forums, onChange }: Pr
               levelIds: [],
               kpiIds: [],
               forumIds: [],
+              focusMetricIds: [],
               onlyConnected: false,
               searchQuery: '',
             })

@@ -4,6 +4,8 @@ import {
   boardRowForGroup,
   canLinkMetrics,
   cascadeBoardSlotCount,
+  filterLinksToMetrics,
+  filterMetrics,
   groupsWithMetrics,
   kpiBoardRow,
   levelsToColumns,
@@ -14,6 +16,7 @@ import {
 } from '../cascadeUtils'
 import type { KpiCascadeWorkspace } from '../types'
 import { CascadeAddBlockButton } from './CascadeAddBlockButton'
+import { CascadeFilterBar } from './CascadeFilterBar'
 import { CascadeGridBoard } from './CascadeGridBoard'
 
 function newMetricId() {
@@ -39,9 +42,21 @@ export function KpiCascadeBuilder({ workspace, onUpdate, loadError }: Props) {
   const orderedLevels = useMemo(() => sortedActiveLevels(workspace.levels), [workspace.levels])
   const columns = useMemo(() => levelsToColumns(orderedLevels), [orderedLevels])
   const activeLevelIds = useMemo(() => new Set(orderedLevels.map((l) => l.id)), [orderedLevels])
-  const boardMetrics = useMemo(
+  const levelScopedMetrics = useMemo(
     () => cascade.metrics.filter((m) => activeLevelIds.has(m.levelId)),
     [cascade.metrics, activeLevelIds],
+  )
+
+  const boardMetrics = useMemo(
+    () => filterMetrics(levelScopedMetrics, cascade.filters, workspace, cascade.links),
+    [levelScopedMetrics, cascade.filters, cascade.links, workspace],
+  )
+
+  const visibleMetricIds = useMemo(() => new Set(boardMetrics.map((m) => m.id)), [boardMetrics])
+
+  const boardLinks = useMemo(
+    () => filterLinksToMetrics(cascade.links, visibleMetricIds),
+    [cascade.links, visibleMetricIds],
   )
   const slotCount = useMemo(
     () => cascadeBoardSlotCount(cascade.groups, boardMetrics, workspace.kpis),
@@ -292,8 +307,23 @@ export function KpiCascadeBuilder({ workspace, onUpdate, loadError }: Props) {
     [addLink, linkSourceId],
   )
 
+  const setFilters = useCallback(
+    (filters: typeof cascade.filters) => {
+      updateCascade({ ...cascade, filters })
+    },
+    [cascade, updateCascade],
+  )
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col gap-2">
+      <CascadeFilterBar
+        mode="kpi-cascade"
+        filters={cascade.filters}
+        levels={workspace.levels}
+        kpis={workspace.kpis}
+        forums={workspace.forums}
+        onChange={setFilters}
+      />
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 rounded-lg border border-[#c5cad3] bg-[#f7f8fa] px-3 py-2 shadow-sm">
         {loadError ? (
           <p className="mr-auto text-xs text-danger" role="alert">
@@ -331,7 +361,7 @@ export function KpiCascadeBuilder({ workspace, onUpdate, loadError }: Props) {
       <CascadeGridBoard
         columns={columns}
         metrics={boardMetrics}
-        links={cascade.links}
+        links={boardLinks}
         groups={cascade.groups}
         kpis={workspace.kpis}
         forums={[]}

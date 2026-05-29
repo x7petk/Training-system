@@ -51,8 +51,21 @@ export type CascadeViewFilters = {
   levelIds: string[]
   kpiIds: string[]
   forumIds: string[]
+  /** KPI Cascade metric ids — Forum Cascade shows these + transitively linked metrics. */
+  focusMetricIds: string[]
   onlyConnected: boolean
   searchQuery: string
+}
+
+/** KPI Cascade metric summary shown under Forum Cascade blocks when filtering by metric. */
+export type CascadeKpiOverlayItem = {
+  metricId: string
+  kpiId: string
+  label: string
+  measure: string
+  budget: number
+  fact: number
+  isFocus: boolean
 }
 
 export type CascadeBuilderState = {
@@ -120,6 +133,7 @@ export const DEFAULT_CASCADE_FILTERS: CascadeViewFilters = {
   levelIds: [],
   kpiIds: [],
   forumIds: [],
+  focusMetricIds: [],
   onlyConnected: false,
   searchQuery: '',
 }

@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { supabase } from '../../../lib/supabase'
-import type { DdsKpiOption } from './cascadeDdsMatch'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Plus, Search, Trash2 } from 'lucide-react'
 import { ForumMultiSelect } from './ForumMultiSelect'
 import { newForum, newKpi, newLevel, newRole } from './catalogFactories'
@@ -476,28 +474,15 @@ export function LevelsAdminPanel({ levels, forums, onChange }: LevelsPanelProps)
 
 type KpisPanelProps = {
   kpis: KpiCascadeKpi[]
+  forums: KpiCascadeForum[]
   onChange: (kpis: KpiCascadeKpi[]) => void
 }
 
-export function KpisAdminPanel({ kpis, onChange }: KpisPanelProps) {
+export function KpisAdminPanel({ kpis, forums, onChange }: KpisPanelProps) {
   const [search, setSearch] = useState('')
   const [draftName, setDraftName] = useState('')
-  const [ddsOptions, setDdsOptions] = useState<DdsKpiOption[]>([])
 
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      const { data, error } = await supabase
-        .from('dds_kpis')
-        .select('id, label')
-        .order('sort_order')
-        .order('label')
-      if (!cancelled && !error) setDdsOptions((data ?? []) as DdsKpiOption[])
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const forumById = useMemo(() => new Map(forums.map((f) => [f.id, f])), [forums])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -555,7 +540,7 @@ export function KpisAdminPanel({ kpis, onChange }: KpisPanelProps) {
           <tr>
             <th className={thClass}>Name</th>
             <th className={`${thClass} w-48`}>Measure</th>
-            <th className={`${thClass} min-w-[12rem]`}>DDS link</th>
+            <th className={`${thClass} min-w-[16rem]`}>Link to forum</th>
             <th className={`${thClass} w-20`}>Active</th>
             <th className={`${thClass} w-12`} aria-label="Actions" />
           </tr>
@@ -588,21 +573,14 @@ export function KpisAdminPanel({ kpis, onChange }: KpisPanelProps) {
                   />
                 </td>
                 <td className={tdClass}>
-                  <select
-                    value={kpi.ddsKpiId ?? ''}
-                    onChange={(e) =>
-                      patch(kpi.id, { ddsKpiId: e.target.value || undefined })
-                    }
-                    className={inputClass}
-                    aria-label={`DDS link for ${kpi.name}`}
-                  >
-                    <option value="">Auto-match by name</option>
-                    {ddsOptions.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.label}
-                      </option>
-                    ))}
-                  </select>
+                  <ForumMultiSelect
+                    selectedIds={kpi.forumIds ?? []}
+                    forums={forums}
+                    forumById={forumById}
+                    onChange={(forumIds) => patch(kpi.id, { forumIds })}
+                    ariaLabel={`Forums for ${kpi.name}`}
+                    panelSize="large"
+                  />
                 </td>
                 <td className={tdClass}>
                   <input

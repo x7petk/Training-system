@@ -25,10 +25,14 @@ type ForumMultiSelectProps = {
   forumById: Map<string, KpiCascadeForum>
   onChange: (forumIds: string[]) => void
   ariaLabel: string
+  /** Larger dropdown panel (e.g. Admin → KPIs table). */
+  panelSize?: 'default' | 'large'
 }
 
-const PANEL_MIN_WIDTH = 300
-const PANEL_MAX_HEIGHT = 360
+const PANEL_SIZES = {
+  default: { minWidth: 300, maxHeight: 360 },
+  large: { minWidth: 420, maxHeight: 480 },
+} as const
 
 export function ForumMultiSelect({
   selectedIds,
@@ -36,7 +40,9 @@ export function ForumMultiSelect({
   forumById,
   onChange,
   ariaLabel,
+  panelSize = 'default',
 }: ForumMultiSelectProps) {
+  const panelDims = PANEL_SIZES[panelSize]
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState('')
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({})
@@ -85,13 +91,13 @@ export function ForumMultiSelect({
     if (!trigger) return
 
     const rect = trigger.getBoundingClientRect()
-    const panelHeight = Math.min(PANEL_MAX_HEIGHT, window.innerHeight * 0.7)
+    const panelHeight = Math.min(panelDims.maxHeight, window.innerHeight * 0.7)
     const gap = 6
     const spaceBelow = window.innerHeight - rect.bottom - gap
     const spaceAbove = rect.top - gap
     const openAbove = spaceBelow < panelHeight && spaceAbove > spaceBelow
 
-    const width = Math.max(PANEL_MIN_WIDTH, rect.width)
+    const width = Math.max(panelDims.minWidth, rect.width)
     let left = rect.left
     if (left + width > window.innerWidth - 12) {
       left = Math.max(12, window.innerWidth - width - 12)
@@ -107,7 +113,7 @@ export function ForumMultiSelect({
         ? { bottom: window.innerHeight - rect.top + gap }
         : { top: rect.bottom + gap }),
     })
-  }, [])
+  }, [panelDims.maxHeight, panelDims.minWidth])
 
   useLayoutEffect(() => {
     if (!open) return

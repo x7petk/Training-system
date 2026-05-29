@@ -1,4 +1,5 @@
 import {
+  DEFAULT_CASCADE_FILTERS,
   defaultCascadeScope,
   type CascadeBuilderState,
   type CascadeForumBuilderState,
@@ -53,7 +54,7 @@ export function emptyCascadeBuilder(): CascadeBuilderState {
     groups: [],
     metrics: [],
     links: [],
-    filters: { levelIds: [], kpiIds: [], forumIds: [], onlyConnected: false, searchQuery: '' },
+    filters: { ...DEFAULT_CASCADE_FILTERS },
   }
 }
 
@@ -67,7 +68,7 @@ export function finalizeCascadeState(
     groups: partial.groups ?? [],
     metrics: partial.metrics ?? [],
     links: partial.links ?? [],
-    filters: partial.filters ?? { levelIds: [], kpiIds: [], forumIds: [], onlyConnected: false, searchQuery: '' },
+    filters: partial.filters ?? { ...DEFAULT_CASCADE_FILTERS },
   }
   const { metrics, groups: normalizedGroups } = normalizeCascadeGroups(base.metrics, base.groups)
   const syncedGroups = syncCascadeGroupBoardRows(normalizedGroups, metrics, ws.kpis)
@@ -107,7 +108,7 @@ export function emptyForumCascadeBuilder(): CascadeForumBuilderState {
     groups: [],
     metrics: [],
     links: [],
-    filters: { levelIds: [], kpiIds: [], forumIds: [], onlyConnected: false, searchQuery: '' },
+    filters: { ...DEFAULT_CASCADE_FILTERS },
   }
 }
 
@@ -121,7 +122,7 @@ export function finalizeForumCascadeState(
     groups: partial.groups ?? [],
     metrics: partial.metrics ?? [],
     links: partial.links ?? [],
-    filters: partial.filters ?? { levelIds: [], kpiIds: [], forumIds: [], onlyConnected: false, searchQuery: '' },
+    filters: partial.filters ?? { ...DEFAULT_CASCADE_FILTERS },
   }
   const { metrics, groups: normalizedGroups } = normalizeForumCascadeGroups(base.metrics, base.groups)
   const syncedGroups = syncForumCascadeGroupBoardRows(normalizedGroups, metrics, ws.forums)

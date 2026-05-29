@@ -11,6 +11,7 @@ import type {
   CascadeBoardColumn,
   CascadeForumMetric,
   CascadeForumMetricGroup,
+  CascadeKpiOverlayItem,
   CascadeLink,
   CascadeMetric,
   CascadeMetricGroup,
@@ -18,6 +19,7 @@ import type {
 import { CASCADE_BOARD_SLOT_HEIGHT, metricsInGroup } from '../cascadeUtils'
 import type { KpiCascadeForum, KpiCascadeKpi } from '../types'
 import { buildVisibleLinkPaths } from './cascadeLinkPaths'
+import { CascadeLinkedKpiChips } from './CascadeLinkedKpiChips'
 import { CascadeMetricTile } from './CascadeMetricTile'
 
 const DRAG_MIME = 'application/x-kpi-cascade-metric'
@@ -33,6 +35,8 @@ type Props = {
   kpis: KpiCascadeKpi[]
   forums: KpiCascadeForum[]
   slotCount: number
+  /** Forum Cascade: linked KPI cascade metrics shown under each block. */
+  kpiOverlaysByBoxId?: Map<string, CascadeKpiOverlayItem[]>
   boardRowForGroup: (group: BoardGroup) => number
   groupsWithMetricsForColumn: (
     groups: BoardGroup[],
@@ -58,6 +62,7 @@ export function CascadeGridBoard({
   kpis,
   forums,
   slotCount,
+  kpiOverlaysByBoxId,
   boardRowForGroup,
   groupsWithMetricsForColumn,
   linkSourceId,
@@ -144,6 +149,7 @@ export function CascadeGridBoard({
             kpis={kpis}
             forums={forums}
             boardRowForGroup={boardRowForGroup}
+            kpiOverlaysByBoxId={kpiOverlaysByBoxId}
             linkSourceId={linkSourceId}
             isDropTarget={dropColumnId === column.id}
             dropBoxId={dropBoxId}
@@ -247,6 +253,7 @@ function CascadeGridColumn({
   kpis,
   forums,
   boardRowForGroup,
+  kpiOverlaysByBoxId,
   linkSourceId,
   isDropTarget,
   dropBoxId,
@@ -272,6 +279,7 @@ function CascadeGridColumn({
   kpis: KpiCascadeKpi[]
   forums: KpiCascadeForum[]
   boardRowForGroup: (group: BoardGroup) => number
+  kpiOverlaysByBoxId?: Map<string, CascadeKpiOverlayItem[]>
   linkSourceId: string | null
   isDropTarget: boolean
   dropBoxId: string | null
@@ -360,6 +368,7 @@ function CascadeGridColumn({
                   metrics={metricsInGroup(metrics, box.id)}
                   kpis={kpis}
                   forums={forums}
+                  kpiOverlays={kpiOverlaysByBoxId?.get(box.id)}
                   linkSourceId={linkSourceId}
                   isDropTarget={dropBoxId === box.id}
                   onStartLink={onStartLink}
@@ -441,6 +450,7 @@ function KpiCombineBox({
   metrics,
   kpis,
   forums,
+  kpiOverlays,
   linkSourceId,
   isDropTarget,
   onStartLink,
@@ -455,6 +465,7 @@ function KpiCombineBox({
   metrics: BoardMetric[]
   kpis: KpiCascadeKpi[]
   forums: KpiCascadeForum[]
+  kpiOverlays?: CascadeKpiOverlayItem[]
   linkSourceId: string | null
   isDropTarget: boolean
   onStartLink: (id: string) => void
@@ -527,6 +538,8 @@ function KpiCombineBox({
     registerRef: (el: HTMLDivElement | null) => registerRef(metric.id, el),
   })
 
+  const overlayNode = kpiOverlays?.length ? <CascadeLinkedKpiChips items={kpiOverlays} /> : null
+
   if (!combined && metrics.length === 1) {
     return (
       <div
@@ -534,7 +547,10 @@ function KpiCombineBox({
         className={`group/box relative shrink-0 transition-colors ${isDropTarget ? 'rounded-md ring-2 ring-[#2b6cb0]/50' : ''}`}
         {...dragHandlers}
       >
-        <CascadeMetricTile {...tileProps(metrics[0])} />
+        <div className="rounded-md border border-[#c5cad3] bg-[#fafbfc] p-1 shadow-sm">
+          <CascadeMetricTile {...tileProps(metrics[0])} />
+          {overlayNode}
+        </div>
       </div>
     )
   }
@@ -555,6 +571,7 @@ function KpiCombineBox({
         {metrics.map((metric) => (
           <CascadeMetricTile key={metric.id} {...tileProps(metric)} />
         ))}
+        {overlayNode}
       </div>
     </div>
   )

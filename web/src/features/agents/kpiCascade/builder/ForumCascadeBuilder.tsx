@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CascadeForumBuilderState, CascadeMetricKind } from '../cascadeTypes'
+import type { CascadeKpiOverlayItem } from '../cascadeTypes'
 import {
   boardRowForForumGroup,
+  buildKpiOverlaysForForumBox,
   canLinkForumMetrics,
   forumBoardRow,
   forumCascadeBoardSlotCount,
+  forumCascadeOverlayMetricIds,
   forumGroupsWithMetrics,
   levelsToColumns,
   normalizeBoardRow,
@@ -14,6 +17,7 @@ import {
 } from '../cascadeUtils'
 import type { KpiCascadeWorkspace } from '../types'
 import { CascadeAddBlockButton } from './CascadeAddBlockButton'
+import { CascadeFilterBar } from './CascadeFilterBar'
 import { CascadeGridBoard } from './CascadeGridBoard'
 
 function newMetricId() {
@@ -309,8 +313,83 @@ export function ForumCascadeBuilder({ workspace, onUpdate, loadError }: Props) {
 
   const activeForums = useMemo(() => workspace.forums.filter((f) => f.active), [workspace.forums])
 
+  const { closure: linkedMetricClosure, focus: focusMetricIdSet } = useMemo(
+    () =>
+      forumCascadeOverlayMetricIds(
+        workspace.cascade.metrics,
+        forumCascade.filters.kpiIds,
+        activeLevelIds,
+        forumCascade.filters.onlyConnected,
+        workspace.cascade.links,
+      ),
+    [
+      activeLevelIds,
+      forumCascade.filters.kpiIds,
+      forumCascade.filters.onlyConnected,
+      workspace.cascade.links,
+      workspace.cascade.metrics,
+    ],
+  )
+
+  const kpiOverlaysByBoxId = useMemo(() => {
+    const map = new Map<string, CascadeKpiOverlayItem[]>()
+    if (linkedMetricClosure.size === 0) return map
+
+    for (const box of forumCascade.groups) {
+      if (!activeLevelIds.has(box.levelId)) continue
+      const forumMetrics = boardMetrics.filter((m) => m.groupId === box.id)
+      const forumIds = [
+        ...new Set(
+          forumMetrics.map((m) => m.forumId).filter((id): id is string => typeof id === 'string' && id.length > 0),
+        ),
+      ]
+      if (forumIds.length === 0) continue
+
+      const merged: CascadeKpiOverlayItem[] = []
+      const seen = new Set<string>()
+      for (const forumId of forumIds) {
+        for (const item of buildKpiOverlaysForForumBox(
+          forumId,
+          box.levelId,
+          linkedMetricClosure,
+          focusMetricIdSet,
+          workspace.cascade.metrics,
+          workspace,
+        )) {
+          if (seen.has(item.metricId)) continue
+          seen.add(item.metricId)
+          merged.push(item)
+        }
+      }
+      if (merged.length > 0) map.set(box.id, merged)
+    }
+    return map
+  }, [
+    activeLevelIds,
+    boardMetrics,
+    focusMetricIdSet,
+    forumCascade.groups,
+    linkedMetricClosure,
+    workspace,
+  ])
+
+  const setFilters = useCallback(
+    (filters: typeof forumCascade.filters) => {
+      updateForumCascade({ ...forumCascade, filters })
+    },
+    [forumCascade, updateForumCascade],
+  )
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col gap-2">
+      <CascadeFilterBar
+        mode="forum-cascade"
+        filters={forumCascade.filters}
+        levels={workspace.levels}
+        kpis={workspace.kpis}
+        forums={workspace.forums}
+        onChange={setFilters}
+      />
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 rounded-lg border border-[#c5cad3] bg-[#f7f8fa] px-3 py-2 shadow-sm">
         {loadError ? (
           <p className="mr-auto text-xs text-danger" role="alert">
@@ -360,6 +439,7 @@ export function ForumCascadeBuilder({ workspace, onUpdate, loadError }: Props) {
           kpis={[]}
           forums={workspace.forums}
           slotCount={slotCount}
+          kpiOverlaysByBoxId={kpiOverlaysByBoxId}
           boardRowForGroup={(g) => boardRowForGroupFn(g as (typeof forumCascade.groups)[number])}
           groupsWithMetricsForColumn={(groups, metrics, columnId) =>
             forumGroupsWithMetrics(
