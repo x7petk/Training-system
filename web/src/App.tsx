@@ -51,6 +51,7 @@ const DdsActionsPage = lazy(() => import('./pages/DdsActionsPage').then((m) => (
 const DdsProcessAdminLayout = lazy(() =>
   import('./components/DdsProcessAdminLayout').then((m) => ({ default: m.DdsProcessAdminLayout })),
 )
+const DdsUserGuidePage = lazy(() => import('./pages/DdsUserGuidePage').then((m) => ({ default: m.DdsUserGuidePage })))
 const DdsAdminKpiGroupsPage = lazy(() =>
   import('./pages/DdsAdminKpiGroupsPage').then((m) => ({ default: m.DdsAdminKpiGroupsPage })),
 )
@@ -318,6 +319,7 @@ export default function App() {
             <Route path="wds" element={<WdsPage />} />
             <Route path="e-plan" element={<EPlanPage />} />
             <Route path="pdca" element={<PdcaPage />} />
+            <Route path="user-guide" element={<DdsUserGuidePage />} />
             <Route
               path="admin"
               element={
@@ -327,6 +329,8 @@ export default function App() {
               }
             >
               <Route index element={<Navigate to="kpi-groups" replace />} />
+              <Route path="guidelines" element={<Navigate to="/dds-process/user-guide" replace />} />
+              <Route path="user-guide" element={<Navigate to="/dds-process/user-guide" replace />} />
               <Route path="kpi-groups" element={<DdsAdminKpiGroupsPage />} />
               <Route path="kpis" element={<DdsAdminKpisPage />} />
               <Route path="kpi-setup" element={<DdsAdminKpiSetupPage />} />

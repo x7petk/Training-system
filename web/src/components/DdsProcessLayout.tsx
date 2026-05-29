@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Building2,
   CalendarDays,
   ClipboardCheck,
@@ -24,17 +25,19 @@ import { ShiftDdsShellProvider } from '../features/dds/ShiftDdsShellContext'
 import { Plan24ScopeBar } from '../features/plan24/Plan24ScopeBar'
 
 const adminBasePath = '/dds-process/admin'
+const userGuidePath = '/dds-process/user-guide'
 
 export function DdsProcessLayout() {
   const { isAdmin, profileReady } = useAuth()
   const location = useLocation()
   const inAdminSection = location.pathname.startsWith(adminBasePath)
+  const inUserGuide = location.pathname.startsWith(userGuidePath)
   const adminNeedsScope =
     location.pathname.includes('/admin/p2p-soft-points') ||
     location.pathname.includes('/admin/p2p-setup') ||
     location.pathname.includes('/admin/kpi-setup') ||
     location.pathname.includes('/admin/triggers')
-  const showPlan24Scope = !inAdminSection || adminNeedsScope
+  const showPlan24Scope = (!inAdminSection && !inUserGuide) || adminNeedsScope
 
   return (
     <Plan24WorkspaceProvider>
@@ -72,24 +75,26 @@ export function DdsProcessLayout() {
           { to: '/dds-process/pdca', label: 'PDCA', icon: RefreshCw, end: true },
         ]}
         accountFooter={
-          profileReady && isAdmin ? (
+          profileReady ? (
             <div className="flex flex-col gap-0.5">
-              <NavLink
-                to={adminBasePath}
-                end={false}
-                className={({ isActive }) =>
-                  [
-                    'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
-                    isActive ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
-                  ].join(' ')
-                }
-              >
-                <LayoutDashboard className="size-4 shrink-0 opacity-80" aria-hidden />
-                Admin
-              </NavLink>
-              {inAdminSection ? (
+              {isAdmin ? (
                 <>
                   <NavLink
+                    to={adminBasePath}
+                    end={false}
+                    className={({ isActive }) =>
+                      [
+                        'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
+                        isActive ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                      ].join(' ')
+                    }
+                  >
+                    <LayoutDashboard className="size-4 shrink-0 opacity-80" aria-hidden />
+                    Admin
+                  </NavLink>
+                  {inAdminSection ? (
+                    <>
+                      <NavLink
                     to="/dds-process/admin/kpi-groups"
                     end
                     className={({ isActive }) =>
@@ -233,8 +238,23 @@ export function DdsProcessLayout() {
                   >
                     WDS KPIs
                   </NavLink>
+                    </>
+                  ) : null}
                 </>
               ) : null}
+              <NavLink
+                to={userGuidePath}
+                end
+                className={({ isActive }) =>
+                  [
+                    'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
+                    isActive ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                  ].join(' ')
+                }
+              >
+                <BookOpen className="size-4 shrink-0 opacity-80" aria-hidden />
+                User Guide
+              </NavLink>
             </div>
           ) : null
         }
