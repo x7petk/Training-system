@@ -6,7 +6,7 @@ export function SectionAccessRoute({
   section,
   children,
 }: {
-  section: 'ldr' | 'rtt' | 'agents' | 'dds' | 'problem-solve',
+  section: 'ldr' | 'rtt' | 'agents' | 'dds' | 'problem-solve' | 'bms-brain',
   children?: ReactNode
 }) {
   const {
@@ -16,6 +16,8 @@ export function SectionAccessRoute({
     canAccessAgents,
     canAccessDdsProcess,
     canAccessProblemSolve,
+    isAdmin,
+    canAccessBmsBrain,
   } = useAuth()
 
   if (!profileReady) {
@@ -36,7 +38,9 @@ export function SectionAccessRoute({
           ? canAccessAgents
           : section === 'dds'
             ? canAccessDdsProcess
-            : canAccessProblemSolve
+            : section === 'bms-brain'
+              ? canAccessBmsBrain || isAdmin
+              : canAccessProblemSolve
   if (!ok) {
     return <Navigate to="/" replace />
   }

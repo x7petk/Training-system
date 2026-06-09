@@ -52,6 +52,28 @@ const DdsProcessAdminLayout = lazy(() =>
   import('./components/DdsProcessAdminLayout').then((m) => ({ default: m.DdsProcessAdminLayout })),
 )
 const DdsUserGuidePage = lazy(() => import('./pages/DdsUserGuidePage').then((m) => ({ default: m.DdsUserGuidePage })))
+const BmsBrainMatrixPage = lazy(() =>
+  import('./pages/BmsBrainMatrixPage').then((m) => ({ default: m.BmsBrainMatrixPage })),
+)
+const BmsBrainProcessesPage = lazy(() =>
+  import('./pages/BmsBrainProcessesPage').then((m) => ({ default: m.BmsBrainProcessesPage })),
+)
+const BmsBrainProcessEditorPage = lazy(() =>
+  import('./pages/BmsBrainProcessEditorPage').then((m) => ({ default: m.BmsBrainProcessEditorPage })),
+)
+const BmsBrainAiPage = lazy(() => import('./pages/BmsBrainAiPage').then((m) => ({ default: m.BmsBrainAiPage })))
+const BmsBrainAdminLayout = lazy(() =>
+  import('./components/BmsBrainAdminLayout').then((m) => ({ default: m.BmsBrainAdminLayout })),
+)
+const BmsBrainAdminRolesPage = lazy(() =>
+  import('./pages/BmsBrainAdminRolesPage').then((m) => ({ default: m.BmsBrainAdminRolesPage })),
+)
+const BmsBrainAdminForumsPage = lazy(() =>
+  import('./pages/BmsBrainAdminForumsPage').then((m) => ({ default: m.BmsBrainAdminForumsPage })),
+)
+const BmsBrainAdminSystemsPage = lazy(() =>
+  import('./pages/BmsBrainAdminSystemsPage').then((m) => ({ default: m.BmsBrainAdminSystemsPage })),
+)
 const DdsAdminKpiGroupsPage = lazy(() =>
   import('./pages/DdsAdminKpiGroupsPage').then((m) => ({ default: m.DdsAdminKpiGroupsPage })),
 )
@@ -137,6 +159,8 @@ import { DdsProcessLayout } from './components/DdsProcessLayout'
 import { ProblemSolveAdminRoute } from './components/ProblemSolveAdminRoute'
 import { ProblemSolveLayout } from './components/ProblemSolveLayout'
 import { ProblemSolvePlaceholderPage } from './pages/ProblemSolvePlaceholderPage'
+import { BmsBrainLayout } from './components/BmsBrainLayout'
+import { BmsBrainAdminRoute } from './components/BmsBrainAdminRoute'
 
 export default function App() {
   return (
@@ -372,6 +396,34 @@ export default function App() {
                 </ProblemSolveAdminRoute>
               }
             />
+          </Route>
+
+          <Route
+            path="bms-brain"
+            element={
+              <SectionAccessRoute section="bms-brain">
+                <BmsBrainLayout />
+              </SectionAccessRoute>
+            }
+          >
+            <Route index element={<Navigate to="matrix" replace />} />
+            <Route path="matrix" element={<BmsBrainMatrixPage />} />
+            <Route path="processes" element={<BmsBrainProcessesPage />} />
+            <Route path="processes/:id" element={<BmsBrainProcessEditorPage />} />
+            <Route path="ai" element={<BmsBrainAiPage />} />
+            <Route
+              path="admin"
+              element={
+                <BmsBrainAdminRoute>
+                  <BmsBrainAdminLayout />
+                </BmsBrainAdminRoute>
+              }
+            >
+              <Route index element={<Navigate to="roles" replace />} />
+              <Route path="roles" element={<BmsBrainAdminRolesPage />} />
+              <Route path="forums" element={<BmsBrainAdminForumsPage />} />
+              <Route path="systems" element={<BmsBrainAdminSystemsPage />} />
+            </Route>
           </Route>
 
           <Route

@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Bot, Database, Grid3X3, KeyRound, Layers, Lightbulb, LogOut, Network, UsersRound } from 'lucide-react'
+import { Bot, Brain, Database, Grid3X3, KeyRound, Layers, Lightbulb, LogOut, Network, UsersRound } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 const cardClass =
@@ -17,6 +17,7 @@ export function AppHubPage() {
     canAccessAgents,
     canAccessDdsProcess,
     canAccessProblemSolve,
+    canAccessBmsBrain,
     profileLoadError,
   } = useAuth()
   const navigate = useNavigate()
@@ -28,6 +29,7 @@ export function AppHubPage() {
     canAccessAgents ||
     canAccessDdsProcess ||
     canAccessProblemSolve ||
+    canAccessBmsBrain ||
     isAdmin
 
   return (
@@ -128,6 +130,16 @@ export function AppHubPage() {
               </span>
               <span className="font-display text-xl font-semibold tracking-tight sm:text-2xl">Problem Solve</span>
               <span className="text-xs text-muted">Problem solve</span>
+            </Link>
+          ) : null}
+
+          {canAccessBmsBrain || isAdmin ? (
+            <Link to="/bms-brain" className={cardClass}>
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-indigo-500/15 text-indigo-800 transition-transform group-hover:scale-105 dark:text-indigo-300">
+                <Brain className="size-8" aria-hidden />
+              </span>
+              <span className="font-display text-xl font-semibold tracking-tight sm:text-2xl">BMS Brain</span>
+              <span className="text-xs text-muted">Systems, roles & process matrix</span>
             </Link>
           ) : null}
 

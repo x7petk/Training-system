@@ -4,6 +4,8 @@ import type { Session, User } from '@supabase/supabase-js'
 /** Login account role (profiles.role). Job roles on people are separate. */
 export type AppProfileRole = 'super_admin' | 'admin' | 'assessor' | 'operator'
 
+export type BmsBrainRoleLevel = 'viewer' | 'editor' | 'admin'
+
 export type AuthContextValue = {
   user: User | null
   session: Session | null
@@ -20,6 +22,8 @@ export type AuthContextValue = {
   canAccessAgents: boolean
   canAccessDdsProcess: boolean
   canAccessProblemSolve: boolean
+  canAccessBmsBrain: boolean
+  bmsBrainRole: BmsBrainRoleLevel
   /** False while logged in but `profiles.role` has not been loaded yet (avoids wrong redirects on refresh). */
   profileReady: boolean
   adminLoading: boolean

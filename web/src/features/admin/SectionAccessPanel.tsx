@@ -13,10 +13,11 @@ type AccessRow = {
   can_access_agents: boolean
   can_access_dds_process: boolean
   can_access_problem_solve: boolean
+  can_access_bms_brain: boolean
 }
 
 const SELECT_FULL =
-  'id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_dds_process, can_access_problem_solve' as const
+  'id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_dds_process, can_access_problem_solve, can_access_bms_brain' as const
 
 const SELECT_NO_PS =
   'id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_dds_process' as const
@@ -42,6 +43,7 @@ export function SectionAccessPanel() {
   const [agentsColumnAvailable, setAgentsColumnAvailable] = useState(true)
   const [ddsColumnAvailable, setDdsColumnAvailable] = useState(true)
   const [problemSolveColumnAvailable, setProblemSolveColumnAvailable] = useState(true)
+  const [bmsBrainColumnAvailable, setBmsBrainColumnAvailable] = useState(true)
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -56,12 +58,34 @@ export function SectionAccessPanel() {
       setAgentsColumnAvailable(true)
       setDdsColumnAvailable(true)
       setProblemSolveColumnAvailable(true)
+      setBmsBrainColumnAvailable(true)
       setRows(res.data as AccessRow[])
       setError(null)
       return null
     }
 
     const primaryErr = res.error
+    if (primaryErr && isMissingColumnError(primaryErr.message, primaryErr.code, 'can_access_bms_brain')) {
+      const noBms = await supabase
+        .from('profiles')
+        .select(
+          'id, display_name, role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_dds_process, can_access_problem_solve',
+        )
+        .order('display_name', { ascending: true })
+      if (!noBms.error && noBms.data) {
+        setBmsBrainColumnAvailable(false)
+        setRows(
+          (noBms.data as Omit<AccessRow, 'can_access_bms_brain'>[]).map((row) => ({
+            ...row,
+            can_access_bms_brain: row.role === 'admin' || row.role === 'super_admin',
+          })),
+        )
+        setError(null)
+        return null
+      }
+      res = noBms
+    }
+
     if (
       primaryErr &&
       isMissingColumnError(primaryErr.message, primaryErr.code, 'can_access_problem_solve')
@@ -176,7 +200,8 @@ export function SectionAccessPanel() {
       | 'can_access_rtt_systems'
       | 'can_access_agents'
       | 'can_access_dds_process'
-      | 'can_access_problem_solve',
+      | 'can_access_problem_solve'
+      | 'can_access_bms_brain',
     next: boolean,
   ) {
     setError(null)
@@ -229,6 +254,7 @@ export function SectionAccessPanel() {
                 {problemSolveColumnAvailable ? (
                   <th className="px-4 py-3 text-center">Problem Solve</th>
                 ) : null}
+                {bmsBrainColumnAvailable ? <th className="px-4 py-3 text-center">BMS Brain</th> : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -252,6 +278,9 @@ export function SectionAccessPanel() {
                         : []),
                       ...(problemSolveColumnAvailable
                         ? ([['can_access_problem_solve', r.can_access_problem_solve]] as const)
+                        : []),
+                      ...(bmsBrainColumnAvailable
+                        ? ([['can_access_bms_brain', r.can_access_bms_brain]] as const)
                         : []),
                     ] as const
                   ).map(([field, checked]) => (

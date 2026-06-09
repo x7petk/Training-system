@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { PostgrestError, Session, User } from '@supabase/supabase-js'
-import { AuthContext, type AppProfileRole } from './auth-context'
+import { AuthContext, type AppProfileRole, type BmsBrainRoleLevel } from './auth-context'
 import { supabase, supabaseConfigured } from '../lib/supabase'
 
 const PROFILE_SECTION_SELECT =
-  'role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_dds_process, can_access_problem_solve' as const
+  'role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_dds_process, can_access_problem_solve, can_access_bms_brain, bms_brain_role' as const
 
 type ProfileSectionRow = {
   role: string | null
@@ -14,6 +14,13 @@ type ProfileSectionRow = {
   can_access_agents: boolean | null
   can_access_dds_process: boolean | null
   can_access_problem_solve: boolean | null
+  can_access_bms_brain: boolean | null
+  bms_brain_role: string | null
+}
+
+function normalizeBmsBrainRole(raw: string | null | undefined): BmsBrainRoleLevel {
+  if (raw === 'editor' || raw === 'admin') return raw
+  return 'viewer'
 }
 
 function normalizeProfileRole(raw: string | undefined | null): AppProfileRole {
@@ -71,16 +78,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [canAccessAgents, setCanAccessAgents] = useState(false)
   const [canAccessDdsProcess, setCanAccessDdsProcess] = useState(false)
   const [canAccessProblemSolve, setCanAccessProblemSolve] = useState(false)
+  const [canAccessBmsBrain, setCanAccessBmsBrain] = useState(false)
+  const [bmsBrainRole, setBmsBrainRole] = useState<BmsBrainRoleLevel>('viewer')
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null)
 
   const applyProfileRow = useCallback((data: ProfileSectionRow) => {
-    setProfileRole(normalizeProfileRole(data.role))
+    const role = normalizeProfileRole(data.role)
+    const isAdm = role === 'admin' || role === 'super_admin'
+    setProfileRole(role)
     setCanAccessSkillMatrix(Boolean(data.can_access_skill_matrix))
     setCanAccessLdrTools(Boolean(data.can_access_ldr_tools))
     setCanAccessRttSystems(Boolean(data.can_access_rtt_systems))
     setCanAccessAgents(Boolean(data.can_access_agents))
     setCanAccessDdsProcess(Boolean(data.can_access_dds_process))
     setCanAccessProblemSolve(Boolean(data.can_access_problem_solve))
+    setCanAccessBmsBrain(Boolean(data.can_access_bms_brain) || isAdm)
+    setBmsBrainRole(isAdm ? normalizeBmsBrainRole(data.bms_brain_role ?? 'admin') : normalizeBmsBrainRole(data.bms_brain_role))
     setProfileLoadError(null)
   }, [])
 
@@ -92,6 +105,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCanAccessAgents(false)
     setCanAccessDdsProcess(false)
     setCanAccessProblemSolve(false)
+    setCanAccessBmsBrain(false)
+    setBmsBrainRole('viewer')
     setProfileLoadError(errorMessage)
   }, [])
 
@@ -109,6 +124,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!error && data) {
           applyProfileRow(data as ProfileSectionRow)
           return
+        }
+
+        if (error && isMissingProfilesColumn(error, 'can_access_bms_brain')) {
+          const { data: rowNoBms, error: errNoBms } = await supabase
+            .from('profiles')
+            .select(
+              'role, can_access_skill_matrix, can_access_ldr_tools, can_access_rtt_systems, can_access_agents, can_access_dds_process, can_access_problem_solve',
+            )
+            .eq('id', userId)
+            .maybeSingle()
+          if (cancelled()) return
+          if (!errNoBms && rowNoBms) {
+            applyProfileRow({
+              ...(rowNoBms as Omit<ProfileSectionRow, 'can_access_bms_brain' | 'bms_brain_role'>),
+              can_access_bms_brain: false,
+              bms_brain_role: 'viewer',
+            })
+            return
+          }
         }
 
         if (error && isMissingProfilesColumn(error, 'can_access_problem_solve')) {
@@ -250,6 +284,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setCanAccessAgents(inferred.agents)
           setCanAccessDdsProcess(inferred.ddsProcess)
           setCanAccessProblemSolve(inferred.problemSolve)
+          setCanAccessBmsBrain(role === 'admin' || role === 'super_admin')
+          setBmsBrainRole(role === 'admin' || role === 'super_admin' ? 'admin' : 'viewer')
           setProfileLoadError(null)
           return
         }
@@ -289,6 +325,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCanAccessAgents(false)
         setCanAccessDdsProcess(false)
         setCanAccessProblemSolve(false)
+        setCanAccessBmsBrain(false)
+        setBmsBrainRole('viewer')
         setProfileLoadError(null)
       }
     })
@@ -306,6 +344,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCanAccessAgents(false)
         setCanAccessDdsProcess(false)
         setCanAccessProblemSolve(false)
+        setCanAccessBmsBrain(false)
+        setBmsBrainRole('viewer')
         setProfileLoadError(null)
       }
     })
@@ -389,6 +429,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canAccessAgents,
       canAccessDdsProcess,
       canAccessProblemSolve,
+      canAccessBmsBrain,
+      bmsBrainRole,
       profileReady,
       adminLoading,
       profileLoadError,
@@ -412,6 +454,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canAccessAgents,
       canAccessDdsProcess,
       canAccessProblemSolve,
+      canAccessBmsBrain,
+      bmsBrainRole,
       profileReady,
       adminLoading,
       profileLoadError,
