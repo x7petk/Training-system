@@ -11,7 +11,7 @@ import {
   type Ref,
 } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, MessageSquare } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, MessageSquare, Sparkles } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { ddsP2pQuestionKey } from './ddsP2pQuestionKey'
 import { type DdsP2pResponseKind } from './ddsP2pResponseKind'
@@ -85,17 +85,18 @@ function placeDetailPanel(anchor: HTMLElement, maxW: number): { top: number; lef
   return { top: rect.bottom + 6, left, maxW }
 }
 
-const P2P_SUMMARY_TABLE_CLASS = 'w-max min-w-full border-collapse text-left text-[10px] leading-tight'
+const P2P_SUMMARY_TABLE_CLASS = 'w-max min-w-full border-separate border-spacing-0 text-left text-[10px] leading-tight'
 const P2P_SUMMARY_QUESTION_TH_CLASS =
-  'sticky left-0 z-[2] min-w-[9rem] max-w-[12rem] border-r border-border/80 bg-surface-raised/95 px-1.5 py-0.5 font-semibold text-muted backdrop-blur-sm'
+  'sticky left-0 top-0 z-[4] min-w-[9rem] max-w-[12rem] border-b border-r border-border/80 bg-surface-raised/95 px-1.5 py-0.5 font-semibold text-muted shadow-[0_1px_0_rgba(0,0,0,0.04)] backdrop-blur-sm'
 const P2P_SUMMARY_ROW_LABEL_CLASS =
-  'sticky left-0 z-[1] max-w-[12rem] border-r border-border/80 bg-surface px-1.5 py-0.5 text-left align-middle font-semibold leading-tight backdrop-blur-sm'
+  'sticky left-0 z-[1] max-w-[12rem] border-b border-r border-border/70 bg-surface px-1.5 py-0.5 text-left align-middle font-semibold leading-tight backdrop-blur-sm'
 const P2P_SUMMARY_QUESTION_ROW_CLASS =
-  'sticky left-0 z-[1] max-w-[12rem] border-r border-border/80 bg-surface px-1.5 py-px text-left align-middle font-normal leading-tight backdrop-blur-sm'
-const P2P_SUMMARY_ROLE_TH_CLASS = 'min-w-[3.75rem] whitespace-nowrap px-1 py-0.5 text-center font-semibold text-[10px] text-fg'
-const P2P_SUMMARY_CELL_CLASS = 'border-l border-border/40 px-0.5 py-px text-center align-middle text-[10px]'
+  'sticky left-0 z-[1] max-w-[12rem] border-b border-r border-border/70 bg-surface px-1.5 py-px text-left align-middle font-normal leading-tight backdrop-blur-sm'
+const P2P_SUMMARY_ROLE_TH_CLASS =
+  'sticky top-0 z-[3] min-w-[3.5rem] max-w-[4.75rem] border-b border-l border-border/50 bg-surface-raised/95 px-1 py-0.5 text-center font-semibold text-[10px] text-fg shadow-[0_1px_0_rgba(0,0,0,0.04)] backdrop-blur-sm'
+const P2P_SUMMARY_CELL_CLASS = 'border-b border-l border-border/35 px-0.5 py-px text-center align-middle text-[10px]'
 const P2P_SUMMARY_VALUE_WRAP_CLASS =
-  'inline-flex min-h-[1.125rem] min-w-[3rem] items-center justify-center gap-0.5 rounded-sm px-0.5 py-0'
+  'group inline-flex min-h-[1.125rem] min-w-[2.75rem] items-center justify-center gap-0.5 rounded-sm px-0.5 py-0'
 
 export type DdsP2pSummaryBodyHandle = {
   openPrefs: () => void
@@ -152,6 +153,30 @@ function subTaskDescriptionLines(subTasks: unknown, maxLines = 6): string[] {
   return out
 }
 
+type ShiftNarrative = {
+  summary: string
+  roles: RoleShiftNarrative[]
+  attentionCount: number
+  commentCount: number
+}
+
+type RoleShiftNarrative = {
+  roleId: string
+  roleName: string
+  tone: 'good' | 'watch' | 'urgent'
+  submitted: boolean
+  headline: string
+  gaps: string[]
+  comments: string[]
+  action: string
+}
+
+function compactText(text: string, max = 110): string {
+  const t = text.replace(/\s+/g, ' ').trim()
+  if (t.length <= max) return t
+  return `${t.slice(0, max - 1).trim()}…`
+}
+
 export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
   {
     cellId,
@@ -204,6 +229,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
   const [viewPrefs, setViewPrefs] = useState<DdsP2pSummaryViewPrefs>(() => buildDefaultP2pSummaryPrefs([], []))
   const [prefsOpen, setPrefsOpen] = useState(false)
   const [prefsDraft, setPrefsDraft] = useState<DdsP2pSummaryViewPrefs>(() => buildDefaultP2pSummaryPrefs([], []))
+  const [narrativeCollapsed, setNarrativeCollapsed] = useState(false)
 
   const activeRoles = useMemo(() => sortGroups(roles.filter((r) => r.is_active)), [roles])
 
@@ -777,7 +803,127 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
   useImperativeHandle(ref, () => ({ openPrefs }), [openPrefs])
 
   const roleColSubmittedClass =
-    'shadow-[inset_0_0_0_2px_rgba(5,150,105,0.55)] bg-emerald-500/[0.07] dark:shadow-[inset_0_0_0_2px_rgba(52,211,153,0.45)] dark:bg-emerald-500/[0.12]'
+    'bg-emerald-500/[0.06] shadow-[inset_0_0_0_1px_rgba(5,150,105,0.28)] dark:bg-emerald-500/[0.11] dark:shadow-[inset_0_0_0_1px_rgba(52,211,153,0.32)]'
+
+  const visibleSubmittedCount = roleCols.filter((r) => submittedRoleIds.has(r.id)).length
+
+  const shiftNarrative = useMemo<ShiftNarrative>(() => {
+    const roleNarratives: RoleShiftNarrative[] = roleCols.map((r) => {
+      const roleName = r.name.trim()
+      const submitted = submittedRoleIds.has(r.id)
+      const gaps: string[] = []
+      const comments: string[] = []
+      const comp = planCompletionByRole.get(roleName)
+      const issueRow = planIssueCountByRole.get(roleName)
+      const deviations = (issueRow?.deviations ?? 0) + (planExtraDeviationsByRole.get(roleName) ?? 0)
+      const defects = (issueRow?.defects ?? 0) + (planExtraDefectsByRole.get(roleName) ?? 0)
+      const qualityFails = (issueRow?.qualityFails ?? 0) + (planExtraQualityFailsByRole.get(roleName) ?? 0)
+      const issueTotal = deviations + defects + qualityFails
+
+      if (!submitted) gaps.push('P2P not submitted')
+      if (comp) {
+        const checks = [
+          { label: 'CL', pct: comp.cl },
+          { label: 'CIL', pct: comp.cil },
+          { label: 'Quality', pct: comp.quality },
+          { label: 'Checks', pct: comp.check },
+        ]
+        checks
+          .filter((c) => c.pct < 100)
+          .sort((a, b) => a.pct - b.pct)
+          .slice(0, 3)
+          .forEach((c) => gaps.push(`${c.label} ${c.pct}%`))
+      }
+      if (issueTotal > 0) {
+        const parts = [
+          deviations > 0 ? `${deviations} dev` : '',
+          defects > 0 ? `${defects} defect` : '',
+          qualityFails > 0 ? `${qualityFails} fail` : '',
+        ].filter(Boolean)
+        gaps.push(parts.join(' · '))
+      }
+
+      for (const q of questionRows) {
+        if (!q.roleIds.has(r.id)) continue
+        const snap = cells[r.id]?.[q.key]
+        const comment = snap?.comment?.trim()
+        const needsAttention = q.responseKind === 'yes_no' ? snap?.yesNo === true : Boolean(comment)
+        if (!needsAttention && !comment) continue
+        const label = `${q.groupName}: ${compactText(q.prompt, 48)}`
+        comments.push(comment ? `${label} - ${compactText(comment, 92)}` : label)
+      }
+      const sheet = sheetCommentByRoleId[r.id]?.trim()
+      if (sheet) comments.push(`Overall - ${compactText(sheet, 100)}`)
+
+      const tone: RoleShiftNarrative['tone'] =
+        !submitted || issueTotal > 0 || (comp && Math.min(comp.cl, comp.cil, comp.quality, comp.check) < 75)
+          ? 'urgent'
+          : gaps.length > 0 || comments.length > 0
+            ? 'watch'
+            : 'good'
+
+      const headline =
+        tone === 'good'
+          ? 'No visible gap'
+          : !submitted
+            ? 'P2P required'
+            : issueTotal > 0
+              ? 'Raised items need plan'
+              : comments.length > 0
+                ? 'Comments need review'
+                : 'Completion gap'
+
+      const action =
+        !submitted
+          ? 'Discuss with operator: complete today, move with reason, or mark not required.'
+          : issueTotal > 0
+            ? 'Confirm containment, owner, fix plan today, and escalation if blocked.'
+            : gaps.some((g) => g.includes('%'))
+              ? 'Ask if remaining checks are required today; agree completion time or move decision.'
+              : comments.length > 0
+                ? 'Review comment, agree next step, and create DDS/e-plan action if not fixed today.'
+                : 'Confirm standard held and recognise good shift follow-up.'
+
+      return {
+        roleId: r.id,
+        roleName,
+        tone,
+        submitted,
+        headline,
+        gaps: gaps.slice(0, 4),
+        comments: comments.slice(0, 2),
+        action,
+      }
+    })
+
+    const attentionCount = roleNarratives.filter((r) => r.tone !== 'good').length
+    const commentCount = roleNarratives.reduce((sum, r) => sum + r.comments.length, 0)
+    const summary =
+      attentionCount === 0
+        ? 'Shift looks stable across visible roles. No immediate team-lead intervention is highlighted.'
+        : `${attentionCount}/${roleNarratives.length} visible role${roleNarratives.length === 1 ? '' : 's'} need team-lead follow-up. Start with urgent cards, then close comment-driven actions.`
+
+    return {
+      summary,
+      roles: roleNarratives.sort((a, b) => {
+        const weight = { urgent: 0, watch: 1, good: 2 }
+        return weight[a.tone] - weight[b.tone] || a.roleName.localeCompare(b.roleName)
+      }),
+      attentionCount,
+      commentCount,
+    }
+  }, [
+    cells,
+    planCompletionByRole,
+    planExtraDefectsByRole,
+    planExtraDeviationsByRole,
+    planExtraQualityFailsByRole,
+    planIssueCountByRole,
+    questionRows,
+    roleCols,
+    sheetCommentByRoleId,
+    submittedRoleIds,
+  ])
 
   const prefsHint =
     prefsHelpStandalone ? (
@@ -820,12 +966,15 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
         </div>
       ) : (
         <>
-          <div className="mt-1 min-h-0 flex-1 overflow-auto rounded-md border border-border/70">
+          <div className="mt-1 min-h-0 flex-1 overflow-auto rounded-lg border border-border/70 bg-surface shadow-inner">
             <table className={P2P_SUMMARY_TABLE_CLASS}>
               <thead>
-                <tr className="border-b border-border bg-surface-raised/50">
+                <tr>
                   <th className={P2P_SUMMARY_QUESTION_TH_CLASS} scope="col">
-                    Question
+                    <span className="block text-[9px] uppercase tracking-wide">P2P matrix</span>
+                    <span className="block text-[9px] font-medium normal-case text-muted/80">
+                      {visibleSubmittedCount}/{roleCols.length} submitted · {questionRows.length} Q
+                    </span>
                   </th>
                   {roleCols.map((r) => {
                     const submitted = submittedRoleIds.has(r.id)
@@ -836,7 +985,13 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                         scope="col"
                         title={submitted ? 'P2P submitted for this role' : 'P2P not submitted yet'}
                       >
-                        {r.name}
+                        <span className="mx-auto flex min-w-0 items-center justify-center gap-1">
+                          <span
+                            className={`size-1.5 shrink-0 rounded-full ${submitted ? 'bg-emerald-500' : 'bg-amber-400'}`}
+                            aria-hidden
+                          />
+                          <span className="min-w-0 truncate">{r.name}</span>
+                        </span>
                       </th>
                     )
                   })}
@@ -854,10 +1009,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                     { label: 'Checks completion', kind: 'check' as const },
                   ] as const
                 ).map((r, ix) => (
-                  <tr
-                    key={`${r.label}-${ix}`}
-                    className="border-b border-border/50 odd:bg-surface/40 bg-surface-raised/20"
-                  >
+                  <tr key={`${r.label}-${ix}`} className="odd:bg-surface/40 bg-surface-raised/20">
                     <th scope="row" className={P2P_SUMMARY_ROW_LABEL_CLASS}>
                       {r.label}
                     </th>
@@ -897,7 +1049,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                                 }}
                               >
                                 <span className={`inline-block h-1.5 w-1.5 rounded ${tone.bar}`} aria-hidden />
-                                <span className="tabular-nums font-bold text-black dark:text-black">{pct}%</span>
+                                <span className="tabular-nums font-bold text-fg">{pct}%</span>
                               </button>
                             )}
                           </td>
@@ -943,7 +1095,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                   </tr>
                 ))}
                 {questionRows.map((q) => (
-                  <tr key={q.key} className="border-b border-border/50 odd:bg-surface/40">
+                  <tr key={q.key} className="odd:bg-surface/40">
                     <th
                       scope="row"
                       className={P2P_SUMMARY_QUESTION_ROW_CLASS}
@@ -963,7 +1115,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                             key={r.id}
                             className={`${P2P_SUMMARY_CELL_CLASS} text-muted ${colClass}`}
                           >
-                            N/A
+                            <span title="Not assigned to this role">—</span>
                           </td>
                         )
                       }
@@ -986,8 +1138,11 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                             <span className="tabular-nums">{main}</span>
                             <button
                               type="button"
-                              className="inline-flex rounded p-px text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
-                              aria-label="Show question comment"
+                              className={`inline-flex rounded p-px text-muted hover:bg-black/[0.06] hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/[0.06] ${
+                                hasCmt ? '' : 'opacity-25 group-hover:opacity-70 focus-visible:opacity-100'
+                              }`}
+                              aria-label={hasCmt ? 'Show question comment' : 'No question comment'}
+                              title={hasCmt ? 'Show question comment' : 'No comment'}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 const pos = placeDetailPanel(e.currentTarget, 280)
@@ -1005,7 +1160,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                     })}
                   </tr>
                 ))}
-                <tr className="border-b border-border bg-surface-raised/25">
+                <tr className="bg-surface-raised/25">
                   <th scope="row" className={P2P_SUMMARY_ROW_LABEL_CLASS}>
                     <span className="text-[9px] font-semibold uppercase tracking-wide text-muted">P2P </span>
                     Overall comment
@@ -1025,8 +1180,11 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                           )}
                           <button
                             type="button"
-                            className="inline-flex rounded p-px text-muted hover:bg-black/[0.06] hover:text-fg dark:hover:bg-white/[0.06]"
-                            aria-label="Show overall comment"
+                            className={`inline-flex rounded p-px text-muted hover:bg-black/[0.06] hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/[0.06] ${
+                              hasSheet ? '' : 'opacity-25 group-hover:opacity-70 focus-visible:opacity-100'
+                            }`}
+                            aria-label={hasSheet ? 'Show overall comment' : 'No overall comment'}
+                            title={hasSheet ? 'Show overall comment' : 'No comment'}
                             onClick={(e) => {
                               e.stopPropagation()
                               const pos = placeDetailPanel(e.currentTarget, 280)
@@ -1046,6 +1204,109 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
               </tbody>
             </table>
           </div>
+
+          <section className="mt-1 shrink-0 overflow-hidden rounded-lg border border-violet-500/25 bg-violet-500/[0.06] text-[10px] leading-snug text-fg shadow-sm dark:bg-violet-500/[0.12]">
+            <div className="flex items-center gap-1.5 border-b border-violet-500/20 px-2 py-1">
+              <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-md bg-violet-600/10 text-violet-700 dark:text-violet-200">
+                <Sparkles className="size-3.5" aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <h2 className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-200">
+                    AI shift narrative by role
+                  </h2>
+                  <span className="rounded-full bg-surface/80 px-1.5 py-px text-[9px] font-semibold text-muted">
+                    {shiftNarrative.attentionCount} need follow-up · {shiftNarrative.commentCount} comments
+                  </span>
+                  {planStatsLoading ? (
+                    <span className="inline-flex items-center gap-1 text-[9px] text-muted">
+                      <Loader2 className="size-3 animate-spin" aria-hidden /> refreshing
+                    </span>
+                  ) : null}
+                </div>
+                <p className="truncate text-[10px] font-medium" title={shiftNarrative.summary}>
+                  {shiftNarrative.summary}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-violet-500/20 bg-surface/70 px-1.5 py-0.5 text-[9px] font-semibold text-muted hover:text-fg"
+                onClick={() => setNarrativeCollapsed((v) => !v)}
+                aria-expanded={!narrativeCollapsed}
+              >
+                {narrativeCollapsed ? (
+                  <>
+                    <ChevronDown className="size-3" aria-hidden /> Show
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp className="size-3" aria-hidden /> Hide
+                  </>
+                )}
+              </button>
+            </div>
+
+            {!narrativeCollapsed ? (
+              <div className="max-h-40 overflow-auto">
+                <table className="min-w-full border-separate border-spacing-0 text-left text-[10px]">
+                  <thead className="sticky top-0 z-[1] bg-surface-raised/95 text-[8px] uppercase tracking-wide text-muted backdrop-blur-sm">
+                    <tr>
+                      <th className="border-b border-violet-500/20 px-2 py-1 font-bold">Priority</th>
+                      <th className="border-b border-violet-500/20 px-2 py-1 font-bold">Role</th>
+                      <th className="border-b border-violet-500/20 px-2 py-1 font-bold">Gaps</th>
+                      <th className="border-b border-violet-500/20 px-2 py-1 font-bold">Comments</th>
+                      <th className="border-b border-violet-500/20 px-2 py-1 font-bold">Next action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shiftNarrative.roles.map((role) => {
+                      const rowClass =
+                        role.tone === 'urgent'
+                          ? 'bg-rose-500/[0.08]'
+                          : role.tone === 'watch'
+                            ? 'bg-amber-500/[0.08]'
+                            : 'bg-emerald-500/[0.06]'
+                      const badgeClass =
+                        role.tone === 'urgent'
+                          ? 'bg-rose-600 text-white'
+                          : role.tone === 'watch'
+                            ? 'bg-amber-500 text-black'
+                            : 'bg-emerald-600 text-white'
+                      const gaps = role.gaps.length > 0 ? role.gaps.slice(0, 3).join(' · ') : 'No visible gaps'
+                      const comments = role.comments.length > 0 ? role.comments.slice(0, 2).join(' · ') : 'None'
+                      return (
+                        <tr key={role.roleId} className={`${rowClass} align-top`}>
+                          <td className="border-b border-violet-500/10 px-2 py-1">
+                            <span className={`inline-flex rounded-full px-1.5 py-px text-[8px] font-bold uppercase tracking-wide ${badgeClass}`}>
+                              {role.tone === 'urgent' ? 'Act' : role.tone === 'watch' ? 'Watch' : 'OK'}
+                            </span>
+                          </td>
+                          <th className="border-b border-violet-500/10 px-2 py-1 font-semibold text-fg" scope="row">
+                            <span className="flex min-w-[5rem] items-center gap-1">
+                              <span className={`size-1.5 shrink-0 rounded-full ${role.submitted ? 'bg-emerald-500' : 'bg-amber-400'}`} title={role.submitted ? 'P2P submitted' : 'P2P not submitted'} />
+                              <span className="max-w-[8rem] truncate" title={role.roleName}>{role.roleName}</span>
+                            </span>
+                            <span className="block max-w-[8rem] truncate text-[9px] font-medium text-muted" title={role.headline}>
+                              {role.headline}
+                            </span>
+                          </th>
+                          <td className="max-w-[14rem] border-b border-violet-500/10 px-2 py-1 text-fg/90">
+                            <span className="line-clamp-2" title={gaps}>{gaps}</span>
+                          </td>
+                          <td className="max-w-[16rem] border-b border-violet-500/10 px-2 py-1 text-muted">
+                            <span className="line-clamp-2" title={comments}>{comments}</span>
+                          </td>
+                          <td className="max-w-[18rem] border-b border-violet-500/10 px-2 py-1 font-medium">
+                            <span className="line-clamp-2" title={role.action}>{role.action}</span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </section>
 
           {detailPop ? (
             <div

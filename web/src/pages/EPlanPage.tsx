@@ -14,10 +14,27 @@ import {
   saveEPlanFilters,
   updateEPlanAction,
 } from '../features/eplan/eplanService'
-import { ensureEPlanSeeded } from '../features/eplan/eplanSeed'
+import { createEPlanSampleActions, ensureEPlanSeeded } from '../features/eplan/eplanSeed'
+import { eplanLoadJson, eplanSaveJson, eplanStorageKeys } from '../features/eplan/eplanStorage'
 import type { EPlanAction, EPlanAdminStore, EPlanPageFilters, EPlanTimelineMode } from '../features/eplan/eplanTypes'
-import { eplanBuildDisplayRows, eplanMatchesFilters, eplanStatusCounts } from '../features/eplan/eplanUtils'
+import { eplanBuildDisplayRows, eplanDefaultDateRange, eplanMatchesFilters, eplanStatusCounts } from '../features/eplan/eplanUtils'
 import { localYMD } from '../lib/dueDateUtils'
+
+function visibleSampleFilters(): EPlanPageFilters {
+  const range = eplanDefaultDateRange()
+  return {
+    status: 'all',
+    ogsmPillarId: 'all',
+    forumId: 'all',
+    actionOwnerId: 'all',
+    labelId: 'all',
+    lossTypeId: 'all',
+    raisedById: 'all',
+    dateFrom: range.from,
+    dateTo: range.to,
+    showNotRequired: false,
+  }
+}
 
 export function EPlanPage() {
   const { status: scopeStatus, cellId, siteId, plantId, siteCells, plants, error: scopeError } = usePlan24Workspace()
@@ -32,6 +49,7 @@ export function EPlanPage() {
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create')
   const [editAction, setEditAction] = useState<EPlanAction | null>(null)
   const [createParentId, setCreateParentId] = useState<string | undefined>()
+  const [sampleMsg, setSampleMsg] = useState<string | null>(null)
 
   useEffect(() => {
     if (scopeStatus !== 'ready') return
@@ -79,7 +97,35 @@ export function EPlanPage() {
 
   const defaultRaisedById = admin.owners.find((o) => o.isActive)?.id ?? ''
 
+  useEffect(() => {
+    if (!ready || !siteId || !plantId || !cellId) return
+    const completedCells = eplanLoadJson<string[]>(eplanStorageKeys.samplePackCells, [])
+    if (completedCells.includes(cellId)) return
+
+    const samples = createEPlanSampleActions({
+      admin,
+      existingActions: actions,
+      siteId,
+      plantId,
+      cellId,
+    })
+    eplanSaveJson(eplanStorageKeys.samplePackCells, [...completedCells, cellId])
+    if (samples.length === 0) return
+
+    const next = [...actions, ...samples]
+    persist(next)
+    setFilters(visibleSampleFilters())
+    setTimelineMode('weeks')
+    setExpandedIds((prev) => {
+      const nextExpanded = new Set(prev)
+      samples.filter((a) => !a.parentActionId).forEach((a) => nextExpanded.add(a.id))
+      return nextExpanded
+    })
+    setSampleMsg(`Added ${samples.filter((a) => !a.parentActionId).length} new sample actions.`)
+  }, [actions, admin, cellId, persist, plantId, ready, siteId])
+
   const openCreate = useCallback((parentId?: string) => {
+    setSampleMsg(null)
     setModalMode('create')
     setEditAction(null)
     setCreateParentId(parentId)
@@ -87,6 +133,7 @@ export function EPlanPage() {
   }, [])
 
   const openEdit = useCallback((action: EPlanAction) => {
+    setSampleMsg(null)
     setModalMode('edit')
     setEditAction(action)
     setCreateParentId(undefined)
@@ -101,6 +148,30 @@ export function EPlanPage() {
     },
     [actions, persist],
   )
+
+  const addSampleActions = useCallback(() => {
+    if (!siteId || !plantId || !cellId) return
+    const samples = createEPlanSampleActions({
+      admin,
+      existingActions: actions,
+      siteId,
+      plantId,
+      cellId,
+    })
+    if (samples.length === 0) {
+      setSampleMsg('All sample actions are already loaded for this cell.')
+      return
+    }
+    persist([...actions, ...samples])
+    setFilters(visibleSampleFilters())
+    setTimelineMode('weeks')
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      samples.filter((a) => !a.parentActionId).forEach((a) => next.add(a.id))
+      return next
+    })
+    setSampleMsg(`Added ${samples.filter((a) => !a.parentActionId).length} actions with sub-actions.`)
+  }, [actions, admin, cellId, persist, plantId, siteId])
 
   const handleSave = useCallback(
     (action: EPlanAction, opts?: { thenSubFor?: EPlanAction }) => {
@@ -142,14 +213,25 @@ export function EPlanPage() {
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="font-display text-lg font-semibold tracking-tight sm:text-xl">e-Plan</h1>
-        <button
-          type="button"
-          onClick={() => openCreate()}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-fg shadow-sm hover:bg-surface-raised/80"
-        >
-          <Plus className="size-3.5" aria-hidden />
-          New action
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {sampleMsg ? <span className="text-[11px] text-muted">{sampleMsg}</span> : null}
+          <button
+            type="button"
+            onClick={addSampleActions}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-muted shadow-sm hover:bg-surface-raised/80 hover:text-fg"
+          >
+            <Plus className="size-3.5" aria-hidden />
+            Add samples
+          </button>
+          <button
+            type="button"
+            onClick={() => openCreate()}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-fg shadow-sm hover:bg-surface-raised/80"
+          >
+            <Plus className="size-3.5" aria-hidden />
+            New action
+          </button>
+        </div>
       </header>
 
       <div className="space-y-1.5">

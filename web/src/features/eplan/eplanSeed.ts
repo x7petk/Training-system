@@ -24,6 +24,34 @@ const TITLES = [
   'Improve handover between shifts',
   'Roll out visual management boards',
   'Reduce scrap from film alignment',
+  'Eliminate repeat minor stops on capper',
+  'Stabilise centreline settings after changeover',
+  'Close overdue safety observations',
+  'Improve first-pass quality on batch release',
+  'Reduce micro-stops from sensor faults',
+  'Complete defect tagging and prioritisation',
+  'Update cleaning standard for allergen change',
+  'Improve plan adherence for maintenance windows',
+  'Reduce rework from label verification misses',
+  'Deploy leader standard work confirmation',
+  'Improve spare parts kitting for PMs',
+  'Close top loss RCA actions from DDS',
+  'Refresh escalation rules for blocked checks',
+  'Validate new operator certification pathway',
+  'Reduce water usage during sanitation',
+  'Improve shift handover action quality',
+  'Standardise abnormality response triggers',
+  'Complete red-tag removal blitz',
+  'Reduce waiting time for QA release',
+  'Improve start-up yield after weekend shutdown',
+]
+
+const SAMPLE_SUB_ACTIONS = [
+  ['Confirm baseline data', 'Run root cause review', 'Agree countermeasure owner'],
+  ['Update standard', 'Coach team leaders', 'Verify on three shifts'],
+  ['Tag open defects', 'Prioritise top risk', 'Close critical items'],
+  ['Complete trial', 'Review results', 'Lock in control plan'],
+  ['Map current flow', 'Remove blocker', 'Confirm daily follow-up'],
 ]
 
 const STATUSES: EPlanActionStatus[] = [
@@ -37,6 +65,92 @@ const STATUSES: EPlanActionStatus[] = [
 
 function pick<T>(arr: T[], i: number): T {
   return arr[i % arr.length]!
+}
+
+type CreateSampleActionsArgs = {
+  admin: EPlanAdminStore
+  existingActions: EPlanAction[]
+  siteId: string
+  plantId: string
+  cellId: string
+  limit?: number
+}
+
+export function createEPlanSampleActions({
+  admin,
+  existingActions,
+  siteId,
+  plantId,
+  cellId,
+  limit = 8,
+}: CreateSampleActionsArgs): EPlanAction[] {
+  const ogsm = admin.ogsmPillars.filter((x) => x.isActive)
+  const forums = admin.forums.filter((x) => x.isActive)
+  const labels = admin.labels.filter((x) => x.isActive)
+  const lossTypes = admin.lossTypes.filter((x) => x.isActive)
+  const owners = admin.owners.filter((x) => x.isActive)
+  if (!siteId || !plantId || !cellId || !ogsm.length || !forums.length || !owners.length) return []
+
+  const existingTitles = new Set(existingActions.filter((a) => a.cellId === cellId).map((a) => a.title.trim().toLowerCase()))
+  const availableTitles = TITLES.filter((title) => !existingTitles.has(title.toLowerCase()))
+  const selectedTitles = availableTitles.slice(0, limit)
+  if (selectedTitles.length === 0) return []
+
+  const today = localYMD(new Date())
+  const now = new Date().toISOString()
+  const created: EPlanAction[] = []
+
+  selectedTitles.forEach((title, idx) => {
+    const status = pick(['NOT_STARTED', 'ON_TRACK', 'NEED_HELP', 'OFF_TRACK'] as EPlanActionStatus[], idx)
+    const start = eplanAddDaysYmd(today, -5 + idx * 3)
+    const end = eplanAddDaysYmd(start, 21 + (idx % 5) * 7)
+    const parent: EPlanAction = {
+      id: crypto.randomUUID(),
+      title,
+      description: 'Sample e-Plan action added for compact planning and follow-up.',
+      siteId,
+      plantId,
+      cellId,
+      startDate: start,
+      endDate: end,
+      ogsmPillarId: pick(ogsm, idx).id,
+      forumId: pick(forums, idx + 1).id,
+      status,
+      actionOwnerId: pick(owners, idx).id,
+      labelId: labels.length ? pick(labels, idx).id : undefined,
+      lossTypeId: lossTypes.length ? pick(lossTypes, idx + 2).id : undefined,
+      raisedById: pick(owners, idx + 2).id,
+      createdAt: now,
+      updatedAt: now,
+      progress: status === 'ON_TRACK' ? 40 : status === 'NEED_HELP' ? 25 : undefined,
+    }
+    created.push(parent)
+
+    const subActions = pick(SAMPLE_SUB_ACTIONS, idx)
+    subActions.forEach((subTitle, subIdx) => {
+      created.push({
+        id: crypto.randomUUID(),
+        title: `${title} — ${subTitle}`,
+        siteId,
+        plantId,
+        cellId,
+        startDate: eplanAddDaysYmd(start, subIdx * 5),
+        endDate: eplanAddDaysYmd(start, 7 + subIdx * 6),
+        ogsmPillarId: parent.ogsmPillarId,
+        forumId: parent.forumId,
+        status: subIdx === 0 ? 'COMPLETED' : subIdx === 1 ? 'ON_TRACK' : 'NOT_STARTED',
+        actionOwnerId: pick(owners, idx + subIdx + 1).id,
+        labelId: parent.labelId,
+        lossTypeId: parent.lossTypeId,
+        raisedById: parent.raisedById,
+        createdAt: now,
+        updatedAt: now,
+        parentActionId: parent.id,
+      })
+    })
+  })
+
+  return created
 }
 
 export function ensureEPlanSeeded(
@@ -77,7 +191,7 @@ export function ensureEPlanSeeded(
   scopedCells.forEach((cell, cellIdx) => {
     const plant = plantById.get(cell.plant_id)
     if (!plant) return
-    const count = cellIdx < 2 ? 6 : 4
+    const count = cellIdx < 2 ? 8 : 5
     const parents: EPlanAction[] = []
 
     for (let i = 0; i < count; i++) {

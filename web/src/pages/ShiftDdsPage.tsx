@@ -46,9 +46,9 @@ export function ShiftDdsPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-3">
-      <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-b border-border/60 pb-2">
-        <h1 className="shrink-0 font-display text-lg font-semibold tracking-tight">Shift DDS</h1>
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-2">
+      <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-1.5 border-b border-border/60 pb-1.5">
+        <h1 className="shrink-0 font-display text-base font-semibold tracking-tight sm:text-lg">Shift DDS</h1>
         {shiftKind ? (
           <DdsTriggerScoreTilesRow
             cellId={cellId}
@@ -59,19 +59,19 @@ export function ShiftDdsPage() {
           />
         ) : null}
         <div className="min-w-0 flex-1" />
-        <div className="inline-flex shrink-0 rounded-lg border border-border bg-surface p-0.5">
+        <div className="inline-flex shrink-0 rounded-lg border border-border bg-surface p-0.5 shadow-sm">
           <button
             type="button"
-            className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+            className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${
               rightMode === 'p2p' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-fg'
             }`}
             onClick={() => setRightMode('p2p')}
           >
-            P2P Summary
+            P2P
           </button>
           <button
             type="button"
-            className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+            className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${
               rightMode === 'plan24' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-fg'
             }`}
             onClick={() => setRightMode('plan24')}
@@ -96,7 +96,7 @@ export function ShiftDdsPage() {
 
       {error ? <p className={`${ddsErr} shrink-0`}>{error}</p> : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_auto] gap-3 lg:grid-cols-1 lg:grid-rows-[minmax(0,1fr)_auto] lg:gap-4">
+      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_auto] gap-2 lg:grid-cols-1 lg:grid-rows-[minmax(0,1fr)_auto]">
         <section
           className={`${ddsSection} flex h-full min-h-0 min-w-0 flex-col overflow-hidden !p-2 sm:!p-2.5`}
           aria-label={rightMode === 'p2p' ? 'P2P summary' : 'Plan 24'}
@@ -129,35 +129,35 @@ export function ShiftDdsPage() {
           )}
         </section>
 
-        <section className={`${ddsSection} flex max-h-56 shrink-0 flex-col overflow-hidden sm:max-h-64`}>
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 pb-1.5">
-              <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Reward and recognition
-              </h2>
-              {!shellLoading && shiftKind ? (
-                <button
-                  type="button"
-                  disabled={!user}
-                  title={user ? 'Add reward & recognition entry' : 'Sign in to add entries'}
-                  onClick={() => rewardRecognitionPanelRef.current?.openCreate()}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/80 bg-surface px-2 py-0.5 text-[10px] font-semibold text-fg shadow-sm hover:bg-surface-raised/80 disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <Plus className="size-3" aria-hidden />
-                  Add
-                </button>
-              ) : null}
-            </div>
-            <div className="min-h-0 flex-1">
-              <DdsRewardRecognitionPanel
-                ref={rewardRecognitionPanelRef}
-                cellId={cellId}
-                planDate={planDate}
-                shiftKind={shiftKind ?? ''}
-                surface="shift-dds"
-                shellLoading={shellLoading}
-              />
-            </div>
-          </section>
+        <section className={`${ddsSection} flex max-h-48 shrink-0 flex-col overflow-hidden !p-2 sm:max-h-56 sm:!p-2.5`}>
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 pb-1">
+            <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-muted">
+              Reward and recognition
+            </h2>
+            {!shellLoading && shiftKind ? (
+              <button
+                type="button"
+                disabled={!user}
+                title={user ? 'Add reward & recognition entry' : 'Sign in to add entries'}
+                onClick={() => rewardRecognitionPanelRef.current?.openCreate()}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/80 bg-surface px-2 py-0.5 text-[10px] font-semibold text-fg shadow-sm hover:bg-surface-raised/80 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Plus className="size-3" aria-hidden />
+                Add
+              </button>
+            ) : null}
+          </div>
+          <div className="min-h-0 flex-1">
+            <DdsRewardRecognitionPanel
+              ref={rewardRecognitionPanelRef}
+              cellId={cellId}
+              planDate={planDate}
+              shiftKind={shiftKind ?? ''}
+              surface="shift-dds"
+              shellLoading={shellLoading}
+            />
+          </div>
+        </section>
       </div>
     </div>
   )

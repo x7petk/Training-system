@@ -11,11 +11,14 @@ import {
   type DdsP2pSummaryShiftRow,
 } from '../features/dds/DdsP2pSummaryBody'
 import { DdsTriggerScoreTilesRow } from '../features/dds/DdsTriggerScoreTilesRow'
-import { ddsErr, ddsHint, ddsInput, ddsSection, ddsSelect } from '../features/dds/ddsAdminCompactClasses'
+import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClasses'
 
 function sortGroups<T extends { sort_order: number; name: string }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
 }
+
+const p2pSummaryControl =
+  'mt-0.5 h-7 rounded-md border border-border bg-surface px-2 text-xs outline-none ring-accent/30 focus:border-accent/50 focus:ring-2'
 
 export function DdsP2pSummaryPage() {
   const { status: scopeStatus, error: scopeError, cellId } = usePlan24Workspace()
@@ -101,7 +104,8 @@ export function DdsP2pSummaryPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <section className={`${ddsSection} flex min-h-0 flex-1 flex-col overflow-hidden !p-2 sm:!p-2.5`}>
-        <div className="flex shrink-0 flex-wrap items-end gap-1.5 border-b border-border/60 pb-1">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border/60 pb-1">
+          <h1 className="mr-1 shrink-0 font-display text-base font-semibold tracking-tight">P2P Summary</h1>
           <DdsTriggerScoreTilesRow
             cellId={cellId}
             planDate={planDate}
@@ -111,11 +115,11 @@ export function DdsP2pSummaryPage() {
           />
           <div>
             <label className="text-[10px] font-medium text-muted">Date</label>
-            <input type="date" className={ddsInput} value={planDate} onChange={(e) => setPlanDate(e.target.value)} />
+            <input type="date" className={p2pSummaryControl} value={planDate} onChange={(e) => setPlanDate(e.target.value)} />
           </div>
           <div>
             <label className="text-[10px] font-medium text-muted">Shift</label>
-            <select className={ddsSelect} value={shiftKind} onChange={(e) => setShiftKind(e.target.value)}>
+            <select className={`${p2pSummaryControl} min-w-[5.5rem]`} value={shiftKind} onChange={(e) => setShiftKind(e.target.value)}>
               {shifts.map((s) => (
                 <option key={s.kind} value={s.kind}>
                   {s.display_name?.trim() || s.kind}
