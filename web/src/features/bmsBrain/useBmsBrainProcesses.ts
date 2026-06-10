@@ -37,6 +37,7 @@ export async function saveBmsProcess(
     status: BmsProcessStatus
     flow: BmsProcessFlow
     owner_role_id: string | null
+    catalog_system_id?: string | null
   },
   userId: string,
 ): Promise<{ row: BmsProcessRow | null; error: string | null }> {

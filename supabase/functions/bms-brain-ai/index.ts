@@ -10,14 +10,73 @@ const corsHeaders: Record<string, string> = {
 
 const MODEL = Deno.env.get('OPENAI_MODEL') || 'gpt-4.1'
 
+const RESPONSE_RULES = `Output rules (strict):
+- Answer ONLY from BMS_BRAIN_CONTEXT. No outside knowledge.
+- Keep the full reply under 220 words unless the user explicitly asks for more detail.
+- Use ONLY the ## sections defined in the mode template below.
+- Bullets: max 10 words each; max 5 bullets per section.
+- Sentences: short and direct. No preamble, no closing summary, no repetition.
+- Markdown only: ## headings, - bullets, **bold** for role/forum/system/process names.
+- If context is insufficient, add ## Gaps with 1-3 bullets stating what is missing.`
+
+const ROLE_TEMPLATE = `Use exactly these sections:
+
+## Role snapshot
+1-2 sentences on what this role does in BMS Brain.
+
+## Forums
+- **Forum** — how the role uses it
+
+## Systems
+- **System** — typical touchpoint
+
+## Process steps
+- **Step** (*Process*) — one-line action
+
+## Gaps
+Only if needed.`
+
+const SYSTEM_TEMPLATE = `Use exactly these sections:
+
+## System snapshot
+1-2 sentences on purpose and scope.
+
+## Integrations
+- **Linked system/forum** — relationship
+
+## Where it appears
+- **Step** (*Process*, Role, Forum) — one line
+
+## Escalations
+- bullet or "None in context."
+
+## Gaps
+Only if needed.`
+
+const KNOWLEDGE_TEMPLATE = `Use exactly these sections:
+
+## Answer
+1-3 sentences answering the question directly.
+
+## Evidence
+- **Fact** — from which process/step/role
+
+## Related
+- **Item** — brief link to related role/system/forum
+
+## Gaps
+Only if needed.`
+
+const SYSTEM = `You are the BMS Brain assistant for operational process documentation.
+
+${RESPONSE_RULES}`
+
 type Body = {
   mode?: 'role' | 'system' | 'knowledge'
   roleId?: string | null
   systemId?: string | null
   question?: string
 }
-
-const SYSTEM = `You are the BMS Brain assistant. Answer ONLY using the JSON context block labeled BMS_BRAIN_CONTEXT. Do not use outside knowledge. If the context is insufficient, say what is missing. Use clear Markdown with short headings and bullet lists.`
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -76,12 +135,12 @@ Deno.serve(async (req) => {
     let userPrompt = ''
     if (mode === 'role') {
       const role = (roles ?? []).find((r) => r.id === body.roleId)
-      userPrompt = `Summarise responsibilities and how this role interacts with forums, systems, and process steps.\n\nRole focus: ${JSON.stringify(role ?? null)}`
+      userPrompt = `${ROLE_TEMPLATE}\n\nTask: Summarise this role using only matching steps from published processes.\n\nRole focus: ${JSON.stringify(role ?? null)}`
     } else if (mode === 'system') {
       const system = (systems ?? []).find((s) => s.id === body.systemId)
-      userPrompt = `Describe this system/tool, its purpose, integrations, and how it appears across roles, forums, and process steps.\n\nSystem focus: ${JSON.stringify(system ?? null)}`
+      userPrompt = `${SYSTEM_TEMPLATE}\n\nTask: Summarise this system/tool using only matching steps from published processes.\n\nSystem focus: ${JSON.stringify(system ?? null)}`
     } else {
-      userPrompt = `Question: ${(body.question ?? '').slice(0, 4000)}`
+      userPrompt = `${KNOWLEDGE_TEMPLATE}\n\nTask: Answer the question using only published catalog and process data.\n\nQuestion: ${(body.question ?? '').slice(0, 4000)}`
     }
 
     const openaiKey = Deno.env.get('OPENAI_API_KEY')
@@ -107,7 +166,8 @@ Deno.serve(async (req) => {
             content: `BMS_BRAIN_CONTEXT:\n${JSON.stringify(context).slice(0, 90_000)}\n\n${userPrompt}`,
           },
         ],
-        temperature: 0.3,
+        temperature: 0.2,
+        max_tokens: 550,
       }),
     })
 

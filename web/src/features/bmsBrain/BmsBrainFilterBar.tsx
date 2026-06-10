@@ -1,8 +1,7 @@
 import { RotateCcw } from 'lucide-react'
-import type { BmsCatalogRow, BmsProcessRow, BmsViewFilters } from './types'
+import type { BmsCatalogRow, BmsViewFilters } from './types'
 
 type Props = {
-  processes: BmsProcessRow[]
   roles: BmsCatalogRow[]
   forums: BmsCatalogRow[]
   systems: BmsCatalogRow[]
@@ -64,17 +63,11 @@ function toggleId(list: string[], id: string, total: number): string[] {
   return next.length === total ? [] : next
 }
 
-export function BmsBrainFilterBar({ processes, roles, forums, systems, filters, onChange, onReset }: Props) {
+export function BmsBrainFilterBar({ roles, forums, systems, filters, onChange, onReset }: Props) {
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-surface-raised/50 p-3">
       <MultiSelect
-        label="Processes"
-        options={processes.map((p) => ({ id: p.id, name: p.name }))}
-        selected={filters.processIds}
-        onToggle={(id) => onChange({ processIds: toggleId(filters.processIds, id, processes.length) })}
-      />
-      <MultiSelect
-        label="Systems / tools"
+        label="Tool tags"
         options={systems.map((s) => ({ id: s.id, name: s.name, color: s.color }))}
         selected={filters.systemIds}
         onToggle={(id) => onChange({ systemIds: toggleId(filters.systemIds, id, systems.length) })}

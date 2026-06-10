@@ -8,30 +8,35 @@ type Props = {
   roles: BmsCatalogRow[]
   forums: BmsCatalogRow[]
   systems: BmsCatalogRow[]
-  onClose: () => void
+  onClose?: () => void
+  embedded?: boolean
 }
 
-export function BmsBrainStepPanel({ node, process, roles, forums, systems, onClose }: Props) {
+export function BmsBrainStepPanel({ node, process, roles, forums, systems, onClose, embedded }: Props) {
   const role = roles.find((r) => r.id === node.roleId)
   const forum = forums.find((f) => f.id === node.forumId)
   const sys = (node.systemIds ?? []).map((id) => systems.find((s) => s.id === id)).filter(Boolean) as BmsCatalogRow[]
 
   return (
-    <aside className="flex w-full max-w-sm shrink-0 flex-col rounded-2xl border border-border bg-surface-raised/80 shadow-sm lg:w-80">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="font-display text-sm font-semibold">Step details</h2>
-        <button type="button" onClick={onClose} className="rounded-lg p-1 text-muted hover:bg-black/[0.06]">
-          <X className="size-4" aria-hidden />
-        </button>
-      </div>
-      <div className="space-y-4 overflow-y-auto p-4 text-sm">
+    <div className={embedded ? 'p-4' : 'flex w-full max-w-sm shrink-0 flex-col rounded-2xl border border-border bg-surface-raised/80 shadow-sm lg:w-80'}>
+      {!embedded ? (
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <h2 className="font-display text-sm font-semibold">Step details</h2>
+          {onClose ? (
+            <button type="button" onClick={onClose} className="rounded-lg p-1 text-muted hover:bg-black/[0.06]">
+              <X className="size-4" aria-hidden />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="space-y-4 text-sm">
         <div>
           <p className="text-xs font-medium text-muted">Step</p>
           <p className="font-semibold text-fg">{node.label}</p>
           {node.description ? <p className="mt-1 text-muted">{node.description}</p> : null}
         </div>
         <div>
-          <p className="text-xs font-medium text-muted">Process</p>
+          <p className="text-xs font-medium text-muted">System / tool flow</p>
           <p>{process.name}</p>
         </div>
         <div>
@@ -98,6 +103,6 @@ export function BmsBrainStepPanel({ node, process, roles, forums, systems, onClo
         </div>
         <BmsBrainStepAttachments processId={process.id} stepId={node.id} />
       </div>
-    </aside>
+    </div>
   )
 }

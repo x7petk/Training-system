@@ -35,12 +35,17 @@ export function validateProcessForPublish(
   return issues
 }
 
+function processMatchesToolTags(process: BmsProcessRow, systemIds: string[]): boolean {
+  if (process.catalog_system_id && systemIds.includes(process.catalog_system_id)) return true
+  return (process.flow?.nodes ?? []).some((n) => (n.systemIds ?? []).some((id) => systemIds.includes(id)))
+}
+
 export function filterProcesses(
   processes: BmsProcessRow[],
   filters: BmsViewFilters,
 ): BmsProcessRow[] {
-  if (filters.processIds.length === 0) return processes
-  return processes.filter((p) => filters.processIds.includes(p.id))
+  if (filters.systemIds.length === 0) return processes
+  return processes.filter((p) => processMatchesToolTags(p, filters.systemIds))
 }
 
 export function nodeMatchesFilters(

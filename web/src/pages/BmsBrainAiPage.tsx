@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
+import { BmsBrainAiAnswer } from '../features/bmsBrain/BmsBrainAiAnswer'
 import { callBmsBrainAi } from '../features/bmsBrain/bmsBrainAiProxy'
 import { useBmsBrainFullCatalog } from '../features/bmsBrain/useBmsBrainCatalog'
 
@@ -42,7 +43,7 @@ export function BmsBrainAiPage() {
           AI Insights
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Summaries grounded only in BMS Brain catalog and published process data.
+          Compact, structured summaries grounded only in BMS Brain catalog and published process data.
         </p>
       </header>
 
@@ -127,8 +128,8 @@ export function BmsBrainAiPage() {
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {answer ? (
-        <div className="rounded-2xl border border-border bg-white p-4 text-sm leading-relaxed whitespace-pre-wrap">
-          {answer}
+        <div className="rounded-2xl border border-border bg-white p-4">
+          <BmsBrainAiAnswer content={answer} />
         </div>
       ) : null}
     </div>

@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2, Save, Upload } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { BmsBrainFlowView, createBmsNode } from '../features/bmsBrain/BmsBrainFlowView'
+import { BmsBrainBlockLegend } from '../features/bmsBrain/BmsBrainBlockLegend'
 import { BmsBrainStepAttachments } from '../features/bmsBrain/BmsBrainStepAttachments'
 import { BmsBrainVersionHistory } from '../features/bmsBrain/BmsBrainVersionHistory'
 import { bmsBrainCanEdit } from '../features/bmsBrain/bmsBrainAccess'
@@ -69,6 +70,7 @@ export function BmsBrainProcessEditorPage() {
         status,
         flow,
         owner_role_id: process.owner_role_id,
+        catalog_system_id: process.catalog_system_id ?? null,
       },
       user.id,
     )
@@ -129,7 +131,7 @@ export function BmsBrainProcessEditorPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <Link to="/bms-brain/processes" className="inline-flex items-center gap-1 text-sm text-muted hover:text-fg">
-          <ArrowLeft className="size-4" /> Processes
+          <ArrowLeft className="size-4" /> Systems &amp; Tools
         </Link>
       </div>
 
@@ -144,11 +146,27 @@ export function BmsBrainProcessEditorPage() {
           <textarea
             className="w-full max-w-xl rounded-lg border border-border bg-canvas px-3 py-2 text-sm"
             rows={2}
-            placeholder="Process description"
+            placeholder="Flow description"
             value={process.description}
             disabled={!canEdit}
             onChange={(e) => setProcess({ ...process, description: e.target.value })}
           />
+          <label className="block max-w-xl space-y-1 text-sm">
+            <span className="text-xs text-muted">Linked system / tool</span>
+            <select
+              className="w-full rounded-lg border border-border bg-canvas px-3 py-2 text-sm"
+              value={process.catalog_system_id ?? ''}
+              disabled={!canEdit}
+              onChange={(e) => setProcess({ ...process, catalog_system_id: e.target.value || null })}
+            >
+              <option value="">Cross-system flow (none)</option>
+              {catalog.systems.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {canEdit ? (
           <div className="flex flex-wrap gap-2">
@@ -188,6 +206,8 @@ export function BmsBrainProcessEditorPage() {
           ))}
         </div>
       ) : null}
+
+      <BmsBrainBlockLegend />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_18rem]">
         <BmsBrainFlowView

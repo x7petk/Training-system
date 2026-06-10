@@ -5,14 +5,15 @@ type Props = {
   roles: BmsCatalogRow[]
   forums: BmsCatalogRow[]
   systems: BmsCatalogRow[]
+  embedded?: boolean
 }
 
-export function BmsBrainProcessSummaryPanel({ processes, roles, forums, systems }: Props) {
+export function BmsBrainProcessSummaryPanel({ processes, roles, forums, systems, embedded }: Props) {
   if (processes.length === 0) {
     return (
-      <aside className="rounded-2xl border border-dashed border-border bg-surface-raised/40 p-4 text-sm text-muted lg:w-80">
-        No processes match the current filters. Adjust filters or create a process under Processes.
-      </aside>
+      <div className={embedded ? 'p-4 text-sm text-muted' : 'rounded-2xl border border-dashed border-border bg-surface-raised/40 p-4 text-sm text-muted lg:w-80'}>
+        No flows match the current filters. Adjust filters or edit flows under Systems &amp; Tools.
+      </div>
     )
   }
 
@@ -28,14 +29,16 @@ export function BmsBrainProcessSummaryPanel({ processes, roles, forums, systems 
   }
 
   return (
-    <aside className="flex w-full max-w-sm shrink-0 flex-col rounded-2xl border border-border bg-surface-raised/80 shadow-sm lg:w-80">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="font-display text-sm font-semibold">Flow details</h2>
-        <p className="text-xs text-muted">
-          {processes.length === 1 ? primary.name : `${processes.length} processes in view`}
-        </p>
-      </div>
-      <div className="space-y-4 overflow-y-auto p-4 text-sm">
+    <div className={embedded ? 'space-y-4 p-4 text-sm' : 'flex w-full max-w-sm shrink-0 flex-col rounded-2xl border border-border bg-surface-raised/80 shadow-sm lg:w-80'}>
+      {!embedded ? (
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="font-display text-sm font-semibold">Flow details</h2>
+          <p className="text-xs text-muted">
+            {processes.length === 1 ? primary.name : `${processes.length} flows in view`}
+          </p>
+        </div>
+      ) : null}
+      <div className={embedded ? 'space-y-4' : 'space-y-4 overflow-y-auto p-4 text-sm'}>
         <div>
           <p className="text-xs font-medium text-muted">Description</p>
           <p className="mt-1">{primary.description || '—'}</p>
@@ -88,7 +91,7 @@ export function BmsBrainProcessSummaryPanel({ processes, roles, forums, systems 
         </div>
         {processes.length > 1 ? (
           <div>
-            <p className="text-xs font-medium text-muted">All processes</p>
+            <p className="text-xs font-medium text-muted">All flows</p>
             <ul className="mt-1 space-y-1 text-xs text-muted">
               {processes.map((p) => (
                 <li key={p.id}>• {p.name}</li>
@@ -97,6 +100,6 @@ export function BmsBrainProcessSummaryPanel({ processes, roles, forums, systems 
           </div>
         ) : null}
       </div>
-    </aside>
+    </div>
   )
 }

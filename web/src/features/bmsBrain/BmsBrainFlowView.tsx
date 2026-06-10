@@ -13,40 +13,16 @@ import {
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { bmsFlowNodeTypes, type BmsFlowNodeData } from './BmsBrainFlowNodes'
 import type { BmsCatalogRow, BmsFlowEdge, BmsFlowNode, BmsNodeKind, BmsProcessFlow } from './types'
 
-type NodeData = {
-  label: string
-  kind: BmsNodeKind
-  systemIds: string[]
-  systems: BmsCatalogRow[]
-}
-
-const kindStyle: Record<BmsNodeKind, string> = {
-  start: '#10b981',
-  end: '#64748b',
-  decision: '#f59e0b',
-  process: '#0ea5e9',
-  review: '#8b5cf6',
-  document: '#6366f1',
-  subprocess: '#ec4899',
-}
-
-function toRf(flow: BmsProcessFlow, systems: BmsCatalogRow[]): { nodes: Node<NodeData>[]; edges: ReturnType<typeof flowToRfEdges> } {
+function toRf(flow: BmsProcessFlow, systems: BmsCatalogRow[]): { nodes: Node<BmsFlowNodeData>[]; edges: ReturnType<typeof flowToRfEdges> } {
   return {
     nodes: (flow.nodes ?? []).map((n) => ({
       id: n.id,
-      type: 'default',
+      type: 'bmsFlow',
       position: n.position ?? { x: 0, y: 0 },
       data: { label: n.label, kind: n.kind, systemIds: n.systemIds ?? [], systems },
-      style: {
-        borderColor: kindStyle[n.kind],
-        borderWidth: 2,
-        borderRadius: n.kind === 'decision' ? 4 : 8,
-        padding: 8,
-        fontSize: 12,
-        width: 160,
-      },
     })),
     edges: flowToRfEdges(flow.edges ?? []),
   }
@@ -63,7 +39,7 @@ function flowToRfEdges(edges: BmsFlowEdge[]) {
   }))
 }
 
-function fromRf(nodes: Node<NodeData>[], edges: { id: string; source: string; target: string; label?: string }[], prev: BmsProcessFlow): BmsProcessFlow {
+function fromRf(nodes: Node<BmsFlowNodeData>[], edges: { id: string; source: string; target: string; label?: string }[], prev: BmsProcessFlow): BmsProcessFlow {
   const prevById = new Map((prev.nodes ?? []).map((n) => [n.id, n]))
   return {
     nodes: nodes.map((n) => {
@@ -108,7 +84,7 @@ function EditorInner({ flow, systems, readOnly, selectedNodeId, onNodeSelect, on
   }, [flow, systems, setNodes, setEdges])
 
   const emit = useCallback(
-    (nds: Node<NodeData>[], eds: typeof edges) => {
+    (nds: Node<BmsFlowNodeData>[], eds: typeof edges) => {
       onFlowChange(fromRf(nds, eds, flow))
     },
     [flow, onFlowChange],
@@ -132,6 +108,7 @@ function EditorInner({ flow, systems, readOnly, selectedNodeId, onNodeSelect, on
   return (
     <div className="h-[min(70vh,720px)] rounded-2xl border border-border bg-white">
       <ReactFlow
+        nodeTypes={bmsFlowNodeTypes}
         nodes={nodes.map((n) => ({
           ...n,
           selected: selectedNodeId ? n.id === selectedNodeId : n.selected,

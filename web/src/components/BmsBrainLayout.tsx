@@ -30,7 +30,7 @@ export function BmsBrainLayout() {
       }
       navItems={[
         { to: '/bms-brain/matrix', label: 'Process Matrix', icon: LayoutGrid, end: true },
-        { to: '/bms-brain/processes', label: 'Processes', icon: GitBranch, end: true },
+        { to: '/bms-brain/processes', label: 'Systems & Tools', icon: GitBranch, end: true },
         { to: '/bms-brain/ai', label: 'AI Insights', icon: Sparkles, end: true },
       ]}
       accountFooter={

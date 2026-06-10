@@ -11,7 +11,7 @@ export function BmsBrainAdminLayout() {
         <div>
           <h1 className="font-display text-xl font-semibold tracking-tight">BMS Brain — Admin</h1>
           <p className="mt-1 text-xs text-muted">
-            Manage roles, forums, and systems. Deactivate items used in published processes instead of deleting.
+            Manage roles and forums. System/tool flows are edited under Systems &amp; Tools.
           </p>
         </div>
       </header>
@@ -19,7 +19,6 @@ export function BmsBrainAdminLayout() {
         {[
           { to: '/bms-brain/admin/roles', label: 'Roles' },
           { to: '/bms-brain/admin/forums', label: 'Forums' },
-          { to: '/bms-brain/admin/systems', label: 'Systems' },
         ].map((l) => (
           <NavLink
             key={l.to}

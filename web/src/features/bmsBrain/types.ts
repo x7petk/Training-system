@@ -60,6 +60,7 @@ export type BmsProcessRow = {
   status: BmsProcessStatus
   flow: BmsProcessFlow
   owner_role_id: string | null
+  catalog_system_id: string | null
   created_by: string | null
   updated_by: string | null
   created_at: string
@@ -77,7 +78,6 @@ export type BmsProcessVersionRow = {
 }
 
 export type BmsViewFilters = {
-  processIds: string[]
   systemIds: string[]
   roleIds: string[]
   forumIds: string[]
@@ -93,7 +93,6 @@ export type BmsViewViewport = {
 export const EMPTY_BMS_FLOW: BmsProcessFlow = { nodes: [], edges: [] }
 
 export const DEFAULT_BMS_FILTERS: BmsViewFilters = {
-  processIds: [],
   systemIds: [],
   roleIds: [],
   forumIds: [],
