@@ -87,7 +87,7 @@ export type BmsViewViewport = {
   zoom: number
   panX: number
   panY: number
-  viewMode: 'matrix' | 'flow'
+  viewMode: 'matrix' | 'roleSummaries' | 'matrixAi'
 }
 
 export const EMPTY_BMS_FLOW: BmsProcessFlow = { nodes: [], edges: [] }

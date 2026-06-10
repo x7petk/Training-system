@@ -1,17 +1,24 @@
 import { formatSupabaseFunctionError } from '../../lib/formatSupabaseFunctionError'
 import { supabase } from '../../lib/supabase'
 
-export type BmsAiMode = 'role' | 'system' | 'knowledge'
+export type BmsAiMode = 'role' | 'system' | 'knowledge' | 'matrix' | 'matrixAi' | 'roleSummaries'
 
 export type BmsAiRequest = {
   mode: BmsAiMode
   question?: string
   roleId?: string | null
   systemId?: string | null
+  filters?: {
+    systemIds?: string[]
+    roleIds?: string[]
+    forumIds?: string[]
+  }
 }
 
 export type BmsAiResponse = {
-  answer: string
+  answer?: string
+  matrix?: import('./roleForumMatrixTypes').RoleForumMatrixResponse
+  roleSummaries?: import('./roleSummaryMatrixTypes').RoleSummaryMatrixResponse
   sources?: string[]
 }
 

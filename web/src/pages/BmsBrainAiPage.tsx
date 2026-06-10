@@ -27,7 +27,7 @@ export function BmsBrainAiPage() {
         systemId: tab === 'system' ? systemId || null : null,
         question: tab === 'knowledge' ? question : undefined,
       })
-      setAnswer(res.answer)
+      setAnswer(res.answer ?? '')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Request failed')
     } finally {

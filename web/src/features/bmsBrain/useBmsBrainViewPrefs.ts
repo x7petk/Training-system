@@ -20,7 +20,19 @@ export function useBmsBrainViewPrefs(userId: string | undefined) {
         .eq('view_key', VIEW_KEY)
         .maybeSingle()
       if (data?.filters) setFilters({ ...DEFAULT_BMS_FILTERS, ...(data.filters as BmsViewFilters) })
-      if (data?.viewport) setViewport({ ...DEFAULT_BMS_VIEWPORT, ...(data.viewport as BmsViewViewport) })
+      if (data?.viewport) {
+        const raw = data.viewport as Record<string, unknown>
+        const rawMode = typeof raw.viewMode === 'string' ? raw.viewMode : undefined
+        const viewMode =
+          rawMode === 'matrixAi' || rawMode === 'roleForum'
+            ? 'matrixAi'
+            : rawMode === 'roleSummaries' || rawMode === 'flow'
+              ? 'roleSummaries'
+              : rawMode === 'matrix'
+                ? 'matrix'
+                : DEFAULT_BMS_VIEWPORT.viewMode
+        setViewport({ ...DEFAULT_BMS_VIEWPORT, ...(data.viewport as BmsViewViewport), viewMode })
+      }
       setLoaded(true)
     })()
   }, [userId])
