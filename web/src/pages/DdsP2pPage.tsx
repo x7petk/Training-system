@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -68,6 +68,40 @@ function emptyForm(questions: P2pQuestion[]): Record<string, FormAns> {
   return m
 }
 
+type LinkedKpiLineCount = { lineId: string; value: number }
+
+/** Accept count from consolidated field or per-line inputs (covers by-line KPIs and late line load). */
+function resolveLinkedKpiCounts(
+  f: FormAns,
+  byLine: boolean,
+  cellLines: DdsCellLine[],
+): { consolidated: number | null; lineCounts: LinkedKpiLineCount[] } {
+  const consolidated = parseKpiCount(f.kpiIncidentNum ?? '')
+  const lineCounts: LinkedKpiLineCount[] = []
+  if (byLine && cellLines.length > 0) {
+    for (const line of cellLines) {
+      const kn = parseKpiCount(f.kpiLineNums[line.id] ?? '')
+      if (kn != null && kn > 0) lineCounts.push({ lineId: line.id, value: kn })
+    }
+  }
+  if (lineCounts.length > 0) {
+    return { consolidated, lineCounts }
+  }
+  if (consolidated != null && consolidated >= 0) {
+    return { consolidated, lineCounts: [] }
+  }
+  return { consolidated: null, lineCounts: [] }
+}
+
+function hasLinkedKpiCount(
+  f: FormAns,
+  byLine: boolean,
+  cellLines: DdsCellLine[],
+): boolean {
+  const { consolidated, lineCounts } = resolveLinkedKpiCounts(f, byLine, cellLines)
+  return lineCounts.length > 0 || (consolidated != null && consolidated >= 0)
+}
+
 function growTextarea(el: HTMLTextAreaElement) {
   el.style.height = 'auto'
   el.style.height = `${Math.min(Math.max(el.scrollHeight, 22), 96)}px`
@@ -86,6 +120,10 @@ export function DdsP2pPage() {
   const [questions, setQuestions] = useState<P2pQuestion[]>([])
   const [cellLines, setCellLines] = useState<DdsCellLine[]>([])
   const [form, setForm] = useState<Record<string, FormAns>>({})
+  const formRef = useRef(form)
+  const formDirtyRef = useRef(false)
+  const hydrateGenRef = useRef(0)
+  const auditScopeRef = useRef('')
   const [sheetComment, setSheetComment] = useState('')
 
   const [audits, setAudits] = useState<AuditHead[]>([])
@@ -97,6 +135,31 @@ export function DdsP2pPage() {
   const [planErr, setPlanErr] = useState<string | null>(null)
   const [planSuccess, setPlanSuccess] = useState<string | null>(null)
   const [planRefreshToken, setPlanRefreshToken] = useState(0)
+
+  const replaceForm = useCallback((next: Record<string, FormAns>) => {
+    formRef.current = next
+    setForm(next)
+  }, [])
+
+  const patchForm = useCallback((key: string, patch: Partial<FormAns>) => {
+    formDirtyRef.current = true
+    setForm((prev) => {
+      const prevAns = prev[key] ?? {
+        yesNo: null,
+        num: '',
+        comment: '',
+        kpiIncidentNum: '',
+        kpiLineNums: {},
+      }
+      const next = { ...prev, [key]: { ...prevAns, ...patch } }
+      formRef.current = next
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    formRef.current = form
+  }, [form])
 
   useEffect(() => {
     setPlanErr(null)
@@ -250,6 +313,7 @@ export function DdsP2pPage() {
     }
     setError(null)
     setAudits([])
+    auditScopeRef.current = ''
     const { data: assigns, error: aErr } = await supabase
       .from('dds_p2p_cell_question_role_assignments')
       .select('question_kind, standard_question_id, soft_question_id')
@@ -361,9 +425,8 @@ export function DdsP2pPage() {
         })
       }
     }
+    formDirtyRef.current = false
     setQuestions(out)
-    setForm(emptyForm(out))
-    setSheetComment('')
     setRevisionIx(0)
   }, [cellId, roleId])
 
@@ -375,6 +438,11 @@ export function DdsP2pPage() {
     if (!cellId || !roleId || !shiftKind) {
       setAudits([])
       return
+    }
+    const scopeKey = `${cellId}:${planDate}:${shiftKind}:${roleId}`
+    if (scopeKey !== auditScopeRef.current) {
+      auditScopeRef.current = scopeKey
+      setAudits([])
     }
     const { data, error: qErr } = await supabase
       .from('dds_p2p_audits')
@@ -397,75 +465,81 @@ export function DdsP2pPage() {
     void loadAudits()
   }, [loadAudits])
 
-  const applyAnswersForAudit = useCallback(async (auditId: string | null, qs: P2pQuestion[], sheet: string) => {
-    if (!auditId) {
-      setForm(emptyForm(qs))
+  const applyAnswersForAudit = useCallback(
+    async (auditId: string | null, qs: P2pQuestion[], sheet: string, hydrateGen: number) => {
+      if (hydrateGen !== hydrateGenRef.current) return
+      if (formDirtyRef.current) return
+
+      if (!auditId) {
+        replaceForm(emptyForm(qs))
+        setSheetComment(sheet)
+        return
+      }
+      const { data: ans, error: e } = await supabase
+        .from('dds_p2p_audit_answers')
+        .select(
+          'question_kind, standard_question_id, soft_question_id, answer_yes_no, answer_number, question_comment, kpi_link_value, kpi_link_comment, kpi_link_line_id',
+        )
+        .eq('audit_id', auditId)
+      if (hydrateGen !== hydrateGenRef.current || formDirtyRef.current) return
+      if (e) {
+        setError(e.message)
+        return
+      }
+      const qByKey = new Map(qs.map((q) => [q.key, q]))
+      const next = emptyForm(qs)
+      for (const row of ans ?? []) {
+        const kind = row.question_kind as 'standard' | 'soft'
+        const qid = kind === 'standard' ? (row.standard_question_id as string) : (row.soft_question_id as string)
+        const k = ddsP2pQuestionKey(kind, qid)
+        const meta = qByKey.get(k)
+        if (!meta || !next[k]) continue
+        const qc = (row.question_comment as string | null) ?? ''
+        const klc = (row.kpi_link_comment as string | null) ?? ''
+        const lineId = (row.kpi_link_line_id as string | null) ?? ''
+        const linkVal = row.kpi_link_value
+
+        if (meta.linkedKpiByLine && lineId && linkVal != null && linkVal !== '') {
+          next[k].kpiLineNums[lineId] = String(linkVal)
+          if (row.answer_yes_no === true) next[k].yesNo = true
+          const cmt = qc.trim() ? qc : klc
+          if (cmt) next[k].comment = cmt
+          continue
+        }
+
+        next[k] = {
+          yesNo:
+            meta.responseKind === 'yes_no'
+              ? row.answer_yes_no === true
+              : typeof row.answer_yes_no === 'boolean'
+                ? row.answer_yes_no
+                : null,
+          num: row.answer_number != null ? String(row.answer_number) : '',
+          comment: qc.trim() ? qc : klc,
+          kpiIncidentNum: linkVal != null && linkVal !== '' ? String(linkVal) : '',
+          kpiLineNums: next[k].kpiLineNums,
+        }
+      }
+      replaceForm(next)
       setSheetComment(sheet)
-      return
-    }
-    const { data: ans, error: e } = await supabase
-      .from('dds_p2p_audit_answers')
-      .select(
-        'question_kind, standard_question_id, soft_question_id, answer_yes_no, answer_number, question_comment, kpi_link_value, kpi_link_comment, kpi_link_line_id',
-      )
-      .eq('audit_id', auditId)
-    if (e) {
-      setError(e.message)
-      return
-    }
-    const qByKey = new Map(qs.map((q) => [q.key, q]))
-    const next = emptyForm(qs)
-    for (const row of ans ?? []) {
-      const kind = row.question_kind as 'standard' | 'soft'
-      const qid = kind === 'standard' ? (row.standard_question_id as string) : (row.soft_question_id as string)
-      const k = ddsP2pQuestionKey(kind, qid)
-      const meta = qByKey.get(k)
-      if (!meta || !next[k]) continue
-      const qc = (row.question_comment as string | null) ?? ''
-      const klc = (row.kpi_link_comment as string | null) ?? ''
-      const lineId = (row.kpi_link_line_id as string | null) ?? ''
-      const linkVal = row.kpi_link_value
-
-      if (meta.linkedKpiByLine && lineId && linkVal != null && linkVal !== '') {
-        next[k].kpiLineNums[lineId] = String(linkVal)
-        if (row.answer_yes_no === true) next[k].yesNo = true
-        const cmt = qc.trim() ? qc : klc
-        if (cmt) next[k].comment = cmt
-        continue
-      }
-
-      next[k] = {
-        yesNo:
-          meta.responseKind === 'yes_no'
-            ? row.answer_yes_no === true
-            : typeof row.answer_yes_no === 'boolean'
-              ? row.answer_yes_no
-              : null,
-        num: row.answer_number != null ? String(row.answer_number) : '',
-        comment: qc.trim() ? qc : klc,
-        kpiIncidentNum: linkVal != null && linkVal !== '' ? String(linkVal) : '',
-        kpiLineNums: next[k].kpiLineNums,
-      }
-    }
-    setForm(next)
-    setSheetComment(sheet)
-  }, [])
+    },
+    [replaceForm],
+  )
 
   useEffect(() => {
     if (questions.length === 0) return
+    const hydrateGen = ++hydrateGenRef.current
+    formDirtyRef.current = false
     const head = audits[revisionIx]
-    if (!head) {
-      void applyAnswersForAudit(null, questions, '')
-      return
-    }
-    void applyAnswersForAudit(head.id, questions, head.sheet_comment ?? '')
+    void applyAnswersForAudit(head?.id ?? null, questions, head?.sheet_comment ?? '', hydrateGen)
   }, [audits, revisionIx, questions, applyAnswersForAudit])
 
   async function submit() {
     if (!cellId || !roleId || !user?.id || !shiftKind || readOnlyRevision) return
     if (questions.length === 0) return
+    const snapshot = formRef.current
     for (const q of questions) {
-      const f = form[q.key]
+      const f = snapshot[q.key]
       if (!f) continue
       const yesNo = q.responseKind === 'yes_no' ? f.yesNo === true : null
       if (q.responseKind === 'number_with_target') {
@@ -476,8 +550,7 @@ export function DdsP2pPage() {
         }
       }
       if (q.responseKind === 'yes_no' && q.linkedKpiId && yesNo) {
-        if (q.linkedKpiByLine) {
-          let anyLine = false
+        if (q.linkedKpiByLine && cellLines.length > 0) {
           for (const line of cellLines) {
             const raw = String(f.kpiLineNums[line.id] ?? '').trim()
             if (!raw) continue
@@ -486,18 +559,11 @@ export function DdsP2pPage() {
               setError(`Enter a valid count for ${line.name}: ${q.prompt.slice(0, 30)}…`)
               return
             }
-            if (kn > 0) anyLine = true
           }
-          if (!anyLine) {
-            setError(`Enter a count on at least one line for: ${q.prompt.slice(0, 40)}…`)
-            return
-          }
-        } else {
-          const kn = parseKpiCount(f.kpiIncidentNum ?? '')
-          if (kn === null || kn < 0) {
-            setError(`Enter a non‑negative incident count for: ${q.prompt.slice(0, 40)}…`)
-            return
-          }
+        }
+        if (!hasLinkedKpiCount(f, q.linkedKpiByLine, cellLines)) {
+          setError(`Enter an incident/concern count for: ${q.prompt.slice(0, 40)}…`)
+          return
         }
         if (!String(f.comment ?? '').trim()) {
           setError(`Add a comment for: ${q.prompt.slice(0, 40)}…`)
@@ -526,18 +592,37 @@ export function DdsP2pPage() {
     }
     const auditId = ins.id as string
     for (const q of questions) {
-      const f = form[q.key]!
+      const f = snapshot[q.key]!
       if (q.responseKind === 'yes_no') {
         const answeredYes = f.yesNo === true
         const linkYes = Boolean(q.linkedKpiId) && answeredYes
         const cmt = f.comment.trim() || null
 
-        if (linkYes && q.linkedKpiByLine) {
-          for (const line of cellLines) {
-            const raw = String(f.kpiLineNums[line.id] ?? '').trim()
-            if (!raw) continue
-            const kn = parseKpiCount(raw)
-            if (kn === null || kn <= 0) continue
+        if (linkYes) {
+          const { consolidated, lineCounts } = resolveLinkedKpiCounts(f, q.linkedKpiByLine, cellLines)
+          if (lineCounts.length > 0) {
+            for (const lineCount of lineCounts) {
+              const { error: ansErr } = await supabase.from('dds_p2p_audit_answers').insert({
+                audit_id: auditId,
+                question_kind: q.source,
+                standard_question_id: q.source === 'standard' ? q.questionId : null,
+                soft_question_id: q.source === 'soft' ? q.questionId : null,
+                answer_yes_no: true,
+                answer_number: null,
+                question_comment: cmt,
+                kpi_link_value: lineCount.value,
+                kpi_link_comment: cmt,
+                kpi_link_line_id: lineCount.lineId,
+              })
+              if (ansErr) {
+                setSaving(false)
+                setError(ansErr.message)
+                return
+              }
+            }
+            continue
+          }
+          if (consolidated != null && consolidated >= 0) {
             const { error: ansErr } = await supabase.from('dds_p2p_audit_answers').insert({
               audit_id: auditId,
               question_kind: q.source,
@@ -546,9 +631,9 @@ export function DdsP2pPage() {
               answer_yes_no: true,
               answer_number: null,
               question_comment: cmt,
-              kpi_link_value: kn,
+              kpi_link_value: consolidated,
               kpi_link_comment: cmt,
-              kpi_link_line_id: line.id,
+              kpi_link_line_id: null,
             })
             if (ansErr) {
               setSaving(false)
@@ -559,7 +644,6 @@ export function DdsP2pPage() {
           continue
         }
 
-        const kn = linkYes ? parseKpiCount(f.kpiIncidentNum) : null
         const { error: ansErr } = await supabase.from('dds_p2p_audit_answers').insert({
           audit_id: auditId,
           question_kind: q.source,
@@ -568,8 +652,8 @@ export function DdsP2pPage() {
           answer_yes_no: answeredYes,
           answer_number: null,
           question_comment: cmt,
-          kpi_link_value: linkYes && kn != null && kn >= 0 ? kn : null,
-          kpi_link_comment: linkYes ? cmt : null,
+          kpi_link_value: null,
+          kpi_link_comment: null,
           kpi_link_line_id: null,
         })
         if (ansErr) {
@@ -609,6 +693,7 @@ export function DdsP2pPage() {
       setError(rollupErr instanceof Error ? rollupErr.message : 'KPI rollup failed')
     }
     setSaving(false)
+    formDirtyRef.current = false
     await loadAudits()
   }
 
@@ -702,13 +787,7 @@ export function DdsP2pPage() {
                         const linkedYes = Boolean(q.linkedKpiId) && q.responseKind === 'yes_no' && f.yesNo === true
                         const linkedByLine = linkedYes && q.linkedKpiByLine
                         const commentInvalid = linkedYes && !f.comment.trim()
-                        const lineCountsInvalid =
-                          linkedByLine &&
-                          cellLines.length > 0 &&
-                          !cellLines.some((line) => {
-                            const n = parseKpiCount(f.kpiLineNums[line.id] ?? '')
-                            return n != null && n > 0
-                          })
+                        const linkedCountInvalid = linkedYes && !hasLinkedKpiCount(f, q.linkedKpiByLine, cellLines)
                         const kindHint =
                           q.responseKind === 'yes_no'
                             ? null
@@ -734,12 +813,24 @@ export function DdsP2pPage() {
                                   <button
                                     type="button"
                                     disabled={readOnlyRevision}
-                                    onClick={() =>
-                                      setForm((prev) => ({
-                                        ...prev,
-                                        [q.key]: { ...f, yesNo: true },
-                                      }))
-                                    }
+                                    onClick={() => {
+                                      const prevAns = formRef.current[q.key] ?? f
+                                      const nextLineNums =
+                                        q.linkedKpiId && q.linkedKpiByLine && cellLines.length === 1
+                                          ? {
+                                              ...prevAns.kpiLineNums,
+                                              [cellLines[0]!.id]: prevAns.kpiLineNums[cellLines[0]!.id] || '1',
+                                            }
+                                          : prevAns.kpiLineNums
+                                      patchForm(q.key, {
+                                        yesNo: true,
+                                        kpiIncidentNum:
+                                          q.linkedKpiId && !q.linkedKpiByLine
+                                            ? prevAns.kpiIncidentNum || '1'
+                                            : prevAns.kpiIncidentNum,
+                                        kpiLineNums: nextLineNums,
+                                      })
+                                    }}
                                     className={`h-5 min-w-[2.1rem] rounded px-1.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
                                       f.yesNo === true
                                         ? 'bg-rose-600 text-white shadow-sm ring-1 ring-rose-500/40 dark:bg-rose-600'
@@ -752,10 +843,7 @@ export function DdsP2pPage() {
                                     type="button"
                                     disabled={readOnlyRevision}
                                     onClick={() =>
-                                      setForm((prev) => ({
-                                        ...prev,
-                                        [q.key]: { ...f, yesNo: false, kpiIncidentNum: '', kpiLineNums: {} },
-                                      }))
+                                      patchForm(q.key, { yesNo: false, kpiIncidentNum: '', kpiLineNums: {} })
                                     }
                                     className={`h-5 min-w-[2.1rem] rounded px-1.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
                                       f.yesNo === false
@@ -773,9 +861,7 @@ export function DdsP2pPage() {
                                   placeholder="—"
                                   disabled={readOnlyRevision}
                                   value={f.num}
-                                  onChange={(e) =>
-                                    setForm((prev) => ({ ...prev, [q.key]: { ...f, num: e.target.value } }))
-                                  }
+                                  onChange={(e) => patchForm(q.key, { num: e.target.value })}
                                 />
                               )}
                               {kindHint ? (
@@ -791,7 +877,7 @@ export function DdsP2pPage() {
                                 ) : (
                                   <div
                                     className={`mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 rounded border px-1 py-0.5 ${
-                                      lineCountsInvalid
+                                      linkedCountInvalid
                                         ? 'border-rose-600 ring-1 ring-rose-500/35'
                                         : 'border-border/60 bg-surface-raised/20'
                                     }`}
@@ -809,34 +895,35 @@ export function DdsP2pPage() {
                                           placeholder="—"
                                           disabled={readOnlyRevision}
                                           value={f.kpiLineNums[line.id] ?? ''}
-                                          onChange={(e) =>
-                                            setForm((prev) => ({
-                                              ...prev,
-                                              [q.key]: {
-                                                ...f,
-                                                kpiLineNums: { ...f.kpiLineNums, [line.id]: e.target.value },
-                                              },
-                                            }))
-                                          }
+                                          onChange={(e) => {
+                                            const prevAns = formRef.current[q.key] ?? f
+                                            patchForm(q.key, {
+                                              kpiLineNums: { ...prevAns.kpiLineNums, [line.id]: e.target.value },
+                                            })
+                                          }}
                                         />
                                       </label>
                                     ))}
                                   </div>
                                 )
                               ) : (
-                                <input
-                                  className={`${compactControl} mt-0.5 w-[4rem] text-right tabular-nums`}
-                                  inputMode="numeric"
-                                  placeholder="0"
-                                  disabled={readOnlyRevision}
-                                  value={f.kpiIncidentNum}
-                                  onChange={(e) =>
-                                    setForm((prev) => ({
-                                      ...prev,
-                                      [q.key]: { ...f, kpiIncidentNum: e.target.value },
-                                    }))
-                                  }
-                                />
+                                <label
+                                  className={`mt-0.5 inline-flex items-center gap-1 text-[10px] ${
+                                    linkedCountInvalid ? 'text-rose-700 dark:text-rose-300' : 'text-muted'
+                                  }`}
+                                >
+                                  Count
+                                  <input
+                                    className={`${compactControl} w-[4rem] text-right tabular-nums ${
+                                      linkedCountInvalid ? 'border-rose-600 ring-1 ring-rose-500/35' : ''
+                                    }`}
+                                    inputMode="numeric"
+                                    placeholder="0"
+                                    disabled={readOnlyRevision}
+                                    value={f.kpiIncidentNum}
+                                    onChange={(e) => patchForm(q.key, { kpiIncidentNum: e.target.value })}
+                                  />
+                                </label>
                               )
                             ) : null}
                             <textarea
@@ -850,9 +937,7 @@ export function DdsP2pPage() {
                               aria-invalid={commentInvalid}
                               disabled={readOnlyRevision}
                               value={f.comment}
-                              onChange={(e) =>
-                                setForm((prev) => ({ ...prev, [q.key]: { ...f, comment: e.target.value } }))
-                              }
+                              onChange={(e) => patchForm(q.key, { comment: e.target.value })}
                               onInput={(e) => growTextarea(e.currentTarget)}
                             />
                           </li>
@@ -893,7 +978,10 @@ export function DdsP2pPage() {
                       id="p2p-revision"
                       className="h-7 max-w-[min(100%,16rem)] rounded-md border border-border/80 bg-surface px-1.5 text-[10px] outline-none ring-accent/30 focus:border-accent/50 focus:ring-1"
                       value={String(revisionIx)}
-                      onChange={(e) => setRevisionIx(Number(e.target.value))}
+                      onChange={(e) => {
+                        formDirtyRef.current = false
+                        setRevisionIx(Number(e.target.value))
+                      }}
                     >
                       {audits.map((a, i) => (
                         <option key={a.id} value={String(i)}>

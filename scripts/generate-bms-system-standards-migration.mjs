@@ -13,11 +13,23 @@ const outPath = join(__dirname, '../supabase/migrations/20260609160000_bms_brain
 
 const ROLE_VAR = {
   operator: 'r_operator',
+  'team-lead': 'r_team_lead',
   cell: 'r_cell',
   plant: 'r_plant',
   site: 'r_site',
   support: 'r_support',
   maintenance: 'r_maint',
+}
+
+/** First-line Cell steps in shift/p2p forums are owned by Team Lead. */
+function resolveRole(role, forum, label = '') {
+  if (role !== 'cell') return role
+  if (forum === 'shift-dds' || forum === 'p2p') return 'team-lead'
+  if (forum === 'swp' && /sign-off|operational corrective|complete corrective action|apply standard|raise dh/i.test(label)) {
+    return 'team-lead'
+  }
+  if (forum === 'pdca' && /do & check/i.test(label)) return 'team-lead'
+  return role
 }
 
 const FORUM_VAR = {
@@ -786,17 +798,20 @@ function sqlEscape(s) {
 }
 
 function buildNodeSql(n) {
+  const role = resolveRole(n.role, n.forum, n.label)
+  const owner =
+    role === 'team-lead' && n.owner && /cell/i.test(n.owner) ? 'Team Lead' : n.owner
   const parts = [
     `'id','${n.id}'`,
     `'kind','${n.kind}'`,
     `'label','${sqlEscape(n.label)}'`,
   ]
   if (n.description) parts.push(`'description','${sqlEscape(n.description)}'`)
-  parts.push(`'roleId',${ROLE_VAR[n.role]}`)
+  parts.push(`'roleId',${ROLE_VAR[role]}`)
   parts.push(`'forumId',${FORUM_VAR[n.forum]}`)
   const sysExprs = n.systems.map((s) => SYSTEM_VAR[s]).join(',')
   parts.push(`'systemIds',jsonb_build_array(${sysExprs})`)
-  if (n.owner) parts.push(`'owner','${sqlEscape(n.owner)}'`)
+  if (owner) parts.push(`'owner','${sqlEscape(owner)}'`)
   if (n.inputs) parts.push(`'inputs','${sqlEscape(n.inputs)}'`)
   if (n.outputs) parts.push(`'outputs','${sqlEscape(n.outputs)}'`)
   if (n.subprocess === 'ips') parts.push(`'subprocessProcessId',p_ips`)
@@ -897,6 +912,7 @@ declare
   p_ips uuid := 'a1000002-0001-4000-8000-000000000002';
   p_mps uuid := 'a1000003-0001-4000-8000-000000000002';
   r_operator uuid;
+  r_team_lead uuid;
   r_cell uuid;
   r_plant uuid;
   r_site uuid;
@@ -928,6 +944,7 @@ declare
   next_ver int;
 begin
   select id into r_operator from bms_brain_roles where slug = 'operator';
+  select id into r_team_lead from bms_brain_roles where slug = 'team-lead';
   select id into r_cell from bms_brain_roles where slug = 'cell';
   select id into r_plant from bms_brain_roles where slug = 'plant';
   select id into r_site from bms_brain_roles where slug = 'site';

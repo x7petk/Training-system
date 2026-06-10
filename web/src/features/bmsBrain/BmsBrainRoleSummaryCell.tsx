@@ -1,4 +1,5 @@
 import { MATRIX_CELL_NO_DATA } from './matrixCellNoData'
+import { bmsBlockAccentClass, bmsBlockClass, bmsBlockRadiusClass, bmsBlockSurfaceClass } from './bmsBlockStyles'
 import type { RoleSummaryCell } from './roleSummaryMatrixTypes'
 import type { MatrixDensity } from './matrixLayout'
 
@@ -40,12 +41,22 @@ export function BmsBrainRoleSummaryCell({ cell, hasSteps, density, fontSize }: P
   return (
     <div className="min-w-0 space-y-1.5 leading-snug" style={{ fontSize }}>
       {cell.purpose ? (
-        <p className="font-medium leading-snug text-fg">{cell.purpose}</p>
+        <div
+          className={[
+            'relative overflow-hidden border px-2 py-1.5 pl-3',
+            bmsBlockClass.review,
+            bmsBlockRadiusClass('review'),
+            bmsBlockSurfaceClass,
+          ].join(' ')}
+        >
+          <span className={['absolute inset-y-0 left-0 w-1 opacity-75', bmsBlockAccentClass.review].join(' ')} aria-hidden />
+          <p className="font-semibold leading-snug tracking-[-0.01em] text-fg">{cell.purpose}</p>
+        </div>
       ) : null}
       {cell.systems.length && !tight ? (
         <div className="flex flex-wrap gap-0.5">
           {cell.systems.map((s) => (
-            <span key={s} className="rounded bg-accent/10 px-1 py-px text-[9px] font-medium text-accent">
+            <span key={s} className="rounded-full border border-accent/15 bg-accent/10 px-1.5 py-px text-[9px] font-semibold text-accent shadow-sm">
               {s}
             </span>
           ))}

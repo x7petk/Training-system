@@ -23,7 +23,14 @@ import {
   type DdsP2pSummaryViewPrefs,
 } from './ddsP2pSummaryViewPrefs'
 import { subscribeDdsP2pKpiRollupDone } from './ddsP2pKpiRollupEvents'
-import { ddsErr } from './ddsAdminCompactClasses'
+import {
+  buildP2pShiftNarrative,
+  formatPlanIssueGapParts,
+  type P2pNarrativeAnswerSnapshot,
+  type P2pNarrativeQuestionContext,
+  type P2pRoleNarrativeInput,
+  type P2pShiftNarrative,
+} from './ddsP2pShiftNarrative'
 import {
   buildP2pPlanFamilyTrends,
   buildP2pPlanRoleIssueCounts,
@@ -38,6 +45,7 @@ import {
   type P2pPlanEventRow,
   type P2pPlanTaskIssueRow,
 } from './ddsP2pPlanDayStats'
+import { ddsErr } from './ddsAdminCompactClasses'
 
 export type DdsP2pSummaryShiftRow = {
   kind: string
@@ -59,6 +67,7 @@ type MatrixQuestion = {
   prompt: string
   responseKind: DdsP2pResponseKind
   targetNumber: number | null
+  linkedKpiLabel: string | null
   roleIds: Set<string>
 }
 
@@ -153,23 +162,7 @@ function subTaskDescriptionLines(subTasks: unknown, maxLines = 6): string[] {
   return out
 }
 
-type ShiftNarrative = {
-  summary: string
-  roles: RoleShiftNarrative[]
-  attentionCount: number
-  commentCount: number
-}
-
-type RoleShiftNarrative = {
-  roleId: string
-  roleName: string
-  tone: 'good' | 'watch' | 'urgent'
-  submitted: boolean
-  headline: string
-  gaps: string[]
-  comments: string[]
-  action: string
-}
+type ShiftNarrative = P2pShiftNarrative
 
 function compactText(text: string, max = 110): string {
   const t = text.replace(/\s+/g, ' ').trim()
@@ -580,12 +573,15 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
     const [grpRes, stdRes, softRes] = await Promise.all([
       supabase.from('dds_kpi_groups').select('id, name, sort_order').order('sort_order').order('name'),
       stdIds.length
-        ? supabase.from('dds_p2p_standard_questions').select('id, kpi_group_id, prompt, sort_order, response_kind, target_number').in('id', stdIds)
+        ? supabase
+            .from('dds_p2p_standard_questions')
+            .select('id, kpi_group_id, prompt, sort_order, response_kind, target_number, linked_kpi_id')
+            .in('id', stdIds)
         : Promise.resolve({ data: [], error: null }),
       softIds.length
         ? supabase
             .from('dds_p2p_cell_soft_point_questions')
-            .select('id, kpi_group_id, prompt, sort_order, response_kind, target_number')
+            .select('id, kpi_group_id, prompt, sort_order, response_kind, target_number, linked_kpi_id')
             .eq('master_cell_id', cellId)
             .in('id', softIds)
         : Promise.resolve({ data: [], error: null }),
@@ -606,9 +602,27 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
       sort_order: number
       response_kind: string
       target_number: number | string | null
+      linked_kpi_id: string | null
     }
     const stdRows = (stdRes.data ?? []) as QRow[]
     const softRows = (softRes.data ?? []) as QRow[]
+    const linkedKpiIds = [
+      ...new Set(
+        [...stdRows, ...softRows].map((q) => q.linked_kpi_id).filter((id): id is string => Boolean(id)),
+      ),
+    ]
+    const kpiLabelById = new Map<string, string>()
+    if (linkedKpiIds.length > 0) {
+      const { data: kpiRows, error: kpiErr } = await supabase.from('dds_kpis').select('id, label').in('id', linkedKpiIds)
+      if (kpiErr) {
+        setError(kpiErr.message)
+        setMatrixLoading(false)
+        return
+      }
+      for (const row of (kpiRows ?? []) as { id: string; label: string }[]) {
+        kpiLabelById.set(row.id, row.label.trim())
+      }
+    }
     const stdSet = new Set(stdIds)
     const softSet = new Set(softIds)
 
@@ -635,6 +649,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
           prompt: q.prompt,
           responseKind: rk,
           targetNumber: Number.isFinite(tn as number) ? (tn as number) : null,
+          linkedKpiLabel: q.linked_kpi_id ? kpiLabelById.get(q.linked_kpi_id) ?? null : null,
           roleIds,
         })
       }
@@ -652,6 +667,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
           prompt: q.prompt,
           responseKind: rk,
           targetNumber: Number.isFinite(tn as number) ? (tn as number) : null,
+          linkedKpiLabel: q.linked_kpi_id ? kpiLabelById.get(q.linked_kpi_id) ?? null : null,
           roleIds,
         })
       }
@@ -699,7 +715,9 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
     if (auditIds.length > 0) {
       const { data: ansRows, error: ansErr } = await supabase
         .from('dds_p2p_audit_answers')
-        .select('audit_id, question_kind, standard_question_id, soft_question_id, answer_yes_no, answer_number, question_comment')
+        .select(
+          'audit_id, question_kind, standard_question_id, soft_question_id, answer_yes_no, answer_number, question_comment, kpi_link_comment, kpi_link_value',
+        )
         .in('audit_id', auditIds)
       if (ansErr) {
         setError(ansErr.message)
@@ -726,16 +744,18 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
           const qk = ddsP2pQuestionKey(kind, qid)
           const mq = matrixQ.find((x) => x.key === qk)
           if (!mq) continue
+          const qc = String((row.question_comment as string | null) ?? '').trim()
+          const klc = String((row.kpi_link_comment as string | null) ?? '').trim()
           nextCells[rid][qk] = {
             responseKind: mq.responseKind,
             yesNo: typeof row.answer_yes_no === 'boolean' ? row.answer_yes_no : null,
             num: (() => {
-              const n = row.answer_number
+              const n = row.answer_number ?? row.kpi_link_value
               if (n == null) return null
               const v = Number(n)
               return Number.isFinite(v) ? v : null
             })(),
-            comment: (row.question_comment as string | null) ?? '',
+            comment: qc || klc,
           }
         }
       }
@@ -808,17 +828,25 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
   const visibleSubmittedCount = roleCols.filter((r) => submittedRoleIds.has(r.id)).length
 
   const shiftNarrative = useMemo<ShiftNarrative>(() => {
-    const roleNarratives: RoleShiftNarrative[] = roleCols.map((r) => {
+    const narrativeQuestions: P2pNarrativeQuestionContext[] = questionRows.map((q) => ({
+      key: q.key,
+      groupName: q.groupName,
+      prompt: q.prompt,
+      responseKind: q.responseKind,
+      targetNumber: q.targetNumber,
+      linkedKpiLabel: q.linkedKpiLabel,
+    }))
+
+    const roleInputs: P2pRoleNarrativeInput[] = roleCols.map((r) => {
       const roleName = r.name.trim()
       const submitted = submittedRoleIds.has(r.id)
       const gaps: string[] = []
-      const comments: string[] = []
       const comp = planCompletionByRole.get(roleName)
       const issueRow = planIssueCountByRole.get(roleName)
       const deviations = (issueRow?.deviations ?? 0) + (planExtraDeviationsByRole.get(roleName) ?? 0)
-      const defects = (issueRow?.defects ?? 0) + (planExtraDefectsByRole.get(roleName) ?? 0)
+      const cilDefects = (issueRow?.defects ?? 0) + (planExtraDefectsByRole.get(roleName) ?? 0)
       const qualityFails = (issueRow?.qualityFails ?? 0) + (planExtraQualityFailsByRole.get(roleName) ?? 0)
-      const issueTotal = deviations + defects + qualityFails
+      const issueTotal = deviations + cilDefects + qualityFails
 
       if (!submitted) gaps.push('P2P not submitted')
       if (comp) {
@@ -834,84 +862,41 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
           .slice(0, 3)
           .forEach((c) => gaps.push(`${c.label} ${c.pct}%`))
       }
-      if (issueTotal > 0) {
-        const parts = [
-          deviations > 0 ? `${deviations} dev` : '',
-          defects > 0 ? `${defects} defect` : '',
-          qualityFails > 0 ? `${qualityFails} fail` : '',
-        ].filter(Boolean)
-        gaps.push(parts.join(' · '))
-      }
+      const planGap = formatPlanIssueGapParts(deviations, cilDefects, qualityFails)
+      if (planGap) gaps.push(planGap)
 
+      const answers: Record<string, P2pNarrativeAnswerSnapshot | undefined> = {}
       for (const q of questionRows) {
         if (!q.roleIds.has(r.id)) continue
         const snap = cells[r.id]?.[q.key]
-        const comment = snap?.comment?.trim()
-        const needsAttention = q.responseKind === 'yes_no' ? snap?.yesNo === true : Boolean(comment)
-        if (!needsAttention && !comment) continue
-        const label = `${q.groupName}: ${compactText(q.prompt, 48)}`
-        comments.push(comment ? `${label} - ${compactText(comment, 92)}` : label)
+        if (!snap) continue
+        answers[q.key] = {
+          yesNo: snap.yesNo,
+          num: snap.num,
+          comment: snap.comment,
+        }
       }
-      const sheet = sheetCommentByRoleId[r.id]?.trim()
-      if (sheet) comments.push(`Overall - ${compactText(sheet, 100)}`)
-
-      const tone: RoleShiftNarrative['tone'] =
-        !submitted || issueTotal > 0 || (comp && Math.min(comp.cl, comp.cil, comp.quality, comp.check) < 75)
-          ? 'urgent'
-          : gaps.length > 0 || comments.length > 0
-            ? 'watch'
-            : 'good'
-
-      const headline =
-        tone === 'good'
-          ? 'No visible gap'
-          : !submitted
-            ? 'P2P required'
-            : issueTotal > 0
-              ? 'Raised items need plan'
-              : comments.length > 0
-                ? 'Comments need review'
-                : 'Completion gap'
-
-      const action =
-        !submitted
-          ? 'Discuss with operator: complete today, move with reason, or mark not required.'
-          : issueTotal > 0
-            ? 'Confirm containment, owner, fix plan today, and escalation if blocked.'
-            : gaps.some((g) => g.includes('%'))
-              ? 'Ask if remaining checks are required today; agree completion time or move decision.'
-              : comments.length > 0
-                ? 'Review comment, agree next step, and create DDS/e-plan action if not fixed today.'
-                : 'Confirm standard held and recognise good shift follow-up.'
 
       return {
         roleId: r.id,
         roleName,
-        tone,
         submitted,
-        headline,
-        gaps: gaps.slice(0, 4),
-        comments: comments.slice(0, 2),
-        action,
+        sheetComment: sheetCommentByRoleId[r.id] ?? '',
+        gaps,
+        planIssueTotal: issueTotal,
+        planDeviations: deviations,
+        planCilDefects: cilDefects,
+        planQualityFails: qualityFails,
+        completionMinPct: comp ? Math.min(comp.cl, comp.cil, comp.quality, comp.check) : null,
+        questions: narrativeQuestions.filter((q) => {
+          const mq = questionRows.find((row) => row.key === q.key)
+          return mq?.roleIds.has(r.id)
+        }),
+        answers,
       }
     })
 
-    const attentionCount = roleNarratives.filter((r) => r.tone !== 'good').length
-    const commentCount = roleNarratives.reduce((sum, r) => sum + r.comments.length, 0)
-    const summary =
-      attentionCount === 0
-        ? 'Shift looks stable across visible roles. No immediate team-lead intervention is highlighted.'
-        : `${attentionCount}/${roleNarratives.length} visible role${roleNarratives.length === 1 ? '' : 's'} need team-lead follow-up. Start with urgent cards, then close comment-driven actions.`
-
-    return {
-      summary,
-      roles: roleNarratives.sort((a, b) => {
-        const weight = { urgent: 0, watch: 1, good: 2 }
-        return weight[a.tone] - weight[b.tone] || a.roleName.localeCompare(b.roleName)
-      }),
-      attentionCount,
-      commentCount,
-    }
+    return buildP2pShiftNarrative(roleInputs)
   }, [
     cells,
     planCompletionByRole,
@@ -1216,7 +1201,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                     AI shift narrative by role
                   </h2>
                   <span className="rounded-full bg-surface/80 px-1.5 py-px text-[9px] font-semibold text-muted">
-                    {shiftNarrative.attentionCount} need follow-up · {shiftNarrative.commentCount} comments
+                    {shiftNarrative.attentionCount} need follow-up · {shiftNarrative.insightCount} insights
                   </span>
                   {planStatsLoading ? (
                     <span className="inline-flex items-center gap-1 text-[9px] text-muted">
@@ -1247,15 +1232,15 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
             </div>
 
             {!narrativeCollapsed ? (
-              <div className="max-h-40 overflow-auto">
+              <div className="max-h-72 overflow-auto">
                 <table className="min-w-full border-separate border-spacing-0 text-left text-[10px]">
                   <thead className="sticky top-0 z-[1] bg-surface-raised/95 text-[8px] uppercase tracking-wide text-muted backdrop-blur-sm">
                     <tr>
                       <th className="border-b border-violet-500/20 px-2 py-1 font-bold">Priority</th>
                       <th className="border-b border-violet-500/20 px-2 py-1 font-bold">Role</th>
                       <th className="border-b border-violet-500/20 px-2 py-1 font-bold">Gaps</th>
-                      <th className="border-b border-violet-500/20 px-2 py-1 font-bold">Comments</th>
-                      <th className="border-b border-violet-500/20 px-2 py-1 font-bold">Next action</th>
+                      <th className="border-b border-violet-500/20 px-2 py-1 font-bold">P2P analysis</th>
+                      <th className="border-b border-violet-500/20 px-2 py-1 font-bold">Suggested action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1273,7 +1258,6 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                             ? 'bg-amber-500 text-black'
                             : 'bg-emerald-600 text-white'
                       const gaps = role.gaps.length > 0 ? role.gaps.slice(0, 3).join(' · ') : 'No visible gaps'
-                      const comments = role.comments.length > 0 ? role.comments.slice(0, 2).join(' · ') : 'None'
                       return (
                         <tr key={role.roleId} className={`${rowClass} align-top`}>
                           <td className="border-b border-violet-500/10 px-2 py-1">
@@ -1293,11 +1277,42 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                           <td className="max-w-[14rem] border-b border-violet-500/10 px-2 py-1 text-fg/90">
                             <span className="line-clamp-2" title={gaps}>{gaps}</span>
                           </td>
-                          <td className="max-w-[16rem] border-b border-violet-500/10 px-2 py-1 text-muted">
-                            <span className="line-clamp-2" title={comments}>{comments}</span>
+                          <td className="max-w-[22rem] border-b border-violet-500/10 px-2 py-1 text-muted">
+                            {role.insights.length > 0 ? (
+                              <ul className="space-y-1">
+                                {role.insights.map((insight, idx) => (
+                                  <li key={`${role.roleId}-${idx}`} className="leading-snug" title={insight.finding}>
+                                    <span
+                                      className={`mr-1 inline-flex rounded px-1 py-px text-[8px] font-bold uppercase tracking-wide ${
+                                        insight.highPriority
+                                          ? 'bg-rose-600/15 text-rose-800 dark:text-rose-200'
+                                          : 'bg-surface-raised text-muted'
+                                      }`}
+                                    >
+                                      {insight.topicLabel}
+                                    </span>
+                                    <span className={insight.highPriority ? 'font-medium text-fg/90' : ''}>
+                                      {compactText(insight.finding, 180)}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              'No P2P signals'
+                            )}
                           </td>
                           <td className="max-w-[18rem] border-b border-violet-500/10 px-2 py-1 font-medium">
-                            <span className="line-clamp-2" title={role.action}>{role.action}</span>
+                            {role.insights.length > 0 ? (
+                              <ul className="space-y-1 text-[10px] leading-snug">
+                                {role.insights.map((insight, idx) => (
+                                  <li key={`${role.roleId}-s-${idx}`} title={insight.suggestion}>
+                                    {compactText(insight.suggestion, 160)}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <span title={role.action}>{compactText(role.action, 160)}</span>
+                            )}
                           </td>
                         </tr>
                       )

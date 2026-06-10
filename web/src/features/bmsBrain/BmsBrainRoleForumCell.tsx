@@ -1,4 +1,4 @@
-import { bmsBlockClass, bmsBlockRadiusClass } from './bmsBlockStyles'
+import { bmsBlockAccentClass, bmsBlockClass, bmsBlockRadiusClass, bmsBlockSoftBadgeClass, bmsBlockSurfaceClass } from './bmsBlockStyles'
 import { MATRIX_CELL_NO_DATA } from './matrixCellNoData'
 import type { RoleForumMatrixCell } from './roleForumMatrixTypes'
 import type { MatrixDensity } from './matrixLayout'
@@ -37,12 +37,21 @@ export function BmsBrainRoleForumCell({ cell, hasSteps, density, fontSize }: Pro
           <div
             key={group.title}
             className={[
-              'min-w-0 overflow-hidden border px-1 py-0.5',
+              'relative min-w-0 overflow-hidden border px-1.5 py-1 pl-2',
               bmsBlockClass.process,
               bmsBlockRadiusClass('process'),
+              bmsBlockSurfaceClass,
             ].join(' ')}
           >
-            <div className="truncate font-medium leading-tight">{group.title}</div>
+            <span className={['absolute inset-y-0 left-0 w-1 opacity-75', bmsBlockAccentClass.process].join(' ')} aria-hidden />
+            <div className="flex min-w-0 items-start justify-between gap-1">
+              <div className="truncate font-semibold leading-tight tracking-[-0.01em]">{group.title}</div>
+              {!tight ? (
+                <span className={['shrink-0 rounded-full px-1 py-px font-semibold uppercase leading-none', bmsBlockSoftBadgeClass.process].join(' ')} style={{ fontSize: tagSize }}>
+                  Group
+                </span>
+              ) : null}
+            </div>
             {group.items.length ? (
               <ul className="mt-0.5 list-none space-y-px pl-0">
                 {group.items.slice(0, tight ? 2 : 4).map((item) => (

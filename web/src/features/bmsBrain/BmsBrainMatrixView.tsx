@@ -1,6 +1,13 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { BmsCatalogRow, BmsFlowEdge, BmsFlowNode, BmsProcessRow } from './types'
-import { bmsBlockClass, bmsBlockRadiusClass } from './bmsBlockStyles'
+import {
+  bmsBlockAccentClass,
+  bmsBlockClass,
+  bmsBlockInteractiveClass,
+  bmsBlockKindLabel,
+  bmsBlockRadiusClass,
+  bmsBlockSoftBadgeClass,
+} from './bmsBlockStyles'
 import { layoutMatrixEdges, type BlockRect } from './matrixEdgeGeometry'
 import { computeMatrixLayout, matrixBlockLabelClass, matrixBlockMaxWidth, matrixBlockTextPlan, type MatrixDensity } from './matrixLayout'
 import { matrixBlockHighlightClass, resolveMatrixBlockHighlight, type MatrixBlockHighlight } from './matrixBlockHighlight'
@@ -63,15 +70,17 @@ function MatrixTerminalBlock({
       onClick={onSelect}
       style={blockSizeStyle(maxWidth, text.typography.label)}
       className={[
-        'inline-flex shrink-0 flex-col items-center justify-center overflow-hidden border text-center leading-tight transition',
+        'group relative inline-flex shrink-0 flex-col items-center justify-center overflow-hidden border text-center leading-tight transition',
         bmsBlockClass[node.kind],
         bmsBlockRadiusClass(node.kind),
+        bmsBlockInteractiveClass,
         tight ? 'min-h-[1.2rem] px-1 py-0.5' : 'min-h-[1.5rem] px-1 py-0.5',
         matrixBlockHighlightClass(highlight),
         highlight === 'none' ? 'hover:ring-1 hover:ring-accent/30' : '',
       ].join(' ')}
     >
-      <div className={matrixBlockLabelClass(text.labelLines) + ' font-medium'}>{node.label}</div>
+      <span className={['absolute inset-x-4 top-0 h-0.5 opacity-70', bmsBlockAccentClass[node.kind]].join(' ')} aria-hidden />
+      <div className={matrixBlockLabelClass(text.labelLines) + ' font-semibold tracking-[-0.01em]'}>{node.label}</div>
       {text.showMeta ? (
         <div className={matrixBlockLabelClass(1) + ' opacity-70'} style={{ fontSize: text.typography.meta }}>
           {process.name}
@@ -108,14 +117,19 @@ function MatrixDecisionBlock({
       onClick={onSelect}
       style={{ width: dim, height: dim, minWidth: 0, fontSize: labelSize }}
       className={[
-        'relative inline-flex shrink-0 items-center justify-center overflow-hidden transition',
+        'group relative inline-flex shrink-0 items-center justify-center overflow-hidden transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2',
         matrixBlockHighlightClass(highlight),
         highlight === 'none' ? 'hover:ring-1 hover:ring-accent/30' : '',
       ].join(' ')}
       aria-label={node.label}
     >
-      <span className={['absolute inset-1 rotate-45 rounded-sm border shadow-sm', bmsBlockClass.decision].join(' ')} />
-      <span className={matrixBlockLabelClass(3) + ' relative z-10 max-w-[82%] text-center font-medium leading-tight'}>
+      <span
+        className={[
+          'absolute inset-1 rotate-45 rounded-sm border shadow-[0_1px_2px_rgba(15,23,42,0.08),0_8px_18px_rgba(245,158,11,0.12)] transition group-hover:-translate-y-px group-hover:shadow-[0_8px_20px_rgba(245,158,11,0.18)]',
+          bmsBlockClass.decision,
+        ].join(' ')}
+      />
+      <span className={matrixBlockLabelClass(3) + ' relative z-10 max-w-[82%] text-center font-semibold leading-tight tracking-[-0.01em]'}>
         {node.label}
       </span>
     </button>
@@ -156,15 +170,29 @@ function MatrixStandardBlock({
       onClick={onSelect}
       style={blockSizeStyle(maxWidth, text.typography.label)}
       className={[
-        'inline-flex shrink-0 flex-col overflow-hidden border text-left leading-tight transition',
+        'group relative inline-flex shrink-0 flex-col overflow-hidden border text-left leading-tight transition',
         bmsBlockClass[node.kind],
         bmsBlockRadiusClass(node.kind),
-        compact ? 'gap-0 px-1 py-0.5' : 'gap-0.5 px-1 py-0.5',
+        bmsBlockInteractiveClass,
+        compact ? 'gap-0 px-1 py-0.5 pl-1.5' : 'gap-0.5 px-1.5 py-1 pl-2',
         matrixBlockHighlightClass(highlight),
         highlight === 'none' ? 'hover:ring-1 hover:ring-accent/30' : '',
       ].join(' ')}
     >
-      <div className={matrixBlockLabelClass(text.labelLines) + ' font-medium'}>{node.label}</div>
+      <span className={['absolute inset-y-0 left-0 w-1 opacity-75', bmsBlockAccentClass[node.kind]].join(' ')} aria-hidden />
+      <div className="flex min-w-0 w-full items-start justify-between gap-1">
+        <div className={matrixBlockLabelClass(text.labelLines) + ' min-w-0 font-semibold tracking-[-0.01em]'}>
+          {node.label}
+        </div>
+        {!compact ? (
+          <span
+            className={['shrink-0 rounded-full px-1 py-px font-semibold uppercase leading-none', bmsBlockSoftBadgeClass[node.kind]].join(' ')}
+            style={{ fontSize: text.typography.tag }}
+          >
+            {bmsBlockKindLabel[node.kind]}
+          </span>
+        ) : null}
+      </div>
       {showSystems ? (
         <div className="flex min-w-0 w-full flex-wrap gap-0.5 overflow-hidden">
           {systemIds.slice(0, maxTags).map((sid) => {
@@ -173,8 +201,8 @@ function MatrixStandardBlock({
             return (
               <span
                 key={sid}
-                className="max-w-full truncate rounded px-0.5 font-medium leading-none"
-                style={{ fontSize: text.typography.tag, backgroundColor: `${s.color}33`, color: s.color }}
+                className="max-w-full truncate rounded-full border px-1 py-px font-semibold leading-none shadow-sm"
+                style={{ fontSize: text.typography.tag, backgroundColor: `${s.color}1f`, borderColor: `${s.color}33`, color: s.color }}
                 title={s.name}
               >
                 {s.name}
@@ -184,7 +212,7 @@ function MatrixStandardBlock({
         </div>
       ) : null}
       {text.showMeta ? (
-        <div className={matrixBlockLabelClass(1) + ' opacity-60'} style={{ fontSize: text.typography.meta }} title={process.name}>
+        <div className={matrixBlockLabelClass(1) + ' opacity-65'} style={{ fontSize: text.typography.meta }} title={process.name}>
           {process.name}
         </div>
       ) : null}
@@ -229,12 +257,15 @@ export function BmsBrainMatrixView({
     }
   }
 
-  const edges: { edge: BmsFlowEdge; process: BmsProcessRow }[] = []
-  for (const process of processes) {
-    for (const edge of process.flow?.edges ?? []) {
-      edges.push({ edge, process })
+  const edges: { edge: BmsFlowEdge; process: BmsProcessRow }[] = useMemo(() => {
+    const next: { edge: BmsFlowEdge; process: BmsProcessRow }[] = []
+    for (const process of processes) {
+      for (const edge of process.flow?.edges ?? []) {
+        next.push({ edge, process })
+      }
     }
-  }
+    return next
+  }, [processes])
 
   const { labelW, colW, cellMinH, headerH, density, blockScale, gridW } = layout
   const stdMaxW = matrixBlockMaxWidth(colW, blockScale, 'standard')
@@ -389,7 +420,10 @@ export function BmsBrainMatrixView({
                 return (
                   <div
                     key={`${forum.id}-${role.id}`}
-                    className={['relative border-b border-r border-border/70 bg-canvas/20', cellPad].join(' ')}
+                    className={[
+                      'relative border-b border-r border-border/70 bg-canvas/20 transition-colors hover:bg-surface-raised/40',
+                      cellPad,
+                    ].join(' ')}
                     style={{ minHeight: cellMinH }}
                   >
                     <div className={['flex flex-row flex-wrap items-start content-start', cellGap].join(' ')}>

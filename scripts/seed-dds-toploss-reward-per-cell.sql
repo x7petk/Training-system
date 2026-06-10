@@ -1,4 +1,4 @@
--- Seed 3 top losses + 2 rewards per cell (line-dds) for today's NZ date.
+-- Seed 3 top losses + 3 rewards per cell (line-dds) for today + next 14 NZ days.
 -- Idempotent by deterministic text keys.
 
 begin;
@@ -6,6 +6,9 @@ begin;
 do $$
 declare
   v_today date := (now() at time zone 'Pacific/Auckland')::date;
+  v_plan_date date;
+  v_day_offset int;
+  v_days_ahead int := 14;
   v_shift text := 'day_night';
   c record;
   tl_type uuid;
@@ -33,6 +36,9 @@ begin
     raise exception 'Missing DDS top-loss / reward config options';
   end if;
 
+  for v_day_offset in 0..v_days_ahead loop
+    v_plan_date := v_today + v_day_offset;
+
   for c in
     select id, name
     from public.master_cells
@@ -49,7 +55,7 @@ begin
       if not exists (
         select 1 from public.dds_tl_entries e
         where e.master_cell_id = c.id
-          and e.plan_date = v_today
+          and e.plan_date = v_plan_date
           and e.visible_surface = 'line-dds'
           and e.top_loss = v_loss
           and e.deleted_at is null
@@ -62,7 +68,7 @@ begin
           root_cause_option_id, problem_solve_option_id
         )
         values (
-          null, c.id, v_today, v_shift,
+          null, c.id, v_plan_date, v_shift,
           'line-dds', 'line-dds',
           v_loss,
           case i when 1 then '14.2%' when 2 then '11.7%' else '9.9%' end,
@@ -78,12 +84,12 @@ begin
       end if;
     end loop;
 
-    for i in 1..2 loop
+    for i in 1..3 loop
       v_reason := format('Today demo — %s — reward %s', c.name, i);
       if not exists (
         select 1 from public.dds_rr_entries r
         where r.master_cell_id = c.id
-          and r.plan_date = v_today
+          and r.plan_date = v_plan_date
           and r.visible_surface = 'line-dds'
           and r.reason = v_reason
           and r.deleted_at is null
@@ -95,10 +101,10 @@ begin
           value_option_id, behaviour_option_id
         )
         values (
-          null, c.id, v_today, v_shift,
+          null, c.id, v_plan_date, v_shift,
           'line-dds', 'line-dds',
           'free_text',
-          case i when 1 then 'Team lead' else 'Packing team' end,
+          case i when 1 then 'Team lead' when 2 then 'Packing team' else 'Quality checker' end,
           v_reason,
           rr_value,
           rr_behaviour
@@ -108,6 +114,8 @@ begin
         update public.dds_rr_entries set root_entry_id = v_id where id = v_id;
       end if;
     end loop;
+  end loop;
+
   end loop;
 end
 $$;

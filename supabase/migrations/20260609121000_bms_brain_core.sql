@@ -316,11 +316,12 @@ create policy "bms_brain_attachments_storage_write"
 -- ---------------------------------------------------------------------------
 insert into public.bms_brain_roles (slug, name, description, color, icon, sort_order) values
   ('operator', 'Operator', 'Front-line team member executing standard work on the line.', '#64748b', 'user', 1),
-  ('cell', 'Cell', 'Cell-level leadership coordinating shift execution and escalation.', '#6366f1', 'users', 2),
-  ('plant', 'Plant', 'Plant leadership reviewing performance and enabling resources.', '#8b5cf6', 'factory', 3),
-  ('site', 'Site', 'Site leadership aligning forums and cross-plant priorities.', '#a855f7', 'building-2', 4),
-  ('support', 'Support', 'Support functions enabling line performance (HR, planning, etc.).', '#0ea5e9', 'life-buoy', 5),
-  ('maintenance', 'Maintenance', 'Maintenance and reliability support for equipment and standards.', '#f59e0b', 'wrench', 6)
+  ('team-lead', 'Team Lead', 'First-line leadership supervising operators, shift forums, and team execution.', '#475569', 'user-cog', 2),
+  ('cell', 'Cell', 'Cell-level leadership coordinating shift execution and escalation.', '#6366f1', 'users', 3),
+  ('plant', 'Plant', 'Plant leadership reviewing performance and enabling resources.', '#8b5cf6', 'factory', 4),
+  ('site', 'Site', 'Site leadership aligning forums and cross-plant priorities.', '#a855f7', 'building-2', 5),
+  ('support', 'Support', 'Support functions enabling line performance (HR, planning, etc.).', '#0ea5e9', 'life-buoy', 6),
+  ('maintenance', 'Maintenance', 'Maintenance and reliability support for equipment and standards.', '#f59e0b', 'wrench', 7)
 on conflict (slug) do nothing;
 
 insert into public.bms_brain_forums (slug, name, description, color, icon, sort_order) values
