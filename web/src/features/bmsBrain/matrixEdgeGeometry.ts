@@ -22,27 +22,27 @@ export type MatrixEdgeDraw = {
   label?: string
 }
 
+type Side = 'left' | 'right' | 'top' | 'bottom'
+
+type RouteCandidate = {
+  points: Point[]
+  labelAt: Point
+}
+
 const SIDE_INSET = 0.18
-const STUB = 10
+const STUB = 8
 const LANE_STEP = 7
-const LOOP_EXTRA = 14
-const CLOSE_H_GAP = 40
-const CLOSE_V_GAP = 52
-const COLUMN_CLEARANCE = 8
-const COLUMN_LANE_STEP = 5
+const OBSTACLE_PAD = 5
+const DECISION_OBSTACLE_PAD = 24
+const HIT_PENALTY = 900
+const BEND_PENALTY = 0.001
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))
 }
 
-function rectsAreClose(a: BlockRect, b: BlockRect): boolean {
-  const hGap = b.x - (a.x + a.width)
-  const vOverlap = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
-  const vGap = vOverlap >= 0 ? 0 : Math.abs(vOverlap)
-  if (hGap < CLOSE_H_GAP && vGap < CLOSE_V_GAP) return true
-  const dx = b.x - (a.x + a.width)
-  const dy = (b.y + b.height / 2) - (a.y + a.height / 2)
-  return Math.hypot(dx, dy) < 72
+function center(rect: BlockRect): Point {
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
 }
 
 function sameColumn(a: BlockRect, b: BlockRect): boolean {
@@ -52,163 +52,303 @@ function sameColumn(a: BlockRect, b: BlockRect): boolean {
   return overlapW >= minW * 0.45
 }
 
-/** Left-side vertical routing for blocks in the same matrix column. */
-function columnPath(from: Point, to: Point, lane: number): { path: string; labelAt: Point } {
-  const laneOffset = Math.abs(lane) * COLUMN_LANE_STEP
-  const leftEdge = Math.min(from.x, to.x)
-  const channelX = leftEdge - COLUMN_CLEARANCE - laneOffset
-
-  const path = [
-    `M ${from.x} ${from.y}`,
-    `L ${channelX} ${from.y}`,
-    `L ${channelX} ${to.y}`,
-    `L ${to.x} ${to.y}`,
-  ].join(' ')
-
-  return { path, labelAt: { x: channelX - 3, y: (from.y + to.y) / 2 } }
-}
-
-/** Minimal connector when blocks sit near each other — avoids big loop routes. */
-function shortPath(from: Point, to: Point): { path: string; labelAt: Point } {
-  const gapX = to.x - from.x
-  const gapY = Math.abs(from.y - to.y)
-
-  if (gapX > 3 && gapY < 4) {
-    return {
-      path: `M ${from.x} ${from.y} L ${to.x} ${to.y}`,
-      labelAt: { x: (from.x + to.x) / 2, y: from.y - 4 },
-    }
-  }
-
-  if (gapX > 3) {
-    const stub = clamp(gapX * 0.22, 2, 5)
-    const exitX = from.x + stub
-    const enterX = to.x - stub
-    if (exitX >= enterX) {
-      const midX = (from.x + to.x) / 2
-      return {
-        path: `M ${from.x} ${from.y} L ${midX} ${from.y} L ${midX} ${to.y} L ${to.x} ${to.y}`,
-        labelAt: { x: midX, y: (from.y + to.y) / 2 },
-      }
-    }
-    const midX = (exitX + enterX) / 2
-    return {
-      path: `M ${from.x} ${from.y} L ${exitX} ${from.y} L ${midX} ${from.y} L ${midX} ${to.y} L ${enterX} ${to.y} L ${to.x} ${to.y}`,
-      labelAt: { x: midX, y: (from.y + to.y) / 2 },
-    }
-  }
-
-  const bump = clamp(4 + gapY * 0.05, 3, 8)
-  const midX = from.x + bump
-  return {
-    path: `M ${from.x} ${from.y} L ${midX} ${from.y} L ${midX} ${to.y} L ${to.x} ${to.y}`,
-    labelAt: { x: midX + 2, y: (from.y + to.y) / 2 },
-  }
-}
-
 function slotFraction(slot: number, total: number) {
   if (total <= 1) return 0.5
   const span = 1 - SIDE_INSET * 2
   return SIDE_INSET + ((slot + 1) / (total + 1)) * span
 }
 
-/** Anchor on the left or right edge; spreads multiple connections along the side. */
-export function sideAnchor(rect: BlockRect, side: 'left' | 'right', slot: number, total: number): Point {
+/** Anchor on any block side; spreads multiple connections along that side. */
+export function sideAnchor(rect: BlockRect, side: Side, slot: number, total: number): Point {
   const frac = slotFraction(slot, total)
   const cx = rect.x + rect.width / 2
   const cy = rect.y + rect.height / 2
   const hw = rect.width / 2
   const hh = rect.height / 2
-  const y = rect.y + frac * rect.height
 
-  if (rect.isDecision) {
-    const dy = Math.abs(y - cy)
-    const ratio = hh > 0 ? clamp(dy / hh, 0, 1) : 0
-    const dx = hw * (1 - ratio)
-    return side === 'right' ? { x: cx + dx, y } : { x: cx - dx, y }
+  if (side === 'top' || side === 'bottom') {
+    const x = rect.x + frac * rect.width
+    if (!rect.isDecision) {
+      return side === 'top' ? { x, y: rect.y } : { x, y: rect.y + rect.height }
+    }
+    const dx = Math.abs(x - cx)
+    const ratio = hw > 0 ? clamp(dx / hw, 0, 1) : 0
+    const dy = hh * (1 - ratio)
+    return side === 'top' ? { x, y: cy - dy } : { x, y: cy + dy }
   }
 
-  return side === 'right' ? { x: rect.x + rect.width, y } : { x: rect.x, y }
+  const y = rect.y + frac * rect.height
+  if (!rect.isDecision) {
+    return side === 'right' ? { x: rect.x + rect.width, y } : { x: rect.x, y }
+  }
+  const dy = Math.abs(y - cy)
+  const ratio = hh > 0 ? clamp(dy / hh, 0, 1) : 0
+  const dx = hw * (1 - ratio)
+  return side === 'right' ? { x: cx + dx, y } : { x: cx - dx, y }
 }
 
-function forwardPath(from: Point, to: Point, lane: number): { path: string; labelAt: Point } {
-  const gapX = to.x - from.x
-  if (gapX < 32) return shortPath(from, to)
-
-  const laneOffset = lane * LANE_STEP
-  const exitX = from.x + STUB
-  const enterX = to.x - STUB
-  if (exitX >= enterX) return shortPath(from, to)
-
-  const midX = (exitX + enterX) / 2 + laneOffset
-
-  const path = [
-    `M ${from.x} ${from.y}`,
-    `L ${exitX} ${from.y}`,
-    `L ${midX} ${from.y}`,
-    `L ${midX} ${to.y}`,
-    `L ${enterX} ${to.y}`,
-    `L ${to.x} ${to.y}`,
-  ].join(' ')
-
-  return { path, labelAt: { x: midX, y: (from.y + to.y) / 2 } }
+function inflateRect(rect: BlockRect, pad: number): BlockRect {
+  return {
+    x: rect.x - pad,
+    y: rect.y - pad,
+    width: rect.width + pad * 2,
+    height: rect.height + pad * 2,
+    isDecision: rect.isDecision,
+  }
 }
 
-function loopPath(from: Point, to: Point, lane: number, routeBelow: boolean): { path: string; labelAt: Point } {
-  const laneOffset = lane * LANE_STEP
-  const loopX = from.x + STUB + LOOP_EXTRA + laneOffset
-  const enterX = to.x - STUB
-  const routeY = routeBelow
-    ? Math.max(from.y, to.y) + 18 + lane * 3
-    : Math.min(from.y, to.y) - 18 - lane * 3
+function segmentIntersectsRect(a: Point, b: Point, rect: BlockRect): boolean {
+  const left = rect.x
+  const right = rect.x + rect.width
+  const top = rect.y
+  const bottom = rect.y + rect.height
 
-  const path = [
-    `M ${from.x} ${from.y}`,
-    `L ${loopX} ${from.y}`,
-    `L ${loopX} ${routeY}`,
-    `L ${enterX} ${routeY}`,
-    `L ${enterX} ${to.y}`,
-    `L ${to.x} ${to.y}`,
-  ].join(' ')
+  if (Math.abs(a.y - b.y) < 0.5) {
+    const y = a.y
+    if (y < top || y > bottom) return false
+    const minX = Math.min(a.x, b.x)
+    const maxX = Math.max(a.x, b.x)
+    return maxX > left && minX < right
+  }
 
-  return { path, labelAt: { x: (loopX + enterX) / 2, y: routeY } }
+  if (Math.abs(a.x - b.x) < 0.5) {
+    const x = a.x
+    if (x < left || x > right) return false
+    const minY = Math.min(a.y, b.y)
+    const maxY = Math.max(a.y, b.y)
+    return maxY > top && minY < bottom
+  }
+
+  return false
 }
 
-function routePath(
+function countObstacleHits(points: Point[], obstacles: BlockRect[]): number {
+  let hits = 0
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]
+    const b = points[i]
+    for (const obstacle of obstacles) {
+      if (segmentIntersectsRect(a, b, obstacle)) {
+        hits++
+        break
+      }
+    }
+  }
+  return hits
+}
+
+function pathLength(points: Point[]): number {
+  let len = 0
+  for (let i = 1; i < points.length; i++) {
+    len += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
+  }
+  return len
+}
+
+function pointsToPath(points: Point[]): string {
+  if (!points.length) return ''
+  const [first, ...rest] = points
+  return [`M ${first.x} ${first.y}`, ...rest.map((p) => `L ${p.x} ${p.y}`)].join(' ')
+}
+
+function labelAtMid(points: Point[]): Point {
+  if (points.length < 2) return points[0] ?? { x: 0, y: 0 }
+  const total = pathLength(points)
+  let walked = 0
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]
+    const b = points[i]
+    const seg = Math.hypot(b.x - a.x, b.y - a.y)
+    if (walked + seg >= total / 2) {
+      const t = seg > 0 ? (total / 2 - walked) / seg : 0
+      return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
+    }
+    walked += seg
+  }
+  return points[Math.floor(points.length / 2)]
+}
+
+function dedupePoints(points: Point[]): Point[] {
+  const out: Point[] = []
+  for (const p of points) {
+    const prev = out[out.length - 1]
+    if (prev && Math.abs(prev.x - p.x) < 0.5 && Math.abs(prev.y - p.y) < 0.5) continue
+    out.push(p)
+  }
+  return out
+}
+
+function scoreRoute(points: Point[], obstacles: BlockRect[]): number {
+  const deduped = dedupePoints(points)
+  return (
+    pathLength(deduped) +
+    countObstacleHits(deduped, obstacles) * HIT_PENALTY +
+    Math.max(0, deduped.length - 2) * BEND_PENALTY
+  )
+}
+
+function pickBestRoute(candidates: RouteCandidate[], obstacles: BlockRect[]): RouteCandidate {
+  let best = candidates[0]
+  let bestScore = scoreRoute(best.points, obstacles)
+  for (let i = 1; i < candidates.length; i++) {
+    const score = scoreRoute(candidates[i].points, obstacles)
+    if (score < bestScore) {
+      best = candidates[i]
+      bestScore = score
+    }
+  }
+  return best
+}
+
+function withStub(from: Point, to: Point, exitSide: Side, enterSide: Side): { from: Point; to: Point } {
+  const stubFrom = { ...from }
+  const stubTo = { ...to }
+  if (exitSide === 'right') stubFrom.x += STUB
+  else if (exitSide === 'left') stubFrom.x -= STUB
+  else if (exitSide === 'bottom') stubFrom.y += STUB
+  else stubFrom.y -= STUB
+
+  if (enterSide === 'left') stubTo.x -= STUB
+  else if (enterSide === 'right') stubTo.x += STUB
+  else if (enterSide === 'top') stubTo.y -= STUB
+  else stubTo.y += STUB
+
+  return { from: stubFrom, to: stubTo }
+}
+
+function orthogonalCandidates(from: Point, to: Point, lane: number): RouteCandidate[] {
+  const laneX = lane * LANE_STEP
+  const laneY = lane * LANE_STEP
+  const midX = (from.x + to.x) / 2 + laneX
+  const midY = (from.y + to.y) / 2 + laneY
+
+  const candidates: RouteCandidate[] = [
+    { points: [from, { x: to.x, y: from.y }, to], labelAt: { x: (from.x + to.x) / 2, y: from.y } },
+    { points: [from, { x: from.x, y: to.y }, to], labelAt: { x: from.x, y: (from.y + to.y) / 2 } },
+    { points: [from, { x: midX, y: from.y }, { x: midX, y: to.y }, to], labelAt: { x: midX, y: midY } },
+    { points: [from, { x: from.x, y: midY }, { x: to.x, y: midY }, to], labelAt: { x: midX, y: midY } },
+  ]
+
+  if (Math.abs(from.x - to.x) < 2 || Math.abs(from.y - to.y) < 2) {
+    candidates.unshift({ points: [from, to], labelAt: { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 } })
+  }
+
+  return candidates.map((c) => ({
+    points: dedupePoints(c.points),
+    labelAt: c.labelAt,
+  }))
+}
+
+function channelCandidates(
   from: Point,
   to: Point,
   lane: number,
+  obstacles: BlockRect[],
   srcRect: BlockRect,
   tgtRect: BlockRect,
-  sameCol: boolean,
-): { path: string; labelAt: Point } {
-  if (sameCol) return columnPath(from, to, lane)
-  if (rectsAreClose(srcRect, tgtRect)) return shortPath(from, to)
-  if (to.x > from.x + 8) return forwardPath(from, to, lane)
-  return loopPath(from, to, lane, to.y >= from.y - 4)
+): RouteCandidate[] {
+  const laneOffset = Math.abs(lane) * LANE_STEP + OBSTACLE_PAD
+  const relevant = obstacles.length
+    ? obstacles
+    : [inflateRect(srcRect, OBSTACLE_PAD), inflateRect(tgtRect, OBSTACLE_PAD)]
+
+  const minX = Math.min(from.x, to.x, ...relevant.map((r) => r.x))
+  const maxX = Math.max(from.x, to.x, ...relevant.map((r) => r.x + r.width))
+  const minY = Math.min(from.y, to.y, ...relevant.map((r) => r.y))
+  const maxY = Math.max(from.y, to.y, ...relevant.map((r) => r.y + r.height))
+
+  const aboveY = minY - laneOffset
+  const belowY = maxY + laneOffset
+  const leftX = minX - laneOffset
+  const rightX = maxX + laneOffset
+
+  return [
+  { points: [from, { x: from.x, y: aboveY }, { x: to.x, y: aboveY }, to], labelAt: { x: (from.x + to.x) / 2, y: aboveY } },
+  { points: [from, { x: from.x, y: belowY }, { x: to.x, y: belowY }, to], labelAt: { x: (from.x + to.x) / 2, y: belowY } },
+  { points: [from, { x: leftX, y: from.y }, { x: leftX, y: to.y }, to], labelAt: { x: leftX, y: (from.y + to.y) / 2 } },
+  { points: [from, { x: rightX, y: from.y }, { x: rightX, y: to.y }, to], labelAt: { x: rightX, y: (from.y + to.y) / 2 } },
+  ].map((c) => ({
+    points: dedupePoints(c.points),
+    labelAt: c.labelAt,
+  }))
 }
 
-function corridorKey(from: Point, to: Point, forward: boolean, sameCol: boolean) {
+function preferredSides(srcRect: BlockRect, tgtRect: BlockRect, sameCol: boolean): { exit: Side; enter: Side } {
+  const sc = center(srcRect)
+  const tc = center(tgtRect)
+  const dx = tc.x - sc.x
+  const dy = tc.y - sc.y
+
   if (sameCol) {
-    return `c:${Math.round(from.x / 24)}:${to.y >= from.y ? 'd' : 'u'}`
+    if (Math.abs(dy) >= Math.abs(dx) * 0.6) {
+      return dy >= 0 ? { exit: 'bottom', enter: 'top' } : { exit: 'top', enter: 'bottom' }
+    }
+    return dx >= 0 ? { exit: 'right', enter: 'left' } : { exit: 'left', enter: 'right' }
   }
-  if (forward) {
-    return `f:${Math.round(from.x / 24)}:${Math.round(to.x / 24)}`
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0 ? { exit: 'right', enter: 'left' } : { exit: 'left', enter: 'right' }
   }
-  return `b:${Math.round(from.x / 24)}:${Math.round(to.x / 24)}:${to.y >= from.y ? 'd' : 'u'}`
+  return dy >= 0 ? { exit: 'bottom', enter: 'top' } : { exit: 'top', enter: 'bottom' }
+}
+
+function sideAlternates(side: Side): Side[] {
+  switch (side) {
+    case 'right':
+      return ['right', 'bottom', 'top', 'left']
+    case 'left':
+      return ['left', 'bottom', 'top', 'right']
+    case 'bottom':
+      return ['bottom', 'right', 'left', 'top']
+    case 'top':
+      return ['top', 'right', 'left', 'bottom']
+  }
+}
+
+function routeBetween(
+  from: Point,
+  to: Point,
+  exitSide: Side,
+  enterSide: Side,
+  lane: number,
+  obstacles: BlockRect[],
+  srcRect: BlockRect,
+  tgtRect: BlockRect,
+): RouteCandidate {
+  const stubbed = withStub(from, to, exitSide, enterSide)
+  const candidates = [
+    ...orthogonalCandidates(stubbed.from, stubbed.to, lane),
+    ...channelCandidates(stubbed.from, stubbed.to, lane, obstacles, srcRect, tgtRect),
+  ]
+
+  const best = pickBestRoute(candidates, obstacles)
+  return {
+    points: dedupePoints([from, ...best.points, to]),
+    labelAt: best.labelAt,
+  }
+}
+
+function buildObstacles(rects: Map<string, BlockRect>, srcKey: string, tgtKey: string): BlockRect[] {
+  const obstacles: BlockRect[] = []
+  for (const [key, rect] of rects.entries()) {
+    if (key === srcKey || key === tgtKey) continue
+    obstacles.push(inflateRect(rect, rect.isDecision ? DECISION_OBSTACLE_PAD : OBSTACLE_PAD))
+  }
+  return obstacles
 }
 
 type EdgeWork = MatrixEdgeSpec & {
   from: Point
   to: Point
+  exitSide: Side
+  enterSide: Side
   srcRect: BlockRect
   tgtRect: BlockRect
   sameColumn: boolean
-  forward: boolean
   lane: number
 }
 
-/** Batch-layout matrix edges: right-side exits, left-side entries, staggered lanes. */
+/** Batch-layout matrix edges: shortest orthogonal paths that avoid other blocks when possible. */
 export function layoutMatrixEdges(specs: MatrixEdgeSpec[], rects: Map<string, BlockRect>): MatrixEdgeDraw[] {
   type Raw = MatrixEdgeSpec & { srcRect: BlockRect; tgtRect: BlockRect }
   const raws: Raw[] = []
@@ -232,28 +372,16 @@ export function layoutMatrixEdges(specs: MatrixEdgeSpec[], rects: Map<string, Bl
   }
 
   for (const group of outgoing.values()) {
-    group.sort((a, b) => {
-      const ay = a.tgtRect.y + a.tgtRect.height / 2
-      const by = b.tgtRect.y + b.tgtRect.height / 2
-      return ay - by
-    })
+    group.sort((a, b) => a.tgtRect.y + a.tgtRect.height / 2 - (b.tgtRect.y + b.tgtRect.height / 2))
   }
   for (const group of incoming.values()) {
-    group.sort((a, b) => {
-      const ay = a.srcRect.y + a.srcRect.height / 2
-      const by = b.srcRect.y + b.srcRect.height / 2
-      return ay - by
-    })
+    group.sort((a, b) => a.srcRect.y + a.srcRect.height / 2 - (b.srcRect.y + b.srcRect.height / 2))
   }
 
-  const outSlotSameCol = new Map<string, number>()
-  const outSlotCross = new Map<string, number>()
+  const outSlot = new Map<string, number>()
   const inSlot = new Map<string, number>()
   for (const [key, group] of outgoing.entries()) {
-    const sameColGroup = group.filter((raw) => sameColumn(raw.srcRect, raw.tgtRect))
-    const crossGroup = group.filter((raw) => !sameColumn(raw.srcRect, raw.tgtRect))
-    sameColGroup.forEach((raw, i) => outSlotSameCol.set(`${raw.srcKey}::${raw.id}`, i))
-    crossGroup.forEach((raw, i) => outSlotCross.set(`${raw.srcKey}::${raw.id}`, i))
+    group.forEach((raw, i) => outSlot.set(`${raw.srcKey}::${raw.id}`, i))
     void key
   }
   for (const [key, group] of incoming.entries()) {
@@ -263,38 +391,58 @@ export function layoutMatrixEdges(specs: MatrixEdgeSpec[], rects: Map<string, Bl
 
   const works: EdgeWork[] = raws.map((raw) => {
     const sameCol = sameColumn(raw.srcRect, raw.tgtRect)
-    const outGroup = outgoing.get(raw.srcKey) ?? []
-    const sameColOutTotal = outGroup.filter((r) => sameColumn(r.srcRect, r.tgtRect)).length || 1
-    const crossOutTotal = outGroup.filter((r) => !sameColumn(r.srcRect, r.tgtRect)).length || 1
+    const preferred = preferredSides(raw.srcRect, raw.tgtRect, sameCol)
+    const outTotal = outgoing.get(raw.srcKey)?.length ?? 1
     const inTotal = incoming.get(raw.tgtKey)?.length ?? 1
-    const from = sideAnchor(
-      raw.srcRect,
-      sameCol ? 'left' : 'right',
-      sameCol
-        ? (outSlotSameCol.get(`${raw.srcKey}::${raw.id}`) ?? 0)
-        : (outSlotCross.get(`${raw.srcKey}::${raw.id}`) ?? 0),
-      sameCol ? sameColOutTotal : crossOutTotal,
-    )
-    const to = sideAnchor(raw.tgtRect, 'left', inSlot.get(`${raw.tgtKey}::${raw.id}`) ?? 0, inTotal)
-    const forward = !sameCol && to.x > from.x + 8
+    const outIdx = outSlot.get(`${raw.srcKey}::${raw.id}`) ?? 0
+    const inIdx = inSlot.get(`${raw.tgtKey}::${raw.id}`) ?? 0
+
+    let bestFrom = sideAnchor(raw.srcRect, preferred.exit, outIdx, outTotal)
+    let bestTo = sideAnchor(raw.tgtRect, preferred.enter, inIdx, inTotal)
+    let bestExit = preferred.exit
+    let bestEnter = preferred.enter
+    let bestScore = Number.POSITIVE_INFINITY
+
+    const obstacles = buildObstacles(rects, raw.srcKey, raw.tgtKey)
+
+    for (const exitSide of sideAlternates(preferred.exit).slice(0, 3)) {
+      for (const enterSide of sideAlternates(preferred.enter).slice(0, 3)) {
+        const from = sideAnchor(raw.srcRect, exitSide, outIdx, outTotal)
+        const to = sideAnchor(raw.tgtRect, enterSide, inIdx, inTotal)
+        const route = routeBetween(from, to, exitSide, enterSide, 0, obstacles, raw.srcRect, raw.tgtRect)
+        const score = scoreRoute(route.points, obstacles)
+        if (score < bestScore) {
+          bestScore = score
+          bestFrom = from
+          bestTo = to
+          bestExit = exitSide
+          bestEnter = enterSide
+        }
+      }
+    }
+
     return {
       id: raw.id,
       srcKey: raw.srcKey,
       tgtKey: raw.tgtKey,
       label: raw.label,
-      from,
-      to,
+      from: bestFrom,
+      to: bestTo,
+      exitSide: bestExit,
+      enterSide: bestEnter,
       srcRect: raw.srcRect,
       tgtRect: raw.tgtRect,
       sameColumn: sameCol,
-      forward,
       lane: 0,
     }
   })
 
+  const corridorKey = (work: EdgeWork) =>
+    `${work.exitSide}:${work.enterSide}:${Math.round(work.from.x / 20)}:${Math.round(work.to.x / 20)}:${work.to.y >= work.from.y ? 'd' : 'u'}`
+
   const corridors = new Map<string, EdgeWork[]>()
   for (const work of works) {
-    const key = corridorKey(work.from, work.to, work.forward, work.sameColumn)
+    const key = corridorKey(work)
     const group = corridors.get(key) ?? []
     group.push(work)
     corridors.set(key, group)
@@ -308,8 +456,14 @@ export function layoutMatrixEdges(specs: MatrixEdgeSpec[], rects: Map<string, Bl
     })
   }
 
-  return works.map(({ id, from, to, lane, label, srcRect, tgtRect, sameColumn: sameCol }) => {
-    const { path, labelAt } = routePath(from, to, lane, srcRect, tgtRect, sameCol)
-    return { id, path, labelAt, label }
+  return works.map(({ id, from, to, exitSide, enterSide, lane, label, srcRect, tgtRect, srcKey, tgtKey }) => {
+    const obstacles = buildObstacles(rects, srcKey, tgtKey)
+    const route = routeBetween(from, to, exitSide, enterSide, lane, obstacles, srcRect, tgtRect)
+    return {
+      id,
+      path: pointsToPath(route.points),
+      labelAt: labelAtMid(route.points),
+      label,
+    }
   })
 }

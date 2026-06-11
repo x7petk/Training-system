@@ -6,6 +6,7 @@ import {
   bmsBlockInteractiveClass,
   bmsBlockKindLabel,
   bmsBlockRadiusClass,
+  bmsBlockShape,
   bmsBlockSoftBadgeClass,
 } from './bmsBlockStyles'
 import { layoutMatrixEdges, type BlockRect } from './matrixEdgeGeometry'
@@ -24,6 +25,8 @@ type Props = {
   highlightProcessId: string | null
   focusedNodeKey: string | null
   onSelectNode: (node: BmsFlowNode, process: BmsProcessRow) => void
+  /** Extra padding and gap between blocks inside matrix cells (e.g. process editor). */
+  relaxedBlockSpacing?: boolean
 }
 
 function systemMap(systems: BmsCatalogRow[]) {
@@ -126,7 +129,7 @@ function MatrixDecisionBlock({
       <span
         className={[
           'absolute inset-1 rotate-45 rounded-sm border shadow-[0_1px_2px_rgba(15,23,42,0.08),0_8px_18px_rgba(245,158,11,0.12)] transition group-hover:-translate-y-px group-hover:shadow-[0_8px_20px_rgba(245,158,11,0.18)]',
-          bmsBlockClass.decision,
+          bmsBlockClass[node.kind],
         ].join(' ')}
       />
       <span className={matrixBlockLabelClass(3) + ' relative z-10 max-w-[82%] text-center font-semibold leading-tight tracking-[-0.01em]'}>
@@ -231,6 +234,7 @@ export function BmsBrainMatrixView({
   highlightProcessId,
   focusedNodeKey,
   onSelectNode,
+  relaxedBlockSpacing = false,
 }: Props) {
   const sysById = systemMap(systems)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -312,14 +316,18 @@ export function BmsBrainMatrixView({
     [],
   )
 
+  const placedKeys = useMemo(() => new Set(placed.map(({ node, process }) => blockKey(process.id, node.id))), [placed])
+
   const drawnEdges = useMemo(() => {
-    const specs = edges.map(({ edge, process }) => ({
-      id: `${process.id}-${edge.id}`,
-      srcKey: blockKey(process.id, edge.source),
-      tgtKey: blockKey(process.id, edge.target),
-      label: edge.label,
-      processId: process.id,
-    }))
+    const specs = edges
+      .map(({ edge, process }) => ({
+        id: `${process.id}-${edge.id}`,
+        srcKey: blockKey(process.id, edge.source),
+        tgtKey: blockKey(process.id, edge.target),
+        label: edge.label,
+        processId: process.id,
+      }))
+      .filter((spec) => placedKeys.has(spec.srcKey) && placedKeys.has(spec.tgtKey))
     const laidOut = layoutMatrixEdges(
       specs.map(({ id, srcKey, tgtKey, label }) => ({ id, srcKey, tgtKey, label })),
       rects,
@@ -332,10 +340,22 @@ export function BmsBrainMatrixView({
         return { ...draw, processId: spec.processId }
       })
       .filter((e): e is NonNullable<typeof e> => e != null)
-  }, [edges, rects])
+  }, [edges, placedKeys, rects])
 
-  const cellPad = density === 'tight' ? 'p-1' : 'p-1.5'
-  const cellGap = density === 'tight' ? 'gap-0.5' : 'gap-1'
+  const cellPad = relaxedBlockSpacing
+    ? density === 'tight'
+      ? 'p-2.5'
+      : 'p-3'
+    : density === 'tight'
+      ? 'p-1.5'
+      : 'p-2'
+  const cellGap = relaxedBlockSpacing
+    ? density === 'tight'
+      ? 'gap-2'
+      : 'gap-2.5'
+    : density === 'tight'
+      ? 'gap-1'
+      : 'gap-1.5'
 
   return (
     <div className="overflow-auto rounded-2xl border border-border bg-white shadow-sm" style={{ maxHeight: 'min(75vh, 900px)' }}>
@@ -435,7 +455,7 @@ export function BmsBrainMatrixView({
                           highlightProcessId,
                           focusedNodeKey,
                         )
-                        if (node.kind === 'decision') {
+                        if (bmsBlockShape(node.kind) === 'diamond') {
                           return (
                             <MatrixDecisionBlock
                               key={key}

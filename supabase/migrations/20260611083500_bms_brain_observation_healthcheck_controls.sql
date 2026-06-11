@@ -11,8 +11,7 @@ insert into public.bms_brain_roles (slug, name, description, color, icon, sort_o
   ('site', 'Site', 'Site leadership aligning forums and cross-plant priorities.', '#a855f7', 'building-2', 5),
   ('support', 'Support', 'Support functions enabling line performance, standards and specialist input.', '#0ea5e9', 'life-buoy', 6),
   ('maintenance', 'Maintenance', 'Maintenance and reliability support for equipment and standards.', '#f59e0b', 'wrench', 7),
-  ('action-owner', 'Action Owner', 'Named owner accountable for completing assigned actions and updates.', '#16a34a', 'check-circle-2', 8),
-  ('on-call', 'On-Call', 'On-call person or escalation contact for shift coverage and urgent support.', '#dc2626', 'phone-call', 9)
+  ('action-owner', 'Action Owner', 'Named owner accountable for completing assigned actions and updates.', '#16a34a', 'check-circle-2', 8)
 on conflict (slug) do update set
   name = excluded.name,
   description = excluded.description,
@@ -23,7 +22,6 @@ on conflict (slug) do update set
   updated_at = now();
 
 insert into public.bms_brain_forums (slug, name, description, color, icon, sort_order) values
-  ('operational-execution', 'Operational Execution', 'Work performed during the shift at the point of execution.', '#64748b', 'play-circle', 0),
   ('ips-review', 'IPS Review', 'Integrated production system review and structured problem-solving checkpoint.', '#7c3aed', 'shield-check', 8)
 on conflict (slug) do update set
   name = excluded.name,
@@ -111,13 +109,13 @@ begin
 
   insert into pg_temp.bms_seed_nodes values
     -- OS — Observation System
-    ('os', 10, 'os-1', 'start', 'Observation required or identified', 'Trigger to capture a safety, quality, process, behavioural or standard-work observation.', 'operator', 'operational-execution', array['os'], 'Operator', null, 'Observation identified', 40, 40),
-    ('os', 20, 'os-2', 'process', 'Record observation', 'Capture observation type, location, description, photo, risk level and comments.', 'operator', 'operational-execution', array['os'], 'Operator', 'Observation details', 'Observation record created', 40, 150),
+    ('os', 10, 'os-1', 'start', 'Observation required or identified', 'Trigger to capture a safety, quality, process, behavioural or standard-work observation.', 'operator', 'swp', array['os'], 'Operator', null, 'Observation identified', 40, 40),
+    ('os', 20, 'os-2', 'process', 'Record observation', 'Capture observation type, location, description, photo, risk level and comments.', 'operator', 'swp', array['os'], 'Operator', 'Observation details', 'Observation record created', 40, 150),
     ('os', 30, 'os-3', 'review', 'Review observation quality', 'Review the observation for completeness, quality and risk clarity.', 'team-lead', 'shift-dds', array['os'], 'Team Lead', 'Observation record', 'Observation accepted or corrected', 40, 260),
     ('os', 40, 'os-4', 'decision', 'Is action required?', 'Decide whether the observation requires a tracked action.', 'team-lead', 'shift-dds', array['os'], 'Team Lead', null, null, 40, 370),
     ('os', 50, 'os-5n', 'end', 'Provide feedback and close observation', 'No action required: provide feedback and close the observation.', 'team-lead', 'shift-dds', array['os'], 'Team Lead', null, 'Observation closed', 40, 500),
     ('os', 60, 'os-5y', 'process', 'Assign action owner and due date', 'Create action with owner, due date and expected closure outcome.', 'team-lead', 'shift-dds', array['os'], 'Team Lead', 'Accepted observation', 'Action assigned', 280, 370),
-    ('os', 70, 'os-6', 'process', 'Complete assigned action', 'Action owner completes the assigned corrective or improvement action.', 'action-owner', 'operational-execution', array['os'], 'Action Owner', 'Assigned action', 'Action completed', 280, 500),
+    ('os', 70, 'os-6', 'process', 'Complete assigned action', 'Action owner completes the assigned corrective or improvement action.', 'action-owner', 'swp', array['os'], 'Action Owner', 'Assigned action', 'Action completed', 280, 500),
     ('os', 80, 'os-7', 'review', 'Verify action completion', 'Verify that the action was completed as expected.', 'team-lead', 'shift-dds', array['os'], 'Team Lead', 'Completed action', 'Verification result', 280, 620),
     ('os', 90, 'os-8', 'decision', 'Was the action effective?', 'Confirm whether the action addressed the observation.', 'team-lead', 'shift-dds', array['os'], 'Team Lead', null, null, 280, 740),
     ('os', 100, 'os-9y', 'end', 'Close observation', 'Effective action: close the observation.', 'team-lead', 'shift-dds', array['os'], 'Team Lead', null, 'Observation closed', 280, 870),
@@ -129,8 +127,8 @@ begin
     ('os', 160, 'os-13', 'review', 'Review trends, repeat themes and system losses', 'Site reviews repeat observation themes and system losses.', 'site', 'pdca', array['os','ips'], 'Site', 'Trend data, IPS links', 'System priorities updated', 40, 1140),
 
     -- HC — Health Checks
-    ('hc', 10, 'hc-1', 'start', 'Health check becomes due', 'Trigger: daily, weekly, monthly or ad hoc health check schedule.', 'operator', 'operational-execution', array['hc'], 'Operator', 'Health check schedule', 'Check due', 40, 40),
-    ('hc', 20, 'hc-2', 'process', 'Complete health check', 'Capture responses, evidence, comments and completion time.', 'operator', 'operational-execution', array['hc'], 'Operator', 'Health check standard', 'Health check submitted', 40, 150),
+    ('hc', 10, 'hc-1', 'start', 'Health check becomes due', 'Trigger: daily, weekly, monthly or ad hoc health check schedule.', 'operator', 'swp', array['hc'], 'Operator', 'Health check schedule', 'Check due', 40, 40),
+    ('hc', 20, 'hc-2', 'process', 'Complete health check', 'Capture responses, evidence, comments and completion time.', 'operator', 'swp', array['hc'], 'Operator', 'Health check standard', 'Health check submitted', 40, 150),
     ('hc', 30, 'hc-3', 'review', 'Review missed or failed health checks', 'Review missed checks and failures during Shift DDS.', 'team-lead', 'shift-dds', array['hc'], 'Team Lead', 'Health check results', 'Failures reviewed', 40, 260),
     ('hc', 40, 'hc-4', 'decision', 'Did the health check pass?', 'Determine whether the check was compliant.', 'team-lead', 'shift-dds', array['hc'], 'Team Lead', null, null, 40, 370),
     ('hc', 50, 'hc-5y', 'end', 'Record compliant result', 'Pass: record compliant result and close the check.', 'team-lead', 'shift-dds', array['hc'], 'Team Lead', null, 'Compliant result recorded', 40, 500),
@@ -139,7 +137,7 @@ begin
     ('hc', 80, 'hc-7y', 'process', 'Escalate critical failure', 'Escalation step for critical safety, quality or compliance failure.', 'plant', 'site-dds', array['hc'], 'Plant', 'Critical failure', 'Escalation raised', 520, 430),
     ('hc', 90, 'hc-8y', 'process', 'Assign containment and corrective action', 'Plant defines containment and corrective action with IPS linkage if needed.', 'plant', 'site-dds', array['hc','ips'], 'Plant', 'Critical failure', 'Containment assigned', 520, 550),
     ('hc', 100, 'hc-7n', 'process', 'Assign action owner and due date', 'Assign owner and due date for non-critical failure.', 'team-lead', 'shift-dds', array['hc'], 'Team Lead', 'Failure action', 'Owner assigned', 280, 620),
-    ('hc', 110, 'hc-8', 'process', 'Complete corrective action', 'Action owner completes corrective action.', 'action-owner', 'operational-execution', array['hc'], 'Action Owner', 'Assigned action', 'Corrective action completed', 280, 740),
+    ('hc', 110, 'hc-8', 'process', 'Complete corrective action', 'Action owner completes corrective action.', 'action-owner', 'swp', array['hc'], 'Action Owner', 'Assigned action', 'Corrective action completed', 280, 740),
     ('hc', 120, 'hc-9', 'review', 'Verify action effectiveness', 'Verify whether the corrective action fixed the failure.', 'team-lead', 'shift-dds', array['hc'], 'Team Lead', 'Completed action', 'Effectiveness verified', 280, 860),
     ('hc', 130, 'hc-10', 'decision', 'Is the issue resolved?', 'Decide whether the health check failure can be closed.', 'team-lead', 'shift-dds', array['hc'], 'Team Lead', null, null, 280, 980),
     ('hc', 140, 'hc-11y', 'end', 'Close health check failure', 'Resolved: close health check failure.', 'team-lead', 'shift-dds', array['hc'], 'Team Lead', null, 'Failure closed', 280, 1100),
@@ -150,15 +148,15 @@ begin
     ('hc', 190, 'hc-14', 'review', 'Review repeat failures and standard gaps', 'Site reviews repeat failures and standard gaps.', 'site', 'pdca', array['hc','ips'], 'Site', 'Repeat failure trend', 'System gaps prioritised', 40, 1360),
 
     -- CC — Composition Control
-    ('cc', 10, 'cc-1', 'start', 'Composition check becomes due', 'Trigger: scheduled sample, changeover, recipe change or quality requirement.', 'operator', 'operational-execution', array['cc'], 'Operator', 'Sample schedule or requirement', 'Check due', 40, 40),
-    ('cc', 20, 'cc-2', 'process', 'Capture composition result', 'Capture actual result, target, tolerance, sample time and comments.', 'operator', 'operational-execution', array['cc'], 'Operator', 'Sample, target and tolerance', 'Composition result recorded', 40, 150),
-    ('cc', 30, 'cc-3', 'decision', 'Is composition within specification?', 'Compare composition result to target and tolerance.', 'operator', 'operational-execution', array['cc'], 'Operator', null, null, 40, 260),
-    ('cc', 40, 'cc-4y', 'end', 'Record compliant result', 'Composition is within specification and result is closed.', 'operator', 'operational-execution', array['cc'], 'Operator', null, 'Compliant result recorded', 40, 390),
+    ('cc', 10, 'cc-1', 'start', 'Composition check becomes due', 'Trigger: scheduled sample, changeover, recipe change or quality requirement.', 'operator', 'swp', array['cc'], 'Operator', 'Sample schedule or requirement', 'Check due', 40, 40),
+    ('cc', 20, 'cc-2', 'process', 'Capture composition result', 'Capture actual result, target, tolerance, sample time and comments.', 'operator', 'swp', array['cc'], 'Operator', 'Sample, target and tolerance', 'Composition result recorded', 40, 150),
+    ('cc', 30, 'cc-3', 'decision', 'Is composition within specification?', 'Compare composition result to target and tolerance.', 'operator', 'swp', array['cc'], 'Operator', null, null, 40, 260),
+    ('cc', 40, 'cc-4y', 'end', 'Record compliant result', 'Composition is within specification and result is closed.', 'operator', 'swp', array['cc'], 'Operator', null, 'Compliant result recorded', 40, 390),
     ('cc', 50, 'cc-4n', 'process', 'Notify Team Lead and record deviation', 'Record composition deviation and notify Team Lead.', 'operator', 'shift-dds', array['cc'], 'Operator', 'Out of spec result', 'Deviation recorded', 280, 260),
     ('cc', 60, 'cc-5', 'review', 'Review deviation impact', 'Team Lead reviews product, quality and process impact.', 'team-lead', 'shift-dds', array['cc'], 'Team Lead', 'Deviation detail', 'Impact understood', 280, 380),
     ('cc', 70, 'cc-6', 'decision', 'Can approved adjustment be made now?', 'Decide whether approved adjustment can be safely made now.', 'team-lead', 'shift-dds', array['cc'], 'Team Lead', null, null, 280, 500),
-    ('cc', 80, 'cc-7y', 'process', 'Apply approved adjustment', 'Operator applies the approved adjustment.', 'operator', 'operational-execution', array['cc'], 'Operator', 'Approved adjustment', 'Adjustment applied', 280, 630),
-    ('cc', 90, 'cc-8y', 'process', 'Repeat composition check', 'Repeat composition check after adjustment.', 'operator', 'operational-execution', array['cc'], 'Operator', 'Adjusted process', 'New result captured', 280, 750),
+    ('cc', 80, 'cc-7y', 'process', 'Apply approved adjustment', 'Operator applies the approved adjustment.', 'operator', 'swp', array['cc'], 'Operator', 'Approved adjustment', 'Adjustment applied', 280, 630),
+    ('cc', 90, 'cc-8y', 'process', 'Repeat composition check', 'Repeat composition check after adjustment.', 'operator', 'swp', array['cc'], 'Operator', 'Adjusted process', 'New result captured', 280, 750),
     ('cc', 100, 'cc-7n', 'process', 'Escalate to Plant and Support', 'Escalation step when approved adjustment cannot be made immediately.', 'plant', 'line-dds', array['cc'], 'Plant', 'Deviation impact', 'Escalation raised', 520, 500),
     ('cc', 110, 'cc-8n', 'process', 'Define containment and disposition action', 'Define containment, product disposition and corrective action.', 'plant', 'line-dds', array['cc','ips'], 'Plant', 'Escalated deviation', 'Containment defined', 520, 630),
     ('cc', 120, 'cc-9', 'decision', 'Is structured problem solving required?', 'Decide if a linked IPS is required.', 'plant', 'line-dds', array['cc','ips'], 'Plant', null, null, 520, 760),
@@ -170,17 +168,17 @@ begin
     ('cc', 180, 'cc-14', 'review', 'Review repeat composition losses', 'Site reviews repeat composition losses and IPS links.', 'site', 'pdca', array['cc','ips'], 'Site', 'Repeat losses', 'System losses prioritised', 40, 980),
 
     -- IC — Interventions Control
-    ('ic', 10, 'ic-1', 'start', 'Intervention required', 'Trigger: process issue, quality risk, equipment condition, planned stop or operational need.', 'operator', 'operational-execution', array['ic'], 'Operator', 'Intervention need', 'Request required', 40, 40),
-    ('ic', 20, 'ic-2', 'process', 'Record intervention request', 'Capture reason, equipment, impact, requested action and urgency.', 'operator', 'operational-execution', array['ic'], 'Operator', 'Request detail', 'Intervention request recorded', 40, 150),
+    ('ic', 10, 'ic-1', 'start', 'Intervention required', 'Trigger: process issue, quality risk, equipment condition, planned stop or operational need.', 'operator', 'swp', array['ic'], 'Operator', 'Intervention need', 'Request required', 40, 40),
+    ('ic', 20, 'ic-2', 'process', 'Record intervention request', 'Capture reason, equipment, impact, requested action and urgency.', 'operator', 'swp', array['ic'], 'Operator', 'Request detail', 'Intervention request recorded', 40, 150),
     ('ic', 30, 'ic-3', 'review', 'Review intervention request', 'Team Lead reviews the intervention request.', 'team-lead', 'shift-dds', array['ic'], 'Team Lead', 'Intervention request', 'Approval decision ready', 40, 260),
     ('ic', 40, 'ic-4', 'decision', 'Is intervention approved?', 'Approve, reject or defer intervention.', 'team-lead', 'shift-dds', array['ic'], 'Team Lead', null, null, 40, 370),
     ('ic', 50, 'ic-5n', 'end', 'Reject or defer intervention with reason', 'Intervention not approved: record reason and close.', 'team-lead', 'shift-dds', array['ic'], 'Team Lead', null, 'Request closed', 40, 500),
     ('ic', 60, 'ic-5y', 'process', 'Assess risk and define controls', 'Define intervention risks, approvals and controls.', 'team-lead', 'shift-dds', array['ic'], 'Team Lead', 'Approved request', 'Controls defined', 280, 370),
     ('ic', 70, 'ic-6', 'decision', 'Is maintenance or technical support required?', 'Decide whether maintenance or technical support is required.', 'team-lead', 'shift-dds', array['ic','mps'], 'Team Lead', null, null, 280, 500),
     ('ic', 80, 'ic-7y', 'process', 'Assign support and confirm readiness', 'Maintenance confirms support and readiness for the intervention.', 'maintenance', 'line-dds', array['ic','mps'], 'Maintenance', 'Support request', 'Readiness confirmed', 520, 430),
-    ('ic', 90, 'ic-7n', 'process', 'Prepare intervention', 'Operator prepares intervention according to controls.', 'operator', 'operational-execution', array['ic'], 'Operator', 'Defined controls', 'Intervention ready', 280, 630),
-    ('ic', 100, 'ic-8', 'process', 'Execute intervention', 'Execute intervention safely under defined controls.', 'operator', 'operational-execution', array['ic'], 'Operator', 'Approved intervention', 'Intervention executed', 280, 750),
-    ('ic', 110, 'ic-9', 'process', 'Record outcome and evidence', 'Record intervention outcome, evidence and comments.', 'operator', 'operational-execution', array['ic'], 'Operator', 'Intervention outcome', 'Outcome recorded', 280, 870),
+    ('ic', 90, 'ic-7n', 'process', 'Prepare intervention', 'Operator prepares intervention according to controls.', 'operator', 'swp', array['ic'], 'Operator', 'Defined controls', 'Intervention ready', 280, 630),
+    ('ic', 100, 'ic-8', 'process', 'Execute intervention', 'Execute intervention safely under defined controls.', 'operator', 'swp', array['ic'], 'Operator', 'Approved intervention', 'Intervention executed', 280, 750),
+    ('ic', 110, 'ic-9', 'process', 'Record outcome and evidence', 'Record intervention outcome, evidence and comments.', 'operator', 'swp', array['ic'], 'Operator', 'Intervention outcome', 'Outcome recorded', 280, 870),
     ('ic', 120, 'ic-10', 'review', 'Verify process returned to standard', 'Team Lead verifies the process returned to standard.', 'team-lead', 'shift-dds', array['ic'], 'Team Lead', 'Outcome evidence', 'Return-to-standard verified', 280, 990),
     ('ic', 130, 'ic-11', 'decision', 'Was the intervention successful?', 'Decide whether the intervention can be closed.', 'team-lead', 'shift-dds', array['ic'], 'Team Lead', null, null, 280, 1110),
     ('ic', 140, 'ic-12y', 'end', 'Close intervention', 'Successful intervention is closed.', 'team-lead', 'shift-dds', array['ic'], 'Team Lead', null, 'Intervention closed', 280, 1240),
@@ -198,16 +196,16 @@ begin
     ('90-day', 40, 'd90-4', 'review', 'Review action plan with Team Lead or owner', 'Review clarity, ownership and readiness to execute.', 'team-lead', 'line-dds', array['90-day'], 'Team Lead', 'Action plan', 'Action reviewed', 40, 370),
     ('90-day', 50, 'd90-5', 'decision', 'Is the action clear and executable?', 'Decide if the action is ready to execute.', 'team-lead', 'line-dds', array['90-day'], 'Team Lead', null, null, 40, 500),
     ('90-day', 60, 'd90-6n', 'process', 'Clarify scope, support and success criteria', 'Clarify scope, required support and success criteria.', 'plant', 'line-dds', array['90-day'], 'Plant', 'Unclear action', 'Action clarified', 280, 500),
-    ('90-day', 70, 'd90-6y', 'process', 'Execute action', 'Action owner executes the agreed action.', 'action-owner', 'operational-execution', array['90-day'], 'Action Owner', 'Clear action', 'Action in progress', 40, 630),
+    ('90-day', 70, 'd90-6y', 'process', 'Execute action', 'Action owner executes the agreed action.', 'action-owner', 'swp', array['90-day'], 'Action Owner', 'Clear action', 'Action in progress', 40, 630),
     ('90-day', 80, 'd90-7', 'process', 'Update progress', 'Action owner updates progress status.', 'action-owner', 'shift-dds', array['90-day'], 'Action Owner', 'Action progress', 'Status updated', 40, 750),
     ('90-day', 90, 'd90-8', 'review', 'Review progress and blockers', 'Team Lead reviews progress and blockers.', 'team-lead', 'shift-dds', array['90-day'], 'Team Lead', 'Progress update', 'Blockers reviewed', 40, 870),
     ('90-day', 100, 'd90-9', 'decision', 'Is action on track?', 'Decide whether action is on track.', 'team-lead', 'shift-dds', array['90-day'], 'Team Lead', null, null, 40, 990),
-    ('90-day', 110, 'd90-10y', 'process', 'Continue execution', 'Continue action execution.', 'action-owner', 'operational-execution', array['90-day'], 'Action Owner', 'On-track action', 'Execution continued', 40, 1120),
+    ('90-day', 110, 'd90-10y', 'process', 'Continue execution', 'Continue action execution.', 'action-owner', 'swp', array['90-day'], 'Action Owner', 'On-track action', 'Execution continued', 40, 1120),
     ('90-day', 120, 'd90-10n', 'process', 'Escalate blocker', 'Escalation step for action blocker.', 'plant', 'line-dds', array['90-day'], 'Plant', 'Blocked action', 'Blocker escalated', 280, 990),
     ('90-day', 130, 'd90-11', 'decision', 'Is site support required?', 'Plant decides if site support is required.', 'plant', 'wds', array['90-day'], 'Plant', null, null, 280, 1120),
     ('90-day', 140, 'd90-12y', 'process', 'Escalate to Site', 'Escalation step to Site for support.', 'site', 'wds', array['90-day'], 'Site', 'Site support request', 'Site escalation raised', 520, 1040),
     ('90-day', 150, 'd90-12n', 'process', 'Replan action and due date', 'Replan action scope, support and due date.', 'plant', 'line-dds', array['90-day'], 'Plant', 'Blocked action', 'Action replanned', 280, 1250),
-    ('90-day', 160, 'd90-13', 'process', 'Complete action', 'Action owner completes the 90 Day action.', 'action-owner', 'operational-execution', array['90-day'], 'Action Owner', 'Action plan', 'Action complete', 40, 1240),
+    ('90-day', 160, 'd90-13', 'process', 'Complete action', 'Action owner completes the 90 Day action.', 'action-owner', 'swp', array['90-day'], 'Action Owner', 'Action plan', 'Action complete', 40, 1240),
     ('90-day', 170, 'd90-14', 'review', 'Verify outcome and benefit', 'Plant verifies outcome and expected benefit.', 'plant', 'wds', array['90-day'], 'Plant', 'Completed action', 'Benefit verified', 40, 1360),
     ('90-day', 180, 'd90-15', 'decision', 'Was the action effective?', 'Decide whether action achieved the intended outcome.', 'plant', 'wds', array['90-day'], 'Plant', null, null, 40, 1480),
     ('90-day', 190, 'd90-16y', 'end', 'Close 90 Day action', 'Effective action is closed.', 'plant', 'wds', array['90-day'], 'Plant', null, 'Action closed', 40, 1610),
@@ -215,8 +213,8 @@ begin
     ('90-day', 210, 'd90-17', 'review', 'Review 90 Day plan completion and overdue actions', 'Site periodically reviews 90 Day completion and overdue actions.', 'site', 'pdca', array['90-day'], 'Site', '90 Day portfolio', 'Portfolio priorities updated', 520, 1480),
 
     -- Sick — On-call and Sick Leave Management
-    ('sick', 10, 'sick-1', 'start', 'Employee reports sick leave or absence', 'Employee reports sick leave or absence for a shift.', 'operator', 'operational-execution', array['sick'], 'Operator', 'Absence notification', 'Notification received', 40, 40),
-    ('sick', 20, 'sick-2', 'process', 'Record sick leave notification', 'Capture employee, shift, role, reason category, expected duration and notification time.', 'team-lead', 'operational-execution', array['sick'], 'Team Lead', 'Absence details', 'Absence recorded', 40, 150),
+    ('sick', 10, 'sick-1', 'start', 'Employee reports sick leave or absence', 'Employee reports sick leave or absence for a shift.', 'operator', 'swp', array['sick'], 'Operator', 'Absence notification', 'Notification received', 40, 40),
+    ('sick', 20, 'sick-2', 'process', 'Record sick leave notification', 'Capture employee, shift, role, reason category, expected duration and notification time.', 'team-lead', 'swp', array['sick'], 'Team Lead', 'Absence details', 'Absence recorded', 40, 150),
     ('sick', 30, 'sick-3', 'review', 'Assess shift coverage impact', 'Assess the impact of absence on shift coverage.', 'team-lead', 'shift-dds', array['sick'], 'Team Lead', 'Roster and skills', 'Coverage impact understood', 40, 260),
     ('sick', 40, 'sick-4', 'decision', 'Is shift coverage affected?', 'Decide whether coverage is affected.', 'team-lead', 'shift-dds', array['sick'], 'Team Lead', null, null, 40, 370),
     ('sick', 50, 'sick-5n', 'end', 'Record absence and close coverage review', 'Coverage not affected: record absence and close review.', 'team-lead', 'shift-dds', array['sick'], 'Team Lead', null, 'Coverage review closed', 40, 500),
@@ -226,8 +224,8 @@ begin
     ('sick', 90, 'sick-8y', 'process', 'Notify affected team', 'Notify affected team of replacement and changes.', 'team-lead', 'shift-dds', array['sick'], 'Team Lead', 'Coverage update', 'Team notified', 280, 750),
     ('sick', 100, 'sick-9y', 'end', 'Close coverage action', 'Internal cover confirmed and action closed.', 'team-lead', 'shift-dds', array['sick'], 'Team Lead', null, 'Coverage action closed', 280, 870),
     ('sick', 110, 'sick-7n', 'process', 'Start on-call ladder', 'Start the on-call ladder.', 'team-lead', 'shift-dds', array['sick'], 'Team Lead', 'No internal cover', 'On-call ladder started', 520, 500),
-    ('sick', 120, 'sick-8n', 'process', 'Contact first on-call person', 'Contact first on-call person.', 'on-call', 'operational-execution', array['sick'], 'On-Call', 'On-call ladder', 'On-call contacted', 520, 630),
-    ('sick', 130, 'sick-9n', 'decision', 'Did on-call person accept?', 'Confirm if on-call person accepts coverage.', 'on-call', 'operational-execution', array['sick'], 'On-Call', null, null, 520, 750),
+    ('sick', 120, 'sick-8n', 'process', 'Contact first on-call person', 'Contact first on-call person.', 'action-owner', 'swp', array['sick'], 'Action Owner', 'On-call ladder', 'On-call contacted', 520, 630),
+    ('sick', 130, 'sick-9n', 'decision', 'Did on-call person accept?', 'Confirm if on-call person accepts coverage.', 'action-owner', 'swp', array['sick'], 'Action Owner', null, null, 520, 750),
     ('sick', 140, 'sick-10y', 'process', 'Confirm replacement and update roster', 'Confirm replacement and update roster.', 'team-lead', 'shift-dds', array['sick'], 'Team Lead', 'Accepted on-call', 'Roster updated', 520, 880),
     ('sick', 150, 'sick-11y', 'process', 'Notify Plant if required', 'Notify Plant if operational impact remains.', 'team-lead', 'line-dds', array['sick'], 'Team Lead', 'Coverage update', 'Plant notified if needed', 520, 1000),
     ('sick', 160, 'sick-12y', 'end', 'Close coverage action', 'On-call coverage confirmed and action closed.', 'team-lead', 'shift-dds', array['sick'], 'Team Lead', null, 'Coverage action closed', 520, 1120),
