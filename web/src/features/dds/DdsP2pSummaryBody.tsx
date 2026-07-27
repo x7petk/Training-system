@@ -46,6 +46,14 @@ import {
   type P2pPlanTaskIssueRow,
 } from './ddsP2pPlanDayStats'
 import { ddsErr } from './ddsAdminCompactClasses'
+import {
+  buildSubNoHoverLines,
+  buildSubYesDetailLines,
+  sortSoftSubQuestions,
+  type DdsP2pSoftSubQuestion,
+  type DdsP2pSubAnswerSnapshot,
+} from './ddsP2pSoftSubQuestions'
+import { DdsP2pSubYesNoSummary } from './DdsP2pSubYesNoSummary'
 
 export type DdsP2pSummaryShiftRow = {
   kind: string
@@ -69,6 +77,10 @@ type MatrixQuestion = {
   targetNumber: number | null
   linkedKpiLabel: string | null
   roleIds: Set<string>
+  subQuestions: DdsP2pSoftSubQuestion[]
+  hasSubQuestions: boolean
+  /** Role id → assigned sub-question ids for checklist visibility. */
+  assignedSubIdsByRole: Record<string, string[]>
 }
 
 type CellSnapshot = {
@@ -76,6 +88,9 @@ type CellSnapshot = {
   yesNo: boolean | null
   num: number | null
   comment: string
+  subAnswers: DdsP2pSubAnswerSnapshot[]
+  yesCount: number | null
+  noCount: number | null
 }
 
 function sortGroups<T extends { sort_order: number; name: string }>(rows: T[]): T[] {
@@ -222,7 +237,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
   const [viewPrefs, setViewPrefs] = useState<DdsP2pSummaryViewPrefs>(() => buildDefaultP2pSummaryPrefs([], []))
   const [prefsOpen, setPrefsOpen] = useState(false)
   const [prefsDraft, setPrefsDraft] = useState<DdsP2pSummaryViewPrefs>(() => buildDefaultP2pSummaryPrefs([], []))
-  const [narrativeCollapsed, setNarrativeCollapsed] = useState(false)
+  const [narrativeCollapsed, setNarrativeCollapsed] = useState(true)
 
   const activeRoles = useMemo(() => sortGroups(roles.filter((r) => r.is_active)), [roles])
 
@@ -606,6 +621,53 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
     }
     const stdRows = (stdRes.data ?? []) as QRow[]
     const softRows = (softRes.data ?? []) as QRow[]
+    const softQuestionIds = softRows.map((q) => q.id)
+    const subBySoftId = new Map<string, DdsP2pSoftSubQuestion[]>()
+    /** softQuestionId → roleId → subQuestionIds */
+    const subAssignBySoftRole = new Map<string, Map<string, string[]>>()
+    if (softQuestionIds.length > 0) {
+      const [subRes, subAssignRes] = await Promise.all([
+        supabase
+          .from('dds_p2p_cell_soft_point_sub_questions')
+          .select('id, soft_question_id, prompt, sort_order')
+          .in('soft_question_id', softQuestionIds)
+          .order('sort_order', { ascending: true })
+          .order('prompt', { ascending: true }),
+        supabase
+          .from('dds_p2p_cell_soft_sub_question_role_assignments')
+          .select('roster_role_id, soft_question_id, sub_question_id')
+          .eq('master_cell_id', cellId)
+          .in('soft_question_id', softQuestionIds),
+      ])
+      if (subRes.error || subAssignRes.error) {
+        setError(subRes.error?.message ?? subAssignRes.error?.message ?? 'Load failed')
+        setMatrixLoading(false)
+        return
+      }
+      for (const row of subRes.data ?? []) {
+        const parentId = row.soft_question_id as string
+        const entry: DdsP2pSoftSubQuestion = {
+          id: row.id as string,
+          softQuestionId: parentId,
+          prompt: row.prompt as string,
+          sortOrder: Number(row.sort_order ?? 0),
+        }
+        if (!subBySoftId.has(parentId)) subBySoftId.set(parentId, [])
+        subBySoftId.get(parentId)!.push(entry)
+      }
+      for (const [parentId, subs] of subBySoftId) {
+        subBySoftId.set(parentId, sortSoftSubQuestions(subs))
+      }
+      for (const row of subAssignRes.data ?? []) {
+        const softId = row.soft_question_id as string
+        const roleId = row.roster_role_id as string
+        const subId = row.sub_question_id as string
+        if (!subAssignBySoftRole.has(softId)) subAssignBySoftRole.set(softId, new Map())
+        const byRole = subAssignBySoftRole.get(softId)!
+        if (!byRole.has(roleId)) byRole.set(roleId, [])
+        byRole.get(roleId)!.push(subId)
+      }
+    }
     const linkedKpiIds = [
       ...new Set(
         [...stdRows, ...softRows].map((q) => q.linked_kpi_id).filter((id): id is string => Boolean(id)),
@@ -651,6 +713,9 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
           targetNumber: Number.isFinite(tn as number) ? (tn as number) : null,
           linkedKpiLabel: q.linked_kpi_id ? kpiLabelById.get(q.linked_kpi_id) ?? null : null,
           roleIds,
+          subQuestions: [],
+          hasSubQuestions: false,
+          assignedSubIdsByRole: {},
         })
       }
       for (const q of softs) {
@@ -659,6 +724,14 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
         const key = ddsP2pQuestionKey('soft', q.id)
         const roleIds = assignByKey.get(key)
         if (!roleIds || roleIds.size === 0) continue
+        const subs = subBySoftId.get(q.id) ?? []
+        const byRole = subAssignBySoftRole.get(q.id)
+        const assignedSubIdsByRole: Record<string, string[]> = {}
+        if (byRole) {
+          for (const [rid, ids] of byRole) {
+            if (roleIds.has(rid)) assignedSubIdsByRole[rid] = ids
+          }
+        }
         matrixQ.push({
           key,
           source: 'soft',
@@ -669,6 +742,9 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
           targetNumber: Number.isFinite(tn as number) ? (tn as number) : null,
           linkedKpiLabel: q.linked_kpi_id ? kpiLabelById.get(q.linked_kpi_id) ?? null : null,
           roleIds,
+          subQuestions: subs,
+          hasSubQuestions: subs.length > 0,
+          assignedSubIdsByRole,
         })
       }
     }
@@ -713,16 +789,43 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
     }
 
     if (auditIds.length > 0) {
-      const { data: ansRows, error: ansErr } = await supabase
-        .from('dds_p2p_audit_answers')
-        .select(
-          'audit_id, question_kind, standard_question_id, soft_question_id, answer_yes_no, answer_number, question_comment, kpi_link_comment, kpi_link_value',
-        )
-        .in('audit_id', auditIds)
-      if (ansErr) {
-        setError(ansErr.message)
+      const subQuestionIds = [
+        ...new Set(matrixQ.flatMap((q) => (q.hasSubQuestions ? q.subQuestions.map((s) => s.id) : []))),
+      ]
+      const [ansRes, subAnsRes] = await Promise.all([
+        supabase
+          .from('dds_p2p_audit_answers')
+          .select(
+            'audit_id, question_kind, standard_question_id, soft_question_id, answer_yes_no, answer_number, question_comment, kpi_link_comment, kpi_link_value',
+          )
+          .in('audit_id', auditIds),
+        subQuestionIds.length > 0
+          ? supabase
+              .from('dds_p2p_audit_sub_answers')
+              .select('audit_id, sub_question_id, answer_yes_no, question_comment')
+              .in('audit_id', auditIds)
+              .in('sub_question_id', subQuestionIds)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+      const ansRows = ansRes.data
+      const ansErr = ansRes.error
+      type SubAnsRow = {
+        audit_id: string
+        sub_question_id: string
+        answer_yes_no: boolean
+        question_comment: string | null
+      }
+      const subAnsRows = (subAnsRes.data ?? []) as SubAnsRow[]
+      const subAnsErr = subAnsRes.error
+      if (ansErr || subAnsErr) {
+        setError(ansErr?.message ?? subAnsErr?.message ?? 'Load failed')
         setMatrixLoading(false)
         return
+      }
+
+      const subPromptById = new Map<string, string>()
+      for (const q of matrixQ) {
+        for (const sq of q.subQuestions) subPromptById.set(sq.id, sq.prompt)
       }
 
       const auditToRole = new Map<string, string>()
@@ -735,6 +838,13 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
         byAudit.get(aid)!.push(ar)
       }
 
+      const subByAudit = new Map<string, SubAnsRow[]>()
+      for (const ar of subAnsRows ?? []) {
+        const aid = ar.audit_id as string
+        if (!subByAudit.has(aid)) subByAudit.set(aid, [])
+        subByAudit.get(aid)!.push(ar)
+      }
+
       for (const [auditId, rows] of byAudit) {
         const rid = auditToRole.get(auditId)
         if (!rid || !nextCells[rid]) continue
@@ -743,7 +853,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
           const qid = kind === 'standard' ? (row.standard_question_id as string) : (row.soft_question_id as string)
           const qk = ddsP2pQuestionKey(kind, qid)
           const mq = matrixQ.find((x) => x.key === qk)
-          if (!mq) continue
+          if (!mq || mq.hasSubQuestions) continue
           const qc = String((row.question_comment as string | null) ?? '').trim()
           const klc = String((row.kpi_link_comment as string | null) ?? '').trim()
           nextCells[rid][qk] = {
@@ -756,12 +866,67 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
               return Number.isFinite(v) ? v : null
             })(),
             comment: qc || klc,
+            subAnswers: [],
+            yesCount: null,
+            noCount: null,
+          }
+        }
+      }
+
+      for (const [auditId, rows] of subByAudit) {
+        const rid = auditToRole.get(auditId)
+        if (!rid || !nextCells[rid]) continue
+        const byQuestionKey = new Map<string, DdsP2pSubAnswerSnapshot[]>()
+        for (const row of rows ?? []) {
+          const subId = row.sub_question_id as string
+          const prompt = subPromptById.get(subId) ?? 'Sub-question'
+          const parentQ = matrixQ.find((q) => q.subQuestions.some((s) => s.id === subId))
+          if (!parentQ) continue
+          const snap: DdsP2pSubAnswerSnapshot = {
+            subQuestionId: subId,
+            prompt,
+            yesNo: row.answer_yes_no === true,
+            comment: String((row.question_comment as string | null) ?? '').trim(),
+          }
+          if (!byQuestionKey.has(parentQ.key)) byQuestionKey.set(parentQ.key, [])
+          byQuestionKey.get(parentQ.key)!.push(snap)
+        }
+        for (const [qk, subSnaps] of byQuestionKey) {
+          const mq = matrixQ.find((x) => x.key === qk)
+          if (!mq) continue
+          const allowed = new Set(mq.assignedSubIdsByRole[rid] ?? [])
+          const filtered = subSnaps.filter((s) => allowed.has(s.subQuestionId))
+          const yesCount = filtered.filter((s) => s.yesNo === true).length
+          const noCount = filtered.filter((s) => s.yesNo === false).length
+          nextCells[rid][qk] = {
+            responseKind: mq.responseKind,
+            yesNo: null,
+            num: null,
+            comment: '',
+            subAnswers: filtered,
+            yesCount,
+            noCount,
           }
         }
       }
     }
 
     for (const q of matrixQ) {
+      if (q.hasSubQuestions) {
+        for (const rid of q.roleIds) {
+          if (!latestByRole.has(rid) || nextCells[rid]?.[q.key]) continue
+          nextCells[rid]![q.key] = {
+            responseKind: q.responseKind,
+            yesNo: null,
+            num: null,
+            comment: '',
+            subAnswers: [],
+            yesCount: 0,
+            noCount: 0,
+          }
+        }
+        continue
+      }
       if (q.responseKind !== 'yes_no') continue
       for (const rid of q.roleIds) {
         if (!latestByRole.has(rid) || nextCells[rid]?.[q.key]) continue
@@ -770,6 +935,9 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
           yesNo: false,
           num: null,
           comment: '',
+          subAnswers: [],
+          yesCount: null,
+          noCount: null,
         }
       }
     }
@@ -1107,8 +1275,33 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                       const snap = cells[r.id]?.[q.key]
                       const cmt = snap?.comment?.trim() ?? ''
                       const hasCmt = Boolean(cmt)
+                      const hoverLines = q.hasSubQuestions ? buildSubNoHoverLines(snap?.subAnswers ?? []) : []
+                      const hoverTitle = hoverLines.join('\n')
+                      const yesDetailLines = q.hasSubQuestions
+                        ? buildSubYesDetailLines(snap?.subAnswers ?? [])
+                        : []
                       let main: ReactNode = '\u00a0'
-                      if (q.responseKind === 'yes_no') {
+                      if (q.hasSubQuestions) {
+                        if (submitted || snap != null) {
+                          const yesCount = snap?.yesCount ?? 0
+                          const noCount = snap?.noCount ?? 0
+                          main = (
+                            <DdsP2pSubYesNoSummary
+                              yesCount={yesCount}
+                              noCount={noCount}
+                              title="Click for Yes answers and comments"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const pos = placeDetailPanel(e.currentTarget, 320)
+                                setDetailPop({
+                                  ...pos,
+                                  body: [`Yes — ${q.prompt}`, '', ...yesDetailLines].join('\n'),
+                                })
+                              }}
+                            />
+                          )
+                        }
+                      } else if (q.responseKind === 'yes_no') {
                         if (snap?.yesNo === true) {
                           main = <span className="font-bold text-rose-600">Y</span>
                         } else if (submitted || snap != null) {
@@ -1119,26 +1312,38 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                       }
                       return (
                         <td key={r.id} className={`${P2P_SUMMARY_CELL_CLASS} ${colClass}`}>
-                          <div className={P2P_SUMMARY_VALUE_WRAP_CLASS}>
+                          <div
+                            className={`${P2P_SUMMARY_VALUE_WRAP_CLASS} ${q.hasSubQuestions && hoverTitle ? 'relative' : ''}`}
+                            title={q.hasSubQuestions ? hoverTitle : undefined}
+                          >
                             <span className="tabular-nums">{main}</span>
-                            <button
-                              type="button"
-                              className={`inline-flex rounded p-px text-muted hover:bg-black/[0.06] hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/[0.06] ${
-                                hasCmt ? '' : 'opacity-25 group-hover:opacity-70 focus-visible:opacity-100'
-                              }`}
-                              aria-label={hasCmt ? 'Show question comment' : 'No question comment'}
-                              title={hasCmt ? 'Show question comment' : 'No comment'}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                const pos = placeDetailPanel(e.currentTarget, 280)
-                                setDetailPop({
-                                  ...pos,
-                                  body: hasCmt ? cmt : '—',
-                                })
-                              }}
-                            >
-                              <MessageSquare className={`size-3 shrink-0 ${hasCmt ? 'text-accent' : 'text-muted/30'}`} aria-hidden />
-                            </button>
+                            {q.hasSubQuestions && hoverTitle ? (
+                              <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 hidden w-max max-w-[16rem] -translate-x-1/2 rounded-md border border-border bg-surface px-2 py-1 text-left text-[9px] leading-snug text-fg shadow-lg group-hover:block">
+                                {hoverLines.map((line, i) => (
+                                  <div key={i}>{line}</div>
+                                ))}
+                              </div>
+                            ) : null}
+                            {!q.hasSubQuestions ? (
+                              <button
+                                type="button"
+                                className={`inline-flex rounded p-px text-muted hover:bg-black/[0.06] hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/[0.06] ${
+                                  hasCmt ? '' : 'opacity-25 group-hover:opacity-70 focus-visible:opacity-100'
+                                }`}
+                                aria-label={hasCmt ? 'Show question comment' : 'No question comment'}
+                                title={hasCmt ? 'Show question comment' : 'No comment'}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const pos = placeDetailPanel(e.currentTarget, 280)
+                                  setDetailPop({
+                                    ...pos,
+                                    body: hasCmt ? cmt : '—',
+                                  })
+                                }}
+                              >
+                                <MessageSquare className={`size-3 shrink-0 ${hasCmt ? 'text-accent' : 'text-muted/30'}`} aria-hidden />
+                              </button>
+                            ) : null}
                           </div>
                         </td>
                       )

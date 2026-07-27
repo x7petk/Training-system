@@ -13,6 +13,15 @@ import { refreshKpiP2pRollups } from '../features/dds/ddsKpiP2pRollup'
 import { dispatchDdsP2pKpiRollupDone } from '../features/dds/ddsP2pKpiRollupEvents'
 import { isDdsKpiSiteByLine } from '../features/dds/ddsKpiSitePresentation'
 import type { DdsCellLine } from '../features/dds/ddsCellLines'
+import { DdsP2pSubQuestionChecklistModal } from '../features/dds/DdsP2pSubQuestionChecklistModal'
+import {
+  countSubYesNoAnswers,
+  emptySubAnswers,
+  sortSoftSubQuestions,
+  type DdsP2pSoftSubQuestion,
+  type DdsP2pSubAnswerForm,
+} from '../features/dds/ddsP2pSoftSubQuestions'
+import { DdsP2pSubYesNoSummary } from '../features/dds/DdsP2pSubYesNoSummary'
 import { ddsErr, ddsHint, ddsInput, ddsSection, ddsSelect } from '../features/dds/ddsAdminCompactClasses'
 
 type KpiGroup = { id: string; name: string; sort_order: number }
@@ -31,6 +40,8 @@ type P2pQuestion = {
   targetNumber: number | null
   linkedKpiId: string | null
   linkedKpiByLine: boolean
+  subQuestions: DdsP2pSoftSubQuestion[]
+  hasSubQuestions: boolean
 }
 
 type FormAns = {
@@ -39,6 +50,7 @@ type FormAns = {
   comment: string
   kpiIncidentNum: string
   kpiLineNums: Record<string, string>
+  subAnswers: Record<string, DdsP2pSubAnswerForm>
 }
 
 type AuditHead = { id: string; submitted_at: string; sheet_comment: string | null }
@@ -58,11 +70,12 @@ function emptyForm(questions: P2pQuestion[]): Record<string, FormAns> {
   const m: Record<string, FormAns> = {}
   for (const q of questions) {
     m[q.key] = {
-      yesNo: q.responseKind === 'yes_no' ? false : null,
+      yesNo: q.responseKind === 'yes_no' && !q.hasSubQuestions ? false : null,
       num: '',
       comment: '',
       kpiIncidentNum: '',
       kpiLineNums: {},
+      subAnswers: q.hasSubQuestions ? emptySubAnswers(q.subQuestions) : {},
     }
   }
   return m
@@ -135,6 +148,7 @@ export function DdsP2pPage() {
   const [planErr, setPlanErr] = useState<string | null>(null)
   const [planSuccess, setPlanSuccess] = useState<string | null>(null)
   const [planRefreshToken, setPlanRefreshToken] = useState(0)
+  const [checklistKey, setChecklistKey] = useState<string | null>(null)
 
   const replaceForm = useCallback((next: Record<string, FormAns>) => {
     formRef.current = next
@@ -150,8 +164,36 @@ export function DdsP2pPage() {
         comment: '',
         kpiIncidentNum: '',
         kpiLineNums: {},
+        subAnswers: {},
       }
       const next = { ...prev, [key]: { ...prevAns, ...patch } }
+      formRef.current = next
+      return next
+    })
+  }, [])
+
+  const patchSubAnswer = useCallback((key: string, subQuestionId: string, patch: Partial<DdsP2pSubAnswerForm>) => {
+    formDirtyRef.current = true
+    setForm((prev) => {
+      const prevAns = prev[key] ?? {
+        yesNo: null,
+        num: '',
+        comment: '',
+        kpiIncidentNum: '',
+        kpiLineNums: {},
+        subAnswers: {},
+      }
+      const prevSub = prevAns.subAnswers[subQuestionId] ?? { yesNo: false, comment: '' }
+      const next = {
+        ...prev,
+        [key]: {
+          ...prevAns,
+          subAnswers: {
+            ...prevAns.subAnswers,
+            [subQuestionId]: { ...prevSub, ...patch },
+          },
+        },
+      }
       formRef.current = next
       return next
     })
@@ -192,6 +234,8 @@ export function DdsP2pPage() {
   )
 
   const readOnlyRevision = revisionIx > 0
+  const checklistQuestion = checklistKey ? questions.find((q) => q.key === checklistKey) ?? null : null
+  const checklistForm = checklistKey ? form[checklistKey] : null
 
   const questionsByGroup = useMemo(() => {
     const out: { groupName: string; items: P2pQuestion[] }[] = []
@@ -364,6 +408,49 @@ export function DdsP2pPage() {
       linked_kpi_id: string | null
     }[]
     const softRows = (softRes.data ?? []) as typeof stdRows
+    const softQuestionIds = softRows.map((q) => q.id)
+    const catalogSubCountBySoftId = new Map<string, number>()
+    const subBySoftId = new Map<string, DdsP2pSoftSubQuestion[]>()
+    if (softQuestionIds.length > 0) {
+      const [subRes, subAssignRes] = await Promise.all([
+        supabase
+          .from('dds_p2p_cell_soft_point_sub_questions')
+          .select('id, soft_question_id, prompt, sort_order')
+          .in('soft_question_id', softQuestionIds)
+          .order('sort_order', { ascending: true })
+          .order('prompt', { ascending: true }),
+        supabase
+          .from('dds_p2p_cell_soft_sub_question_role_assignments')
+          .select('sub_question_id')
+          .eq('master_cell_id', cellId)
+          .eq('roster_role_id', roleId)
+          .in('soft_question_id', softQuestionIds),
+      ])
+      if (subRes.error || subAssignRes.error) {
+        setError(subRes.error?.message ?? subAssignRes.error?.message ?? 'Load failed')
+        return
+      }
+      const allowedSubIds = new Set(
+        (subAssignRes.data ?? []).map((r) => r.sub_question_id as string),
+      )
+      for (const row of subRes.data ?? []) {
+        const parentId = row.soft_question_id as string
+        catalogSubCountBySoftId.set(parentId, (catalogSubCountBySoftId.get(parentId) ?? 0) + 1)
+        const subId = row.id as string
+        if (!allowedSubIds.has(subId)) continue
+        const entry: DdsP2pSoftSubQuestion = {
+          id: subId,
+          softQuestionId: parentId,
+          prompt: row.prompt as string,
+          sortOrder: Number(row.sort_order ?? 0),
+        }
+        if (!subBySoftId.has(parentId)) subBySoftId.set(parentId, [])
+        subBySoftId.get(parentId)!.push(entry)
+      }
+      for (const [parentId, subs] of subBySoftId) {
+        subBySoftId.set(parentId, sortSoftSubQuestions(subs))
+      }
+    }
     const linkedKpiIds = [
       ...new Set(
         [...stdRows, ...softRows].map((q) => q.linked_kpi_id).filter((id): id is string => Boolean(id)),
@@ -407,11 +494,15 @@ export function DdsP2pPage() {
           targetNumber: Number.isFinite(tn as number) ? (tn as number) : null,
           linkedKpiId: q.linked_kpi_id ?? null,
           linkedKpiByLine: q.linked_kpi_id ? kpiByLine.get(q.linked_kpi_id) === true : false,
+          subQuestions: [],
+          hasSubQuestions: false,
         })
       }
       for (const q of softs) {
         const rk = q.response_kind === 'number_with_target' ? 'number_with_target' : 'yes_no'
         const tn = rk === 'number_with_target' && q.target_number != null ? Number(q.target_number) : null
+        const subs = subBySoftId.get(q.id) ?? []
+        const hasSubs = (catalogSubCountBySoftId.get(q.id) ?? 0) > 0
         out.push({
           key: ddsP2pQuestionKey('soft', q.id),
           source: 'soft',
@@ -420,8 +511,10 @@ export function DdsP2pPage() {
           prompt: q.prompt,
           responseKind: rk,
           targetNumber: Number.isFinite(tn as number) ? (tn as number) : null,
-          linkedKpiId: q.linked_kpi_id ?? null,
-          linkedKpiByLine: q.linked_kpi_id ? kpiByLine.get(q.linked_kpi_id) === true : false,
+          linkedKpiId: hasSubs ? null : (q.linked_kpi_id ?? null),
+          linkedKpiByLine: hasSubs ? false : q.linked_kpi_id ? kpiByLine.get(q.linked_kpi_id) === true : false,
+          subQuestions: subs,
+          hasSubQuestions: hasSubs,
         })
       }
     }
@@ -486,6 +579,30 @@ export function DdsP2pPage() {
         setError(e.message)
         return
       }
+
+      const subQuestionIds = [
+        ...new Set(qs.flatMap((q) => (q.hasSubQuestions ? q.subQuestions.map((s) => s.id) : []))),
+      ]
+      let subAnsRows: {
+        sub_question_id: string
+        answer_yes_no: boolean
+        question_comment: string | null
+      }[] = []
+      if (subQuestionIds.length > 0) {
+        const { data: subData, error: subErr } = await supabase
+          .from('dds_p2p_audit_sub_answers')
+          .select('sub_question_id, answer_yes_no, question_comment')
+          .eq('audit_id', auditId)
+          .in('sub_question_id', subQuestionIds)
+        if (hydrateGen !== hydrateGenRef.current || formDirtyRef.current) return
+        if (subErr) {
+          setError(subErr.message)
+          return
+        }
+        subAnsRows = (subData ?? []) as typeof subAnsRows
+      }
+      const subAnsById = new Map(subAnsRows.map((r) => [r.sub_question_id, r]))
+
       const qByKey = new Map(qs.map((q) => [q.key, q]))
       const next = emptyForm(qs)
       for (const row of ans ?? []) {
@@ -494,6 +611,7 @@ export function DdsP2pPage() {
         const k = ddsP2pQuestionKey(kind, qid)
         const meta = qByKey.get(k)
         if (!meta || !next[k]) continue
+        if (meta.hasSubQuestions) continue
         const qc = (row.question_comment as string | null) ?? ''
         const klc = (row.kpi_link_comment as string | null) ?? ''
         const lineId = (row.kpi_link_line_id as string | null) ?? ''
@@ -518,6 +636,18 @@ export function DdsP2pPage() {
           comment: qc.trim() ? qc : klc,
           kpiIncidentNum: linkVal != null && linkVal !== '' ? String(linkVal) : '',
           kpiLineNums: next[k].kpiLineNums,
+          subAnswers: next[k].subAnswers,
+        }
+      }
+      for (const q of qs) {
+        if (!q.hasSubQuestions) continue
+        for (const sq of q.subQuestions) {
+          const saved = subAnsById.get(sq.id)
+          if (!saved) continue
+          next[q.key]!.subAnswers[sq.id] = {
+            yesNo: saved.answer_yes_no === true,
+            comment: String(saved.question_comment ?? '').trim(),
+          }
         }
       }
       replaceForm(next)
@@ -541,6 +671,7 @@ export function DdsP2pPage() {
     for (const q of questions) {
       const f = snapshot[q.key]
       if (!f) continue
+      if (q.hasSubQuestions) continue
       const yesNo = q.responseKind === 'yes_no' ? f.yesNo === true : null
       if (q.responseKind === 'number_with_target') {
         const n = Number(String(f.num).trim().replace(',', '.'))
@@ -593,6 +724,25 @@ export function DdsP2pPage() {
     const auditId = ins.id as string
     for (const q of questions) {
       const f = snapshot[q.key]!
+
+      if (q.hasSubQuestions) {
+        for (const sq of q.subQuestions) {
+          const subAns = f.subAnswers[sq.id] ?? { yesNo: false, comment: '' }
+          const { error: subErr } = await supabase.from('dds_p2p_audit_sub_answers').insert({
+            audit_id: auditId,
+            sub_question_id: sq.id,
+            answer_yes_no: subAns.yesNo === true,
+            question_comment: subAns.comment.trim() || null,
+          })
+          if (subErr) {
+            setSaving(false)
+            setError(subErr.message)
+            return
+          }
+        }
+        continue
+      }
+
       if (q.responseKind === 'yes_no') {
         const answeredYes = f.yesNo === true
         const linkYes = Boolean(q.linkedKpiId) && answeredYes
@@ -778,13 +928,15 @@ export function DdsP2pPage() {
                     <ul className="mt-0.5">
                       {g.items.map((q) => {
                         const f = form[q.key] ?? {
-                          yesNo: q.responseKind === 'yes_no' ? false : null,
+                          yesNo: q.responseKind === 'yes_no' && !q.hasSubQuestions ? false : null,
                           num: '',
                           comment: '',
                           kpiIncidentNum: '',
                           kpiLineNums: {},
+                          subAnswers: q.hasSubQuestions ? emptySubAnswers(q.subQuestions) : {},
                         }
-                        const linkedYes = Boolean(q.linkedKpiId) && q.responseKind === 'yes_no' && f.yesNo === true
+                        const linkedYes =
+                          !q.hasSubQuestions && Boolean(q.linkedKpiId) && q.responseKind === 'yes_no' && f.yesNo === true
                         const linkedByLine = linkedYes && q.linkedKpiByLine
                         const commentInvalid = linkedYes && !f.comment.trim()
                         const linkedCountInvalid = linkedYes && !hasLinkedKpiCount(f, q.linkedKpiByLine, cellLines)
@@ -796,15 +948,41 @@ export function DdsP2pPage() {
                               : labelForDdsP2pResponseKind(q.responseKind)
                         const compactControl =
                           'h-6 shrink-0 rounded border border-border bg-surface px-1 text-[11px] outline-none ring-accent/30 focus:border-accent/50 focus:ring-1'
+                        const subCounts = q.hasSubQuestions
+                          ? countSubYesNoAnswers(
+                              f.subAnswers,
+                              q.subQuestions.map((s) => s.id),
+                            )
+                          : { yesCount: 0, noCount: 0 }
                         return (
                           <li key={q.key} className="py-0.5">
                             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0">
-                              <span
-                                className={`min-w-0 flex-[1_1_10rem] text-[11px] leading-snug text-fg ${q.source === 'standard' ? 'font-bold' : ''}`}
-                              >
-                                {q.prompt}
-                              </span>
-                              {q.responseKind === 'yes_no' ? (
+                              {q.hasSubQuestions ? (
+                                <button
+                                  type="button"
+                                  disabled={readOnlyRevision}
+                                  onClick={() => setChecklistKey(q.key)}
+                                  className={`min-w-0 flex-[1_1_10rem] rounded px-0.5 text-left text-[11px] leading-snug text-fg hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 dark:hover:bg-white/[0.04] ${q.source === 'standard' ? 'font-bold' : ''}`}
+                                  title="Open checklist"
+                                >
+                                  {q.prompt}
+                                </button>
+                              ) : (
+                                <span
+                                  className={`min-w-0 flex-[1_1_10rem] text-[11px] leading-snug text-fg ${q.source === 'standard' ? 'font-bold' : ''}`}
+                                >
+                                  {q.prompt}
+                                </span>
+                              )}
+                              {q.hasSubQuestions ? (
+                                <DdsP2pSubYesNoSummary
+                                  yesCount={subCounts.yesCount}
+                                  noCount={subCounts.noCount}
+                                  disabled={readOnlyRevision}
+                                  title="Open checklist"
+                                  onClick={() => setChecklistKey(q.key)}
+                                />
+                              ) : q.responseKind === 'yes_no' ? (
                                 <div
                                   className="flex shrink-0 items-center gap-0.5 rounded-md border border-border/80 bg-surface-raised/30 p-0.5"
                                   role="group"
@@ -926,20 +1104,22 @@ export function DdsP2pPage() {
                                 </label>
                               )
                             ) : null}
-                            <textarea
-                              className={`p2p-auto-comment mt-0.5 w-full resize-none overflow-hidden rounded border bg-surface px-1 py-px text-[11px] leading-tight outline-none ring-accent/30 focus:ring-1 ${
-                                commentInvalid
-                                  ? 'border-2 border-rose-600 ring-rose-500/35 focus:border-rose-600 dark:border-rose-500'
-                                  : 'border-border/80 focus:border-accent/50'
-                              }`}
-                              rows={1}
-                              placeholder={linkedYes ? 'Comment (required)' : 'Comment'}
-                              aria-invalid={commentInvalid}
-                              disabled={readOnlyRevision}
-                              value={f.comment}
-                              onChange={(e) => patchForm(q.key, { comment: e.target.value })}
-                              onInput={(e) => growTextarea(e.currentTarget)}
-                            />
+                            {!q.hasSubQuestions ? (
+                              <textarea
+                                className={`p2p-auto-comment mt-0.5 w-full resize-none overflow-hidden rounded border bg-surface px-1 py-px text-[11px] leading-tight outline-none ring-accent/30 focus:ring-1 ${
+                                  commentInvalid
+                                    ? 'border-2 border-rose-600 ring-rose-500/35 focus:border-rose-600 dark:border-rose-500'
+                                    : 'border-border/80 focus:border-accent/50'
+                                }`}
+                                rows={1}
+                                placeholder={linkedYes ? 'Comment (required)' : 'Comment'}
+                                aria-invalid={commentInvalid}
+                                disabled={readOnlyRevision}
+                                value={f.comment}
+                                onChange={(e) => patchForm(q.key, { comment: e.target.value })}
+                                onInput={(e) => growTextarea(e.currentTarget)}
+                              />
+                            ) : null}
                           </li>
                         )
                       })}
@@ -1019,6 +1199,17 @@ export function DdsP2pPage() {
       {planErr ? <p className={`${ddsErr} shrink-0`}>{planErr}</p> : null}
       {planSuccess ? (
         <p className="shrink-0 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">{planSuccess}</p>
+      ) : null}
+      {checklistQuestion && checklistForm ? (
+        <DdsP2pSubQuestionChecklistModal
+          open
+          questionPrompt={checklistQuestion.prompt}
+          subQuestions={checklistQuestion.subQuestions}
+          subAnswers={checklistForm.subAnswers}
+          readOnly={readOnlyRevision}
+          onChange={(subId, patch) => patchSubAnswer(checklistQuestion.key, subId, patch)}
+          onClose={() => setChecklistKey(null)}
+        />
       ) : null}
     </div>
   )
