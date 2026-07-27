@@ -2,6 +2,7 @@ import {
   BadgeCheck,
   BarChart3,
   CalendarDays,
+  Gauge,
   HelpCircle,
   LayoutDashboard,
   Lightbulb,
@@ -46,6 +47,7 @@ export function ProblemSolveLayout() {
           { to: '/problem-solve/w-w', label: 'W-W', icon: HelpCircle, end: true },
           { to: '/problem-solve/bde', label: 'BDE', icon: BarChart3, end: true },
           { to: '/problem-solve/ida', label: 'IDA', icon: ScanSearch, end: true },
+          { to: '/problem-solve/opm', label: 'OPM', icon: Gauge, end: true },
           { to: '/problem-solve/safety', label: 'Safety', icon: ShieldCheck, end: true },
           { to: '/problem-solve/quality', label: 'Quality', icon: BadgeCheck, end: true },
         ]}

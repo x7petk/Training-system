@@ -1,6 +1,9 @@
 -- Seed 3 top losses + 3 rewards per cell (line-dds) for today + next 14 NZ days.
 -- Idempotent by deterministic text keys.
 
+set statement_timeout = '0';
+set lock_timeout = '120s';
+
 begin;
 
 do $$

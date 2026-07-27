@@ -4,6 +4,9 @@
 -- Run (linked remote):
 --   node_modules/supabase/bin/supabase db query --linked --yes -f scripts/complete-plan24-checks-next-7-days.sql
 
+set statement_timeout = '0';
+set lock_timeout = '120s';
+
 begin;
 
 do $$

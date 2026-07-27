@@ -69,7 +69,10 @@ export function AppSectionLayout({
   const { signOut, user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const onePageOutlet = location.pathname.includes('/dds-process/pdca')
+  const onePageOutlet =
+    location.pathname.includes('/dds-process/pdca') ||
+    /\/problem-solve\/bde\/?$/.test(location.pathname) ||
+    location.pathname.includes('/problem-solve/bde/reports')
   const [desktopCollapsed, setDesktopCollapsed] = useState(
     () => typeof window !== 'undefined' && window.localStorage.getItem(storageKey) === '1',
   )

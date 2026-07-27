@@ -162,6 +162,24 @@ import { ProblemSolvePlaceholderPage } from './pages/ProblemSolvePlaceholderPage
 import { BmsBrainLayout } from './components/BmsBrainLayout'
 import { BmsBrainAdminRoute } from './components/BmsBrainAdminRoute'
 
+const BdePage = lazy(() => import('./pages/BdePage').then((m) => ({ default: m.BdePage })))
+const BdeRecordsListPage = lazy(() =>
+  import('./pages/BdePage').then((m) => ({ default: m.BdeRecordsListPage })),
+)
+const BdeRecordEditorPage = lazy(() =>
+  import('./pages/BdeRecordEditorPage').then((m) => ({ default: m.BdeRecordEditorPage })),
+)
+const BdeAdminPage = lazy(() => import('./pages/BdeAdminPage').then((m) => ({ default: m.BdeAdminPage })))
+const BdeBreakdownReportPage = lazy(() =>
+  import('./features/bde/BdeBreakdownReportPage').then((m) => ({ default: m.BdeBreakdownReportPage })),
+)
+const BdeActionsReportPage = lazy(() =>
+  import('./features/bde/BdeActionsReportPage').then((m) => ({ default: m.BdeActionsReportPage })),
+)
+const BdeTrendsReportPage = lazy(() =>
+  import('./features/bde/BdeTrendsReportPage').then((m) => ({ default: m.BdeTrendsReportPage })),
+)
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -384,15 +402,23 @@ export default function App() {
             <Route path="ips" element={<ProblemSolvePlaceholderPage title="IPS" />} />
             <Route path="ups" element={<ProblemSolvePlaceholderPage title="UPS" />} />
             <Route path="w-w" element={<ProblemSolvePlaceholderPage title="W-W" />} />
-            <Route path="bde" element={<ProblemSolvePlaceholderPage title="BDE" />} />
+            <Route path="bde" element={<BdePage />}>
+              <Route index element={<BdeRecordsListPage />} />
+              <Route path="new" element={<BdeRecordEditorPage />} />
+              <Route path="reports" element={<BdeBreakdownReportPage />} />
+              <Route path="reports/actions" element={<BdeActionsReportPage />} />
+              <Route path="reports/trends" element={<BdeTrendsReportPage />} />
+              <Route path=":id" element={<BdeRecordEditorPage />} />
+            </Route>
             <Route path="ida" element={<ProblemSolvePlaceholderPage title="IDA" />} />
+            <Route path="opm" element={<ProblemSolvePlaceholderPage title="OPM" />} />
             <Route path="safety" element={<ProblemSolvePlaceholderPage title="Safety" />} />
             <Route path="quality" element={<ProblemSolvePlaceholderPage title="Quality" />} />
             <Route
               path="admin"
               element={
                 <ProblemSolveAdminRoute>
-                  <ProblemSolvePlaceholderPage title="Admin" />
+                  <BdeAdminPage />
                 </ProblemSolveAdminRoute>
               }
             />

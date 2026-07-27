@@ -2,8 +2,13 @@
 -- P2P all roles submitted (2 Yes with comments, rest No), triggers, KPIs, top losses/rewards.
 -- Default cell: Darfield Powder. Idempotent via "Today demo —" title / sheet_comment prefix.
 --
--- Run:
+-- Run (preferred — avoids statement timeout on large windows):
+--   node scripts/run-plan24-demo-seeds.mjs
+-- Or directly:
 --   npx supabase db query --linked --yes -f scripts/seed-plan24-today-demo.sql
+
+set statement_timeout = '0';
+set lock_timeout = '120s';
 
 begin;
 
@@ -89,7 +94,11 @@ declare
 
   v_total int;
   v_target_complete int;
+  v_already int;
+  v_excess int;
+  v_need int;
   v_marked int;
+  v_unmarked int;
 
   v_dev_type_id uuid;
   v_dh_type_id uuid;
@@ -252,37 +261,76 @@ begin
       v_target_complete := v_total - 1;
     end if;
 
-    update public.plan24_events e
-    set status = 'scheduled', opened_at = null, completed_at = null, completed_by = null
+    select count(*)::int
+    into v_already
+    from public.plan24_events e
     where e.master_cell_id = v_cell_id
       and e.plan_date = v_plan_date
       and e.deleted_at is null
       and lower(coalesce(e.event_type, '')) in (
         'check', 'cl_check', 'cil_check', 'quality_check', 'dds_action'
-      );
+      )
+      and e.status = 'complete';
 
-    with pick as (
-      select e.id
-      from public.plan24_events e
-      where e.master_cell_id = v_cell_id
-        and e.plan_date = v_plan_date
-        and e.deleted_at is null
-        and lower(coalesce(e.event_type, '')) in (
-          'check', 'cl_check', 'cil_check', 'quality_check', 'dds_action'
-        )
-      order by md5(e.id::text || v_plan_date::text)
-      limit v_target_complete
-    )
-    update public.plan24_events e
-    set
-      status = 'complete',
-      opened_at = coalesce(e.opened_at, e.start_at + interval '5 minutes'),
-      completed_at = least(e.end_at - interval '1 minute', e.start_at + interval '20 minutes')
-    from pick
-    where e.id = pick.id;
+    v_excess := greatest(0, v_already - v_target_complete);
+    if v_excess > 0 then
+      with demote as (
+        select e.id
+        from public.plan24_events e
+        where e.master_cell_id = v_cell_id
+          and e.plan_date = v_plan_date
+          and e.deleted_at is null
+          and lower(coalesce(e.event_type, '')) in (
+            'check', 'cl_check', 'cil_check', 'quality_check', 'dds_action'
+          )
+          and e.status = 'complete'
+        order by md5(e.id::text || v_plan_date::text || 'demote')
+        limit v_excess
+      )
+      update public.plan24_events e
+      set
+        status = 'scheduled',
+        opened_at = null,
+        completed_at = null,
+        completed_by = null
+      from demote
+      where e.id = demote.id;
 
-    get diagnostics v_marked = row_count;
-    raise notice 'Day %: total=%, target_complete=%, marked_complete=%', v_plan_date, v_total, v_target_complete, v_marked;
+      get diagnostics v_unmarked = row_count;
+      v_already := v_already - v_unmarked;
+    else
+      v_unmarked := 0;
+    end if;
+
+    v_need := greatest(0, v_target_complete - v_already);
+    if v_need > 0 then
+      with pick as (
+        select e.id
+        from public.plan24_events e
+        where e.master_cell_id = v_cell_id
+          and e.plan_date = v_plan_date
+          and e.deleted_at is null
+          and lower(coalesce(e.event_type, '')) in (
+            'check', 'cl_check', 'cil_check', 'quality_check', 'dds_action'
+          )
+          and e.status is distinct from 'complete'
+        order by md5(e.id::text || v_plan_date::text || 'complete')
+        limit v_need
+      )
+      update public.plan24_events e
+      set
+        status = 'complete',
+        opened_at = coalesce(e.opened_at, e.start_at + interval '5 minutes'),
+        completed_at = least(e.end_at - interval '1 minute', e.start_at + interval '20 minutes')
+      from pick
+      where e.id = pick.id;
+
+      get diagnostics v_marked = row_count;
+    else
+      v_marked := 0;
+    end if;
+
+    raise notice 'Day %: total=%, target=%, demoted=%, newly_complete=%', v_plan_date, v_total, v_target_complete, v_unmarked, v_marked;
   end if;
 
   -- All six seeded DDS actions must show complete on Shift / Line DDS
