@@ -47,8 +47,10 @@ export function AppsTeamKanban(props: {
                     type="button"
                     onClick={() => onSelect(t.id)}
                     className={`rounded-lg border px-2.5 py-2 text-left transition ${STATUS_TINT[t.status]} ${
-                      selectedId === t.id ? 'ring-2 ring-sky-500' : 'hover:brightness-[0.98]'
-                    }`}
+                      selectedId === t.id
+                        ? 'ring-2 ring-sky-500 ring-offset-1 ring-offset-sky-50 dark:ring-offset-sky-950/20'
+                        : 'hover:border-sky-400 hover:shadow-sm dark:hover:border-sky-600'
+                    } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1`}
                   >
                     <p className="line-clamp-2 text-sm font-medium text-fg">{t.title}</p>
                     {t.active_agent ? (
