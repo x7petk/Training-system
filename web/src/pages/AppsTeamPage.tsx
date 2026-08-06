@@ -298,7 +298,7 @@ export function AppsTeamPage() {
   ])
 
   return (
-    <div className="flex h-[calc(100vh-5.5rem)] min-h-[560px] flex-col gap-3 p-4">
+    <div className="flex flex-col gap-6 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Users className="h-5 w-5 text-sky-700" />
@@ -326,40 +326,51 @@ export function AppsTeamPage() {
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[340px_minmax(0,1fr)_minmax(320px,380px)]">
-        <AppsTeamChat
-          messages={messages}
-          input={input}
-          sending={sending}
-          onInput={setInput}
-          onSend={() => void sendChat()}
-        />
+      <div className="flex w-full flex-col gap-6">
+        <section className="w-full">
+          <AppsTeamChat
+            messages={messages}
+            input={input}
+            sending={sending}
+            onInput={setInput}
+            onSend={() => void sendChat()}
+          />
+        </section>
 
-        <div className="min-h-0 rounded-xl border border-border bg-bg/60 p-3">
+        <section className="w-full rounded-xl border border-border bg-bg/60 p-3">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-fg">Live board</h2>
             <span className="text-xs text-muted">{tickets.length} tickets</span>
           </div>
           <AppsTeamKanban tickets={tickets} selectedId={selectedId} onSelect={setSelectedId} />
-        </div>
+        </section>
 
-        {selected ? (
-          <AppsTeamTicketDrawer
-            ticket={selected}
-            messages={messages}
-            events={events}
-            busy={pipelineBusy}
-            onClose={() => setSelectedId(null)}
-            onDelete={async () => {
-              await deleteTicket(selected.id)
-              setSelectedId(null)
-            }}
-          />
-        ) : (
-          <div className="hidden items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted lg:flex">
-            Select a ticket to inspect requirements and the agent log.
+        <section className="w-full rounded-xl border border-border bg-surface">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold text-fg">Information</h2>
+            <p className="text-xs text-muted">
+              Requirements, progress, and agent activity for the selected ticket.
+            </p>
           </div>
-        )}
+
+          {selected ? (
+            <AppsTeamTicketDrawer
+              ticket={selected}
+              messages={messages}
+              events={events}
+              busy={pipelineBusy}
+              onClose={() => setSelectedId(null)}
+              onDelete={async () => {
+                await deleteTicket(selected.id)
+                setSelectedId(null)
+              }}
+            />
+          ) : (
+            <div className="flex items-center justify-center px-4 py-12 text-sm text-muted">
+              Select a ticket to see requirements, agent log, and status.
+            </div>
+          )}
+        </section>
       </div>
     </div>
   )
