@@ -205,41 +205,44 @@ async function getCursorRun(
   }
 }
 
-const PM_CHAT_SYSTEM = `You are the Product Manager for the Apps Team building product features for this training/ops web app (Vite React + Supabase, deployed on Vercel as training-system-seven).
+const PM_CHAT_SYSTEM = `You are the Product Manager for the Apps Team (Vite React + Supabase app, Vercel training-system-seven).
 
-You talk to the customer (the human). Your job:
-1. Ask crisp clarifying questions until you are confident you have enough detail.
-2. Never invent requirements. Confirm ambiguous points.
-3. When ready, structure a complete ticket.
+Customer involvement policy (CRITICAL):
+- Minimize questions. Make confident product decisions yourself.
+- Ask the customer ONLY when you truly cannot decide (business preference, conflicting goals, missing secret/credential, destructive irreversible choice).
+- Prefer 0–1 questions total. Never quiz them through the whole ticket.
+- After the ticket is created, do NOT narrate internal pipeline steps. The board shows progress. Only message the customer for a real question or final done summary.
 
-You NEVER stop owning delivery. You coordinate Designer → Developer → Tester → DevOps. After a ticket is created, the customer can still message you for changes or clarifications.
+Your job:
+1. From the customer's request, infer a solid ticket with sensible defaults.
+2. When ready, structure a complete ticket and start the team (Designer → Developer → Tester → DevOps).
+3. You own delivery until done. You answer Designer/Developer/Tester questions yourself whenever possible.
 
-Design principles you enforce for every ticket (Designer must follow these too):
-- One-pager principle: primary flows fit one screen/composition; avoid dashboard clutter.
-- Fewer clicks: minimize steps to value.
-- Reuse modern patterns/components already used in this app (Tailwind, Lucide, existing layouts).
+Design principles to bake into every ticket:
+- One-pager principle; fewer clicks; reuse existing Tailwind/Lucide/layout patterns.
 
 Output STRICT JSON only:
 {
-  "reply": "markdown message to the customer",
+  "reply": "short message to the customer",
+  "needsCustomerInput": false,
   "readyForTicket": false,
-  "openQuestions": ["..."],
+  "openQuestions": [],
   "ticket": null | {
     "title": "short title",
     "description": "problem + context + desired outcome",
-    "valueProposition": "why this matters / business value",
-    "requirements": ["atomic requirement", "..."],
-    "acceptanceCriteria": ["testable criterion", "..."]
+    "valueProposition": "why this matters",
+    "requirements": ["atomic requirement"],
+    "acceptanceCriteria": ["testable criterion"]
   }
 }
 
-Set readyForTicket=true only when openQuestions is empty and ticket fields are complete and specific.`
+Rules:
+- If needsCustomerInput=true, openQuestions has the one question and readyForTicket=false.
+- If readyForTicket=true, openQuestions must be empty, needsCustomerInput=false, ticket complete.
+- When making assumptions, briefly state them in reply (one short paragraph), then create the ticket.`
 
-const DESIGNER_SYSTEM = `You are the Apps Team Designer. Produce a design brief that aligns with:
-- One-pager / single-composition primary views (not busy dashboards unless requested)
-- Fewer clicks to complete the job
-- Modern components consistent with an existing Vite/React/Tailwind app (sidebar layouts, drawers, boards, chat panes)
-- No decorative clutter, no generic AI purple-glow aesthetic
+const DESIGNER_SYSTEM = `You are the Apps Team Designer. Produce a complete design brief. Do NOT leave open questions for the customer.
+If anything is ambiguous, choose the best option that matches one-pager / fewer-clicks / existing app patterns and note the decision in alignmentNotes.
 
 Output STRICT JSON:
 {
@@ -248,32 +251,45 @@ Output STRICT JSON:
   "components": ["component choices"],
   "interactionFlow": ["step"],
   "clickBudget": "how many clicks for the core job",
-  "alignmentNotes": "how this matches one-pager / less-clicks / existing patterns",
-  "openQuestions": ["questions for PM if any"],
+  "alignmentNotes": "decisions + how this matches principles",
+  "openQuestions": [],
   "readyForPmReview": true
 }`
 
 const PM_REVIEW_SYSTEM = `You are the Apps Team Product Manager reviewing Designer output.
-Approve only if the design matches ticket requirements AND one-pager / fewer-clicks / modern existing-component principles.
-If not, request rework with concrete notes.
+Decide yourself. Prefer approving a good-enough design that matches requirements and one-pager / fewer-clicks principles.
+Only reject for concrete rework instructions to the Designer (not to the customer).
 
 Output STRICT JSON:
 {
   "approved": true,
-  "feedback": "message to designer or confirmation",
-  "customerNote": "short update for the customer"
+  "feedback": "message to designer or confirmation"
 }`
 
-const TESTER_SYSTEM = `You are the Apps Team Tester. Given ticket requirements, acceptance criteria, design brief, and build artifacts (PR/branch/summary), produce a test report.
-Be concrete. Mark fail if evidence is insufficient.
+const PM_RESOLVE_SYSTEM = `You are the Apps Team Product Manager. Another agent asked questions or the pipeline is blocked.
+Decide answers yourself from the ticket + product judgment. Prefer shipping.
+Ask the customer ONLY if you truly cannot decide.
+
+Output STRICT JSON:
+{
+  "needsCustomerInput": false,
+  "customerQuestion": null,
+  "decisionSummary": "what you decided",
+  "resumeInstructions": "concrete instructions for the next agent",
+  "retry": true
+}`
+
+const TESTER_SYSTEM = `You are the Apps Team Tester. Produce a test report from ticket + artifacts.
+Decide pass/fail yourself. Do not ask the customer. Put residual risks in summary.
+Prefer readyForDeploy=true when a PR/build summary exists and no critical acceptance criterion is clearly broken.
 
 Output STRICT JSON:
 {
   "passed": true,
   "summary": "overall result",
   "cases": [{"name":"...", "result":"pass|fail|blocked", "notes":"..."}],
-  "bugs": ["..."],
-  "questionsForPm": ["..."],
+  "bugs": [],
+  "questionsForPm": [],
   "readyForDeploy": true
 }`
 
@@ -366,18 +382,26 @@ Deno.serve(async (req) => {
 
       const result = await openaiJson(
         PM_CHAT_SYSTEM,
-        `Conversation so far:\n${transcript}${ticketHint}\n\nRespond as PM JSON.`,
+        `Conversation so far:\n${transcript}${ticketHint}\n\nRespond as PM JSON. Prefer creating the ticket with assumptions over asking more questions.`,
       )
 
-      const reply = sanitize(result.reply, 10_000) || 'Could you share a bit more detail?'
-      const readyForTicket = Boolean(result.readyForTicket)
+      const needsCustomerInput = Boolean(result.needsCustomerInput)
       const openQuestions = asStringArray(result.openQuestions)
-      const ticket = readyForTicket && openQuestions.length === 0 ? parseTicketDraft(result.ticket) : null
+      const readyForTicket = Boolean(result.readyForTicket) && !needsCustomerInput && openQuestions.length === 0
+      const ticket = readyForTicket ? parseTicketDraft(result.ticket) : null
+      const reply =
+        sanitize(result.reply, 10_000) ||
+        (needsCustomerInput
+          ? openQuestions[0] || 'I need one decision from you to continue.'
+          : ticket
+            ? `Got it — I'll run with these assumptions and start the team on “${ticket.title}”.`
+            : 'Working on it.')
 
       return json({
         action: 'chat',
         model: MODEL,
         reply,
+        needsCustomerInput,
         readyForTicket: Boolean(ticket),
         openQuestions,
         ticket,
@@ -391,9 +415,8 @@ Deno.serve(async (req) => {
       if (ticket.status === 'design') {
         const result = await openaiJson(
           DESIGNER_SYSTEM,
-          `Design this ticket for the Apps Team product.\n${ticketContextBlock(ticket)}`,
+          `Design this ticket for the Apps Team product. Decide any ambiguities yourself.\n${ticketContextBlock(ticket)}`,
         )
-        const openQuestions = asStringArray(result.openQuestions)
         const designBrief = {
           summary: sanitize(result.summary, 1000),
           layout: sanitize(result.layout, 3000),
@@ -401,24 +424,20 @@ Deno.serve(async (req) => {
           interactionFlow: asStringArray(result.interactionFlow),
           clickBudget: sanitize(result.clickBudget, 400),
           alignmentNotes: sanitize(result.alignmentNotes, 2000),
-          openQuestions,
+          openQuestions: [] as string[],
         }
-        const needsClarify = openQuestions.length > 0 || result.readyForPmReview === false
         return json({
           action: 'advance',
           fromStatus: 'design',
-          toStatus: needsClarify ? 'clarify' : 'pm_review_design',
-          activeAgent: needsClarify ? 'pm' : 'pm',
+          toStatus: 'pm_review_design',
+          activeAgent: 'pm',
+          notifyCustomer: false,
           designBrief,
           messages: [
             {
               fromRole: 'designer',
               toRole: 'pm',
-              body:
-                designBrief.summary +
-                (openQuestions.length
-                  ? `\n\nOpen questions:\n- ${openQuestions.join('\n- ')}`
-                  : '\n\nDesign brief ready for PM review.'),
+              body: `${designBrief.summary}\n\nDesign brief ready for PM review.`,
               meta: { designBrief },
             },
           ],
@@ -426,29 +445,25 @@ Deno.serve(async (req) => {
             {
               eventType: 'handoff',
               actorRole: 'designer',
-              summary: needsClarify
-                ? 'Designer needs clarification before PM review'
-                : 'Designer completed brief; sent to PM review',
+              summary: 'Designer completed brief; sent to PM review',
               detail: { designBrief },
             },
           ],
-          customerNote: needsClarify
-            ? 'Designer has clarifying questions — I am working those with the team.'
-            : 'Design draft is ready; I am reviewing it against requirements and one-pager principles.',
         })
       }
 
       if (ticket.status === 'pm_review_design') {
         const result = await openaiJson(
           PM_REVIEW_SYSTEM,
-          `Review this design against the ticket.\n${ticketContextBlock(ticket)}`,
+          `Review this design against the ticket. Decide yourself.\n${ticketContextBlock(ticket)}`,
         )
-        const approved = Boolean(result.approved)
+        const approved = result.approved !== false
         return json({
           action: 'advance',
           fromStatus: 'pm_review_design',
           toStatus: approved ? 'build' : 'design',
           activeAgent: approved ? 'developer' : 'designer',
+          notifyCustomer: false,
           messages: [
             {
               fromRole: 'pm',
@@ -465,73 +480,144 @@ Deno.serve(async (req) => {
               detail: { approved, feedback: result.feedback },
             },
           ],
-          customerNote:
-            sanitize(result.customerNote, 2000) ||
-            (approved ? 'Design approved — Developer is starting the build in Cursor Cloud.' : 'Design needs another pass.'),
         })
       }
 
-      if (ticket.status === 'build' || ticket.status === 'clarify') {
+      if (ticket.status === 'clarify' || ticket.status === 'blocked') {
+        const pendingDevQuestions = sanitize(
+          String(ticket.artifacts?.buildSummary ?? ticket.artifacts?.lastAgentQuestion ?? ''),
+          6000,
+        )
+        const resolve = await openaiJson(
+          PM_RESOLVE_SYSTEM,
+          `Ticket status: ${ticket.status}\nPending agent notes:\n${pendingDevQuestions || '(none)'}\n\nTicket:\n${ticketContextBlock(ticket)}\n\nDecide and continue the pipeline without the customer if possible.`,
+        )
+        const needsCustomerInput = Boolean(resolve.needsCustomerInput)
+        if (needsCustomerInput) {
+          const q =
+            sanitize(resolve.customerQuestion, 2000) ||
+            'I need one decision from you before the team can continue.'
+          return json({
+            action: 'advance',
+            fromStatus: ticket.status,
+            toStatus: 'clarify',
+            activeAgent: 'pm',
+            needsCustomerInput: true,
+            notifyCustomer: true,
+            customerNote: q,
+            messages: [
+              {
+                fromRole: 'pm',
+                toRole: 'customer',
+                body: q,
+                meta: { kind: 'customer_question' },
+              },
+            ],
+            events: [
+              {
+                eventType: 'awaiting_customer',
+                actorRole: 'pm',
+                summary: 'PM needs one customer decision',
+                detail: { question: q },
+              },
+            ],
+          })
+        }
+
+        const resumeInstructions =
+          sanitize(resolve.resumeInstructions, 6000) ||
+          sanitize(resolve.decisionSummary, 4000) ||
+          'Proceed with the best product judgment from the ticket.'
+
+        // Resume developer if we have a cloud agent; otherwise send back to build/design.
+        if (ticket.cursorAgentId && (ticket.status === 'clarify' || ticket.artifacts?.buildSummary)) {
+          const follow = await followUpCursorAgent(
+            ticket.cursorAgentId,
+            `PM decision (customer not involved):\n${resumeInstructions}\n\nUpdated ticket:\n${ticketContextBlock(ticket)}\n\nContinue implementation. Prefer finishing over asking more questions. Only use QUESTIONS FOR PM if truly blocked.`,
+          )
+          return json({
+            action: 'advance',
+            fromStatus: ticket.status,
+            toStatus: 'build',
+            activeAgent: 'developer',
+            notifyCustomer: false,
+            cursor: {
+              agentId: ticket.cursorAgentId,
+              runId: follow.runId,
+              url: ticket.cursorUrl,
+            },
+            artifactsPatch: { lastPmDecision: resumeInstructions },
+            messages: [
+              {
+                fromRole: 'pm',
+                toRole: 'developer',
+                body: resumeInstructions,
+                meta: { autonomous: true },
+              },
+            ],
+            events: [
+              {
+                eventType: 'pm_decision',
+                actorRole: 'pm',
+                summary: 'PM resolved questions autonomously; Developer resumed',
+                detail: { runId: follow.runId, decision: resumeInstructions },
+              },
+            ],
+          })
+        }
+
+        // Blocked with no usable agent → retry from build (or design if no brief).
+        const retryStatus: TicketStatus = ticket.designBrief ? 'build' : 'design'
+        return json({
+          action: 'advance',
+          fromStatus: ticket.status,
+          toStatus: retryStatus,
+          activeAgent: retryStatus === 'build' ? 'developer' : 'designer',
+          notifyCustomer: false,
+          artifactsPatch: {
+            lastPmDecision: resumeInstructions,
+            cursorRetry: true,
+          },
+          clearCursor: true,
+          messages: [
+            {
+              fromRole: 'pm',
+              toRole: 'system',
+              body: `Restarting at ${retryStatus}. ${resumeInstructions}`,
+              meta: { autonomous: true },
+            },
+          ],
+          events: [
+            {
+              eventType: 'pm_decision',
+              actorRole: 'pm',
+              summary: `PM unblocked ticket; retrying from ${retryStatus}`,
+              detail: { decision: resumeInstructions },
+            },
+          ],
+        })
+      }
+
+      if (ticket.status === 'build') {
         // If already has an active Cursor run, tell client to sync instead of launching again.
-        if (ticket.cursorAgentId && ticket.cursorRunId && ticket.status === 'build') {
+        if (ticket.cursorAgentId && ticket.cursorRunId && !ticket.artifacts?.cursorRetry) {
           return json({
             action: 'advance',
             fromStatus: ticket.status,
             toStatus: ticket.status,
             activeAgent: 'developer',
             deferToSync: true,
-            customerNote: 'Developer cloud agent is already running — syncing status.',
+            notifyCustomer: false,
             messages: [],
             events: [],
-          })
-        }
-
-        const clarifyNote = sanitize(body.customerNote, 4000)
-        if (ticket.status === 'clarify' && ticket.cursorAgentId) {
-          const follow = await followUpCursorAgent(
-            ticket.cursorAgentId,
-            `PM clarification / answers:\n${clarifyNote || '(see ticket updates)'}\n\nUpdated ticket:\n${ticketContextBlock(ticket)}\n\nContinue the implementation. Ask PM only if still blocked.`,
-          )
-          return json({
-            action: 'advance',
-            fromStatus: 'clarify',
-            toStatus: 'build',
-            activeAgent: 'developer',
-            cursor: {
-              agentId: ticket.cursorAgentId,
-              runId: follow.runId,
-              url: ticket.cursorUrl,
-            },
-            messages: [
-              {
-                fromRole: 'pm',
-                toRole: 'developer',
-                body: clarifyNote || 'Continuing with clarified requirements.',
-                meta: {},
-              },
-              {
-                fromRole: 'system',
-                toRole: 'developer',
-                body: `Cursor follow-up run started: ${follow.runId}`,
-                meta: { runId: follow.runId },
-              },
-            ],
-            events: [
-              {
-                eventType: 'cursor_followup',
-                actorRole: 'pm',
-                summary: 'PM answered clarifications; Developer cloud run resumed',
-                detail: { runId: follow.runId },
-              },
-            ],
-            customerNote: 'I sent clarifications to the Developer cloud agent.',
           })
         }
 
         const prompt =
           `You are the Apps Team Developer working in Cursor Cloud.\n` +
           `Implement this ticket fully in the Training-system repo. Follow the design brief and acceptance criteria.\n` +
-          `If anything is blocking, end with a clear QUESTIONS FOR PM section.\n` +
+          `Make reasonable product/engineering decisions yourself. Do NOT ask the customer.\n` +
+          `If truly blocked by missing info only the PM can decide, end with a clear QUESTIONS FOR PM section.\n` +
           `Prefer matching existing app patterns (Agents section, Tailwind, React Router).\n\n` +
           `TICKET:\n${ticketContextBlock(ticket)}\n`
 
@@ -546,12 +632,14 @@ Deno.serve(async (req) => {
           fromStatus: ticket.status,
           toStatus: 'build',
           activeAgent: 'developer',
+          notifyCustomer: false,
           cursor: launched,
+          artifactsPatch: { cursorRetry: false },
           messages: [
             {
               fromRole: 'pm',
               toRole: 'developer',
-              body: 'Build kicked off in Cursor Cloud. Implement per requirements + design brief; ask me if blocked.',
+              body: 'Build kicked off in Cursor Cloud. Decide details yourself; ask PM only if blocked.',
               meta: launched,
             },
             {
@@ -569,32 +657,38 @@ Deno.serve(async (req) => {
               detail: launched,
             },
           ],
-          customerNote: `Developer is building in Cursor Cloud: ${launched.url}`,
         })
       }
 
       if (ticket.status === 'test') {
         const result = await openaiJson(
           TESTER_SYSTEM,
-          `Test this delivery.\n${ticketContextBlock(ticket)}`,
+          `Test this delivery. Decide yourself; do not involve the customer.\n${ticketContextBlock(ticket)}`,
         )
-        const passed = Boolean(result.passed) && Boolean(result.readyForDeploy)
-        const questions = asStringArray(result.questionsForPm)
+        const passed = result.passed !== false && result.readyForDeploy !== false
         const bugs = asStringArray(result.bugs)
+        // Failures go to PM clarify for autonomous fix — not customer.
         return json({
           action: 'advance',
           fromStatus: 'test',
-          toStatus: passed ? 'deploy' : questions.length || bugs.length ? 'clarify' : 'build',
+          toStatus: passed ? 'deploy' : 'clarify',
           activeAgent: passed ? 'devops' : 'pm',
+          notifyCustomer: false,
           testReport: result,
+          artifactsPatch: passed
+            ? {}
+            : {
+                lastAgentQuestion:
+                  sanitize(result.summary, 4000) +
+                  (bugs.length ? `\nBugs:\n- ${bugs.join('\n- ')}` : ''),
+              },
           messages: [
             {
               fromRole: 'tester',
               toRole: 'pm',
               body:
                 sanitize(result.summary, 4000) +
-                (bugs.length ? `\n\nBugs:\n- ${bugs.join('\n- ')}` : '') +
-                (questions.length ? `\n\nQuestions:\n- ${questions.join('\n- ')}` : ''),
+                (bugs.length ? `\n\nBugs:\n- ${bugs.join('\n- ')}` : ''),
               meta: { testReport: result },
             },
           ],
@@ -602,27 +696,24 @@ Deno.serve(async (req) => {
             {
               eventType: passed ? 'handoff' : 'rework',
               actorRole: 'tester',
-              summary: passed ? 'Tests passed; handing to DevOps' : 'Tester found issues / needs clarification',
+              summary: passed ? 'Tests passed; handing to DevOps' : 'Tester found issues; PM will decide fixes',
               detail: { testReport: result },
             },
           ],
-          customerNote: passed
-            ? 'Testing passed — DevOps is preparing production deploy.'
-            : 'Testing found issues; I am coordinating a fix.',
         })
       }
 
       if (ticket.status === 'deploy') {
-        if (ticket.cursorAgentId && ticket.artifacts?.deployRunId) {
+        if (ticket.artifacts?.deployRunId) {
           return json({
             action: 'advance',
             fromStatus: 'deploy',
             toStatus: 'deploy',
             activeAgent: 'devops',
             deferToSync: true,
+            notifyCustomer: false,
             messages: [],
             events: [],
-            customerNote: 'DevOps cloud agent already running — syncing.',
           })
         }
 
@@ -630,7 +721,7 @@ Deno.serve(async (req) => {
           DEVOPS_PROMPT_PREFIX +
           `\nFeature ticket to ship:\n${ticketContextBlock(ticket)}\n` +
           `If a PR URL exists in artifacts, work from that. Otherwise prepare deploy notes and any needed release steps.\n` +
-          `End with DEPLOY RESULT including production URL and whether alias training-system-seven.vercel.app points at the new deployment.`
+          `Decide details yourself. End with DEPLOY RESULT including production URL and whether alias training-system-seven.vercel.app points at the new deployment.`
 
         const launched = await launchCursorAgent({
           name: `Apps Team DevOps: ${ticket.title}`.slice(0, 100),
@@ -643,6 +734,7 @@ Deno.serve(async (req) => {
           fromStatus: 'deploy',
           toStatus: 'deploy',
           activeAgent: 'devops',
+          notifyCustomer: false,
           cursor: launched,
           artifactsPatch: { deployAgentId: launched.agentId, deployRunId: launched.runId, deployUrl: launched.url },
           messages: [
@@ -661,7 +753,6 @@ Deno.serve(async (req) => {
               detail: launched,
             },
           ],
-          customerNote: `DevOps is deploying via Cursor Cloud: ${launched.url}`,
         })
       }
 
@@ -671,9 +762,28 @@ Deno.serve(async (req) => {
           fromStatus: 'done',
           toStatus: 'done',
           activeAgent: null,
+          notifyCustomer: false,
           messages: [],
           events: [],
-          customerNote: 'This ticket is already complete.',
+        })
+      }
+
+      if (ticket.status === 'intake') {
+        return json({
+          action: 'advance',
+          fromStatus: 'intake',
+          toStatus: 'design',
+          activeAgent: 'designer',
+          notifyCustomer: false,
+          messages: [],
+          events: [
+            {
+              eventType: 'handoff',
+              actorRole: 'pm',
+              summary: 'Moving intake ticket into design',
+              detail: {},
+            },
+          ],
         })
       }
 
@@ -699,9 +809,9 @@ Deno.serve(async (req) => {
           fromStatus: ticket.status,
           toStatus: ticket.status,
           runStatus: 'missing',
+          notifyCustomer: false,
           messages: [],
           events: [],
-          customerNote: 'No Cursor run to sync yet.',
         })
       }
 
@@ -722,16 +832,9 @@ Deno.serve(async (req) => {
           toStatus: ticket.status,
           runStatus: status,
           activeAgent: ticket.status === 'deploy' ? 'devops' : 'developer',
+          notifyCustomer: false,
           messages: [],
-          events: [
-            {
-              eventType: 'cursor_status',
-              actorRole: ticket.status === 'deploy' ? 'devops' : 'developer',
-              summary: `Cloud run status: ${status}`,
-              detail: { status, agentId, runId },
-            },
-          ],
-          customerNote: `Cloud agent still working (${status}).`,
+          events: [],
         })
       }
 
@@ -742,6 +845,8 @@ Deno.serve(async (req) => {
           toStatus: 'blocked',
           runStatus: status,
           activeAgent: 'pm',
+          notifyCustomer: false,
+          artifactsPatch: { lastAgentQuestion: summary || `Cursor run ${status}` },
           messages: [
             {
               fromRole: 'system',
@@ -758,7 +863,6 @@ Deno.serve(async (req) => {
               detail: { status, summary, agentId, runId },
             },
           ],
-          customerNote: 'A cloud agent hit an error — I am investigating and will restart the step.',
         })
       }
 
@@ -771,6 +875,7 @@ Deno.serve(async (req) => {
           ...(summary ? { buildSummary: summary } : {}),
           developerAgentId: agentId,
           developerRunId: runId,
+          ...(looksLikeQuestions ? { lastAgentQuestion: summary } : {}),
         }
 
         if (looksLikeQuestions) {
@@ -780,6 +885,7 @@ Deno.serve(async (req) => {
             toStatus: 'clarify',
             runStatus: status,
             activeAgent: 'pm',
+            notifyCustomer: false,
             artifactsPatch,
             messages: [
               {
@@ -793,11 +899,10 @@ Deno.serve(async (req) => {
               {
                 eventType: 'cursor_done',
                 actorRole: 'developer',
-                summary: 'Developer paused with questions for PM',
+                summary: 'Developer paused with questions for PM (PM will decide)',
                 detail: artifactsPatch,
               },
             ],
-            customerNote: 'Developer has clarifying questions — I am resolving them.',
           })
         }
 
@@ -807,6 +912,7 @@ Deno.serve(async (req) => {
           toStatus: 'test',
           runStatus: status,
           activeAgent: 'tester',
+          notifyCustomer: false,
           artifactsPatch,
           messages: [
             {
@@ -830,7 +936,6 @@ Deno.serve(async (req) => {
               detail: artifactsPatch,
             },
           ],
-          customerNote: 'Build finished in the cloud — Tester is reviewing.',
         })
       }
 
@@ -847,6 +952,11 @@ Deno.serve(async (req) => {
           toStatus: 'done',
           runStatus: status,
           activeAgent: null,
+          needsCustomerInput: false,
+          notifyCustomer: true,
+          customerNote: `Done. Shipped to https://training-system-seven.vercel.app${
+            summary ? `\n\n${summary.slice(0, 800)}` : ''
+          }`,
           artifactsPatch,
           messages: [
             {
@@ -858,8 +968,8 @@ Deno.serve(async (req) => {
             {
               fromRole: 'pm',
               toRole: 'customer',
-              body: 'Work is complete and handed through DevOps. Production target: https://training-system-seven.vercel.app',
-              meta: {},
+              body: `Done — live at https://training-system-seven.vercel.app`,
+              meta: { kind: 'done' },
             },
           ],
           events: [
@@ -870,7 +980,6 @@ Deno.serve(async (req) => {
               detail: artifactsPatch,
             },
           ],
-          customerNote: 'Deploy finished — ticket is done.',
         })
       }
 
@@ -879,9 +988,9 @@ Deno.serve(async (req) => {
         fromStatus: ticket.status,
         toStatus: ticket.status,
         runStatus: status,
+        notifyCustomer: false,
         messages: [],
         events: [],
-        customerNote: `Synced Cursor status ${status}.`,
       })
     }
 

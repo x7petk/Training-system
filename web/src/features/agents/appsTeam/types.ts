@@ -108,6 +108,7 @@ export type AppsTeamChatResponse = {
   model?: string
   reply: string
   readyForTicket: boolean
+  needsCustomerInput?: boolean
   openQuestions: string[]
   ticket: AppsTeamTicketDraft | null
 }
@@ -121,11 +122,14 @@ export type AppsTeamAdvanceResponse = {
   testReport?: Record<string, unknown>
   cursor?: { agentId: string; runId: string; url: string }
   artifactsPatch?: AppsTeamArtifacts
+  clearCursor?: boolean
   deferToSync?: boolean
   runStatus?: string
+  needsCustomerInput?: boolean
+  notifyCustomer?: boolean
+  customerNote?: string
   messages: AppsTeamOrchestrationMessage[]
   events: AppsTeamOrchestrationEvent[]
-  customerNote?: string
 }
 
 export const KANBAN_COLUMNS: Array<{

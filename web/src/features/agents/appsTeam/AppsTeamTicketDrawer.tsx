@@ -16,27 +16,16 @@ export function AppsTeamTicketDrawer(props: {
   events: AppsTeamEvent[]
   busy: boolean
   onClose: () => void
-  onAdvance: () => void
-  onSync: () => void
   onDelete: () => void
 }) {
-  const { ticket, messages, events, busy, onClose, onAdvance, onSync, onDelete } = props
-  const ticketMessages = messages.filter((m) => m.ticket_id === ticket.id)
+  const { ticket, messages, events, busy, onClose, onDelete } = props
+  const ticketMessages = messages.filter(
+    (m) => m.ticket_id === ticket.id || m.meta?.ticket_id === ticket.id,
+  )
   const ticketEvents = events
     .filter((e) => e.ticket_id === ticket.id)
     .slice()
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
-
-  const canAdvance =
-    ticket.status === 'design' ||
-    ticket.status === 'pm_review_design' ||
-    ticket.status === 'build' ||
-    ticket.status === 'clarify' ||
-    ticket.status === 'test' ||
-    ticket.status === 'deploy' ||
-    ticket.status === 'blocked'
-
-  const canSync = Boolean(ticket.cursor_agent_id || ticket.artifacts.deployRunId)
 
   return (
     <div className="flex h-full min-h-0 flex-col border-l border-border bg-surface">
@@ -47,6 +36,7 @@ export function AppsTeamTicketDrawer(props: {
           {ticket.active_agent ? (
             <p className="text-xs text-muted">Active: {AGENT_LABELS[ticket.active_agent]}</p>
           ) : null}
+          {busy ? <p className="text-[11px] text-sky-700">Pipeline working…</p> : null}
         </div>
         <button type="button" onClick={onClose} className="rounded-md p-1 text-muted hover:bg-muted/20" aria-label="Close">
           <X className="h-4 w-4" />
@@ -54,26 +44,6 @@ export function AppsTeamTicketDrawer(props: {
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-border px-4 py-2">
-        {canAdvance ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onAdvance}
-            className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-          >
-            Run next step
-          </button>
-        ) : null}
-        {canSync ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onSync}
-            className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-fg disabled:opacity-50"
-          >
-            Sync cloud agent
-          </button>
-        ) : null}
         {ticket.cursor_url ? (
           <a
             href={ticket.cursor_url}

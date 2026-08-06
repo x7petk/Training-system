@@ -10,7 +10,7 @@ import { AppsTeamChat } from '../features/agents/appsTeam/AppsTeamChat'
 import { AppsTeamKanban } from '../features/agents/appsTeam/AppsTeamKanban'
 import { AppsTeamTicketDrawer } from '../features/agents/appsTeam/AppsTeamTicketDrawer'
 import { useAppsTeam } from '../features/agents/appsTeam/useAppsTeam'
-import type { AppsTeamChatTurn, AppsTeamTicket } from '../features/agents/appsTeam/types'
+import type { AppsTeamChatTurn, AppsTeamTicket, AppsTeamTicketStatus } from '../features/agents/appsTeam/types'
 
 function toChatTurns(messages: { from_role: string; body: string; ticket_id: string | null }[]): AppsTeamChatTurn[] {
   const turns: AppsTeamChatTurn[] = []
@@ -21,6 +21,42 @@ function toChatTurns(messages: { from_role: string; body: string; ticket_id: str
   }
   return turns.slice(-20)
 }
+
+function needsPipelineWork(t: AppsTeamTicket): boolean {
+  if (t.status === 'done') return false
+  // Waiting on an in-flight cloud run → sync, don't advance.
+  if (t.status === 'build' && t.cursor_run_id && !t.artifacts.cursorRetry) return false
+  if (t.status === 'deploy' && t.artifacts.deployRunId) return false
+  // Waiting on customer answer.
+  if (t.status === 'clarify' && t.artifacts.awaitingCustomer) return false
+  return (
+    t.status === 'intake' ||
+    t.status === 'design' ||
+    t.status === 'pm_review_design' ||
+    t.status === 'build' ||
+    t.status === 'clarify' ||
+    t.status === 'test' ||
+    t.status === 'deploy' ||
+    t.status === 'blocked'
+  )
+}
+
+function needsCloudSync(t: AppsTeamTicket): boolean {
+  if (t.status === 'build' && t.cursor_run_id && !t.artifacts.cursorRetry) return true
+  if (t.status === 'deploy' && t.artifacts.deployRunId) return true
+  return false
+}
+
+const AUTO_ADVANCE_STATUSES: AppsTeamTicketStatus[] = [
+  'intake',
+  'design',
+  'pm_review_design',
+  'test',
+  'clarify',
+  'blocked',
+  'build',
+  'deploy',
+]
 
 export function AppsTeamPage() {
   const { session } = useAuth()
@@ -39,7 +75,7 @@ export function AppsTeamPage() {
 
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [busyTicket, setBusyTicket] = useState(false)
+  const [pipelineBusy, setPipelineBusy] = useState(false)
   const [invokeError, setInvokeError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const advancingRef = useRef<Set<string>>(new Set())
@@ -54,26 +90,15 @@ export function AppsTeamPage() {
       if (!session?.access_token) return
       if (advancingRef.current.has(ticket.id)) return
       advancingRef.current.add(ticket.id)
-      setBusyTicket(true)
+      setPipelineBusy(true)
       setInvokeError(null)
       try {
         let current = ticket
-        // Keep stepping through non-cloud stages until we need sync or hit a terminal wait.
-        for (let i = 0; i < 4; i++) {
-          const { data, errorMessage } = await invokeAppsTeamAdvance(
-            session.access_token,
-            current,
-            note,
-          )
-          if (errorMessage || !data) {
-            setInvokeError(errorMessage || 'Advance failed')
-            break
-          }
-          const updated = await applyOrchestration(current, data)
-          if (!updated) break
-          current = updated
+        for (let i = 0; i < 8; i++) {
+          if (current.status === 'done') break
+          if (current.artifacts.awaitingCustomer) break
 
-          if (data.deferToSync) {
+          if (needsCloudSync(current)) {
             const sync = await invokeAppsTeamSync(session.access_token, current)
             if (sync.errorMessage || !sync.data) {
               setInvokeError(sync.errorMessage || 'Sync failed')
@@ -82,82 +107,73 @@ export function AppsTeamPage() {
             const afterSync = await applyOrchestration(current, sync.data)
             if (!afterSync) break
             current = afterSync
-            // If still running, stop and let polling continue.
             if (sync.data.fromStatus === sync.data.toStatus) break
             continue
           }
 
-          // Cloud launch: stop and let poller sync.
-          if (data.cursor || current.status === 'done' || current.status === 'blocked') break
-          // Continue auto-pipeline for designer / pm review / tester stages.
-          if (
-            current.status === 'design' ||
-            current.status === 'pm_review_design' ||
-            current.status === 'test'
-          ) {
-            continue
+          if (!needsPipelineWork(current) && current.status !== 'build') break
+
+          const { data, errorMessage } = await invokeAppsTeamAdvance(
+            session.access_token,
+            current,
+            note,
+          )
+          note = undefined
+          if (errorMessage || !data) {
+            setInvokeError(errorMessage || 'Advance failed')
+            break
           }
-          break
+
+          // Mark awaiting customer so we don't loop.
+          if (data.needsCustomerInput) {
+            data.artifactsPatch = {
+              ...(data.artifactsPatch ?? {}),
+              awaitingCustomer: true,
+            }
+          }
+
+          const updated = await applyOrchestration(current, data)
+          if (!updated) break
+          current = updated
+
+          if (data.needsCustomerInput) break
+          if (data.deferToSync || data.cursor) break
+          if (!AUTO_ADVANCE_STATUSES.includes(current.status)) break
         }
       } finally {
         advancingRef.current.delete(ticket.id)
-        setBusyTicket(false)
+        setPipelineBusy(false)
       }
     },
     [session?.access_token, applyOrchestration],
   )
 
-  // Auto-sync cloud agent tickets while on the page.
+  // Autonomous pipeline: keep every open ticket moving without customer clicks.
   useEffect(() => {
     if (!session?.access_token) return
-    const cloudTickets = tickets.filter(
-      (t) =>
-        (t.status === 'build' || t.status === 'deploy') &&
-        (t.cursor_run_id || t.artifacts.deployRunId),
-    )
-    if (cloudTickets.length === 0) return
-
     let cancelled = false
+
     const tick = async () => {
-      for (const t of cloudTickets) {
-        if (cancelled || advancingRef.current.has(t.id)) continue
-        advancingRef.current.add(t.id)
-        try {
-          const { data, errorMessage } = await invokeAppsTeamSync(session.access_token, t)
-          if (!errorMessage && data) {
-            await applyOrchestration(t, data)
-            // After build→test or similar, keep pipeline moving.
-            if (
-              data.toStatus === 'test' ||
-              data.toStatus === 'design' ||
-              data.toStatus === 'pm_review_design'
-            ) {
-              const refreshed = { ...t, status: data.toStatus }
-              // load() will refresh; schedule advance on next tick via status change below
-              void runAdvance({
-                ...t,
-                status: data.toStatus,
-                artifacts: { ...t.artifacts, ...(data.artifactsPatch ?? {}) },
-                active_agent: data.activeAgent ?? t.active_agent,
-              })
-              void refreshed
-            }
-          }
-        } finally {
-          advancingRef.current.delete(t.id)
+      const open = tickets.filter((t) => t.status !== 'done')
+      for (const t of open) {
+        if (cancelled) return
+        if (advancingRef.current.has(t.id)) continue
+        if (t.artifacts.awaitingCustomer) continue
+        if (needsCloudSync(t) || needsPipelineWork(t)) {
+          await runAdvance(t)
         }
       }
     }
 
     const id = window.setInterval(() => {
       void tick()
-    }, 12_000)
+    }, 10_000)
     void tick()
     return () => {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [tickets, session?.access_token, applyOrchestration, runAdvance])
+  }, [tickets, session?.access_token, runAdvance])
 
   const sendChat = useCallback(async () => {
     const q = input.trim()
@@ -175,8 +191,10 @@ export function AppsTeamPage() {
       { from_role: 'customer', body: q, ticket_id: null },
     ])
 
+    const waitingTicket = tickets.find((t) => t.status === 'clarify' && t.artifacts.awaitingCustomer)
     const activeTicket =
-      selected && selected.status !== 'done' ? selected : tickets.find((t) => t.status !== 'done') ?? null
+      waitingTicket ||
+      (selected && selected.status !== 'done' ? selected : tickets.find((t) => t.status !== 'done') ?? null)
 
     const { data, errorMessage } = await invokeAppsTeamChat(
       session.access_token,
@@ -189,7 +207,65 @@ export function AppsTeamPage() {
       return
     }
 
-    await addMessage({ from_role: 'pm', to_role: 'customer', body: data.reply, ticket_id: null })
+    await addMessage({
+      from_role: 'pm',
+      to_role: 'customer',
+      body: data.reply,
+      ticket_id: null,
+      meta: {
+        kind: data.needsCustomerInput ? 'customer_question' : data.readyForTicket ? 'milestone' : 'chat',
+      },
+    })
+
+    // Customer answered → clear awaiting and resume that ticket.
+    if (waitingTicket && !data.needsCustomerInput) {
+      const resumed = {
+        ...waitingTicket,
+        artifacts: {
+          ...waitingTicket.artifacts,
+          awaitingCustomer: false,
+          lastCustomerAnswer: q,
+          lastAgentQuestion: `${waitingTicket.artifacts.lastAgentQuestion ?? ''}\n\nCustomer answer:\n${q}`,
+        },
+      }
+      // Persist artifact clear via a light update through advance path.
+      await applyOrchestration(waitingTicket, {
+        action: 'advance',
+        fromStatus: waitingTicket.status,
+        toStatus: 'clarify',
+        activeAgent: 'pm',
+        notifyCustomer: false,
+        artifactsPatch: {
+          awaitingCustomer: false,
+          lastCustomerAnswer: q,
+          lastAgentQuestion: resumed.artifacts.lastAgentQuestion,
+        },
+        messages: [
+          {
+            fromRole: 'customer',
+            toRole: 'pm',
+            body: q,
+            meta: { kind: 'customer_answer' },
+          },
+        ],
+        events: [
+          {
+            eventType: 'customer_answered',
+            actorRole: 'customer',
+            summary: 'Customer answered PM question; resuming',
+          },
+        ],
+      })
+      void runAdvance({
+        ...waitingTicket,
+        artifacts: {
+          ...waitingTicket.artifacts,
+          awaitingCustomer: false,
+          lastCustomerAnswer: q,
+          lastAgentQuestion: resumed.artifacts.lastAgentQuestion as string,
+        },
+      })
+    }
 
     if (data.readyForTicket && data.ticket) {
       const created = await createTicketFromDraft(data.ticket)
@@ -198,8 +274,9 @@ export function AppsTeamPage() {
         await addMessage({
           from_role: 'pm',
           to_role: 'customer',
-          body: `Ticket created: “${created.title}”. Handing to Designer now.`,
+          body: `Ticket “${created.title}” is in progress. I’ll only message you if I need a decision.`,
           ticket_id: null,
+          meta: { kind: 'milestone', ticket_id: created.id },
         })
         void runAdvance(created)
       }
@@ -216,6 +293,7 @@ export function AppsTeamPage() {
     tickets,
     createTicketFromDraft,
     runAdvance,
+    applyOrchestration,
   ])
 
   return (
@@ -226,7 +304,8 @@ export function AppsTeamPage() {
           <div>
             <h1 className="text-lg font-semibold text-fg">Apps Team</h1>
             <p className="text-xs text-muted">
-              PM · Designer · Developer (Cursor Cloud) · Tester · DevOps — PM owns delivery until done
+              Chat only when the PM asks. Watch the board — the team runs itself.
+              {pipelineBusy ? ' · Working…' : ''}
             </p>
           </div>
         </div>
@@ -268,17 +347,8 @@ export function AppsTeamPage() {
             ticket={selected}
             messages={messages}
             events={events}
-            busy={busyTicket}
+            busy={pipelineBusy}
             onClose={() => setSelectedId(null)}
-            onAdvance={() => void runAdvance(selected)}
-            onSync={async () => {
-              if (!session?.access_token) return
-              setBusyTicket(true)
-              const { data, errorMessage } = await invokeAppsTeamSync(session.access_token, selected)
-              if (errorMessage || !data) setInvokeError(errorMessage || 'Sync failed')
-              else await applyOrchestration(selected, data)
-              setBusyTicket(false)
-            }}
             onDelete={async () => {
               await deleteTicket(selected.id)
               setSelectedId(null)
@@ -286,7 +356,7 @@ export function AppsTeamPage() {
           />
         ) : (
           <div className="hidden items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted lg:flex">
-            Select a ticket to see requirements, agent log, and status.
+            Select a ticket to inspect requirements and the agent log.
           </div>
         )}
       </div>

@@ -201,6 +201,11 @@ export function useAppsTeam() {
         artifacts,
       }
       if (result.designBrief) patch.design_brief = result.designBrief
+      if (result.clearCursor) {
+        patch.cursor_agent_id = null
+        patch.cursor_run_id = null
+        patch.cursor_url = null
+      }
       if (result.cursor) {
         patch.cursor_agent_id = result.cursor.agentId
         patch.cursor_run_id = result.cursor.runId
@@ -224,13 +229,26 @@ export function useAppsTeam() {
       }
 
       for (const msg of result.messages ?? []) {
+        const isCustomerFacing = msg.toRole === 'customer'
+        if (isCustomerFacing && !(result.notifyCustomer || result.needsCustomerInput)) {
+          // Internal only — do not surface in customer chat.
+          continue
+        }
         await supabase.from('apps_team_messages').insert({
           user_id: user.id,
-          ticket_id: ticket.id,
+          ticket_id: isCustomerFacing ? null : ticket.id,
           from_role: msg.fromRole,
           to_role: msg.toRole ?? null,
           body: msg.body,
-          meta: msg.meta ?? {},
+          meta: {
+            ...(msg.meta ?? {}),
+            ...(isCustomerFacing
+              ? {
+                  kind: result.needsCustomerInput ? 'customer_question' : 'milestone',
+                  ticket_id: ticket.id,
+                }
+              : {}),
+          },
         })
       }
 
@@ -247,14 +265,21 @@ export function useAppsTeam() {
         })
       }
 
-      if (result.customerNote) {
+      if (
+        (result.notifyCustomer || result.needsCustomerInput) &&
+        result.customerNote &&
+        !(result.messages ?? []).some((m) => m.toRole === 'customer')
+      ) {
         await supabase.from('apps_team_messages').insert({
           user_id: user.id,
-          ticket_id: ticket.id,
+          ticket_id: null,
           from_role: 'pm',
           to_role: 'customer',
           body: result.customerNote,
-          meta: { kind: 'status_update' },
+          meta: {
+            kind: result.needsCustomerInput ? 'customer_question' : 'milestone',
+            ticket_id: ticket.id,
+          },
         })
       }
 
