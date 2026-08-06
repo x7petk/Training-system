@@ -21,7 +21,7 @@ export function AppsTeamKanban(props: {
   const { tickets, selectedId, onSelect } = props
 
   return (
-    <div className="flex h-full min-h-0 gap-3 overflow-x-auto pb-2">
+    <div className="flex w-full gap-3 overflow-x-auto pb-2">
       {KANBAN_COLUMNS.map((col) => {
         const cards = tickets.filter((t) => t.status === col.id)
         return (
