@@ -30,9 +30,8 @@ function toChatTurns(messages: { from_role: string; body: string; ticket_id: str
 
 function needsPipelineWork(t: AppsTeamTicket): boolean {
   if (t.status === 'done') return false
-  // Waiting on an in-flight cloud run → sync, don't advance.
+  // Waiting on an in-flight cloud build → sync, don't advance.
   if (t.status === 'build' && t.cursor_run_id && !t.artifacts.cursorRetry) return false
-  if (t.status === 'deploy' && t.artifacts.deployRunId) return false
   // Waiting on customer answer.
   if (t.status === 'clarify' && t.artifacts.awaitingCustomer) return false
   return (
@@ -48,8 +47,8 @@ function needsPipelineWork(t: AppsTeamTicket): boolean {
 }
 
 function needsCloudSync(t: AppsTeamTicket): boolean {
+  // Only sync developer cloud builds. Deploy is deterministic (no Cursor watch).
   if (t.status === 'build' && t.cursor_run_id && !t.artifacts.cursorRetry) return true
-  if (t.status === 'deploy' && t.artifacts.deployRunId) return true
   return false
 }
 

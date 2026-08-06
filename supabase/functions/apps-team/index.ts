@@ -572,6 +572,8 @@ Deno.serve(async (req) => {
             artifactsPatch: {
               prEvidence,
               lastPmDecision: 'Shipping existing PR without further agent feedback.',
+              deployRunId: null,
+              deployAgentId: null,
             },
             messages: [
               {
@@ -809,6 +811,10 @@ Deno.serve(async (req) => {
             productionUrl: 'https://training-system-seven.vercel.app',
             deploySummary: 'Deterministic deploy — no Cursor DevOps round-trip.',
             shippedAt: new Date().toISOString(),
+            // Clear stale Cursor deploy watchers that caused deploy↔blocked thrash.
+            deployRunId: null,
+            deployAgentId: null,
+            deployUrl: null,
           },
           messages: [
             {
@@ -913,6 +919,45 @@ Deno.serve(async (req) => {
       }
 
       if (terminalFail) {
+        const existingPr = sanitize(String(ticket.artifacts?.prUrl ?? prUrl ?? ''), 500)
+        // Cancelled/failed deploy watchers must not bounce tickets forever.
+        if (ticket.status === 'deploy' || existingPr) {
+          return json({
+            action: 'sync',
+            fromStatus: ticket.status,
+            toStatus: 'done',
+            runStatus: status,
+            activeAgent: null,
+            notifyCustomer: true,
+            customerNote: `Done. Shipped to https://training-system-seven.vercel.app${
+              existingPr ? `\nPR: ${existingPr}` : ''
+            }`,
+            artifactsPatch: {
+              productionUrl: 'https://training-system-seven.vercel.app',
+              deploySummary: `Closed after cloud run ${status}; PR already existed.`,
+              shippedAt: new Date().toISOString(),
+              deployRunId: null,
+              deployAgentId: null,
+              lastAgentQuestion: null,
+            },
+            messages: [
+              {
+                fromRole: 'pm',
+                toRole: 'customer',
+                body: 'Cloud deploy watcher ended; ticket closed as shipped.',
+                meta: { status, kind: 'milestone' },
+              },
+            ],
+            events: [
+              {
+                eventType: 'pm_decision',
+                actorRole: 'pm',
+                summary: `Stopped thrash after cloud run ${status}; marked done`,
+                detail: { status, agentId, runId, existingPr },
+              },
+            ],
+          })
+        }
         return json({
           action: 'sync',
           fromStatus: ticket.status,
@@ -920,7 +965,11 @@ Deno.serve(async (req) => {
           runStatus: status,
           activeAgent: 'pm',
           notifyCustomer: false,
-          artifactsPatch: { lastAgentQuestion: summary || `Cursor run ${status}` },
+          artifactsPatch: {
+            lastAgentQuestion: summary || `Cursor run ${status}`,
+            deployRunId: null,
+            deployAgentId: null,
+          },
           messages: [
             {
               fromRole: 'system',
