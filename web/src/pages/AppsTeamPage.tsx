@@ -8,6 +8,12 @@ import {
 } from '../lib/appsTeamProxy'
 import { AppsTeamChat } from '../features/agents/appsTeam/AppsTeamChat'
 import { AppsTeamKanban } from '../features/agents/appsTeam/AppsTeamKanban'
+import {
+  LIVE_BOARD_COUNT_BADGE,
+  LIVE_BOARD_HEADER,
+  LIVE_BOARD_TITLE,
+  LIVE_BOARD_WRAPPER,
+} from '../features/agents/appsTeam/liveBoardTheme'
 import { AppsTeamTicketDrawer } from '../features/agents/appsTeam/AppsTeamTicketDrawer'
 import { useAppsTeam } from '../features/agents/appsTeam/useAppsTeam'
 import type { AppsTeamChatTurn, AppsTeamTicket } from '../features/agents/appsTeam/types'
@@ -255,14 +261,17 @@ export function AppsTeamPage() {
           onSend={() => void sendChat()}
         />
 
-        <div className="min-h-0 rounded-xl border border-sky-200 bg-sky-50/70 p-3 dark:border-sky-800 dark:bg-sky-950/25">
-          <div className="mb-2 flex items-center justify-between border-b border-sky-200/80 pb-2 dark:border-sky-800/80">
-            <h2 className="text-sm font-semibold text-sky-900 dark:text-sky-100">Live board</h2>
-            <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-800 dark:text-sky-200">
-              {tickets.length} tickets
-            </span>
+        <div className={LIVE_BOARD_WRAPPER}>
+          <div className={LIVE_BOARD_HEADER}>
+            <h2 className={LIVE_BOARD_TITLE}>Live board</h2>
+            <span className={LIVE_BOARD_COUNT_BADGE}>{tickets.length} tickets</span>
           </div>
-          <AppsTeamKanban tickets={tickets} selectedId={selectedId} onSelect={setSelectedId} />
+          <AppsTeamKanban
+            tickets={tickets}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            variant="live-board"
+          />
         </div>
 
         {selected ? (

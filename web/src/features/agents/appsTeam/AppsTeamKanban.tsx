@@ -1,5 +1,6 @@
 import type { AppsTeamTicket, AppsTeamTicketStatus } from './types'
 import { AGENT_LABELS, KANBAN_COLUMNS } from './types'
+import { LIVE_BOARD_KANBAN } from './liveBoardTheme'
 
 const STATUS_TINT: Record<AppsTeamTicketStatus, string> = {
   intake: 'border-slate-300 bg-slate-50',
@@ -13,33 +14,40 @@ const STATUS_TINT: Record<AppsTeamTicketStatus, string> = {
   blocked: 'border-rose-300 bg-rose-50',
 }
 
+const NEUTRAL = {
+  column: 'flex w-56 shrink-0 flex-col rounded-xl border border-border bg-surface/80',
+  columnHeader: 'flex items-center justify-between border-b border-border px-3 py-2',
+  columnLabel: 'text-xs font-semibold uppercase tracking-wide text-muted',
+  countBadge: 'rounded-full bg-muted/30 px-2 py-0.5 text-[11px] text-fg',
+  empty: 'px-1 py-6 text-center text-[11px] text-muted',
+  cardSelected: 'ring-2 ring-sky-500',
+  cardHover: 'hover:brightness-[0.98]',
+  cardFocus: '',
+} as const
+
 export function AppsTeamKanban(props: {
   tickets: AppsTeamTicket[]
   selectedId: string | null
   onSelect: (id: string) => void
+  /** When `live-board`, applies sky theme classes from liveBoardTheme (scoped by page wrapper). */
+  variant?: 'neutral' | 'live-board'
 }) {
-  const { tickets, selectedId, onSelect } = props
+  const { tickets, selectedId, onSelect, variant = 'neutral' } = props
+  const theme = variant === 'live-board' ? LIVE_BOARD_KANBAN : NEUTRAL
 
   return (
     <div className="flex h-full min-h-0 gap-3 overflow-x-auto pb-2">
       {KANBAN_COLUMNS.map((col) => {
         const cards = tickets.filter((t) => t.status === col.id)
         return (
-          <div
-            key={col.id}
-            className="flex w-56 shrink-0 flex-col rounded-xl border border-sky-200 bg-sky-50/80 dark:border-sky-800 dark:bg-sky-950/20"
-          >
-            <div className="flex items-center justify-between border-b border-sky-200/80 bg-sky-500/15 px-3 py-2 dark:border-sky-800/80">
-              <span className="text-xs font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-200">
-                {col.label}
-              </span>
-              <span className="rounded-full bg-sky-600/15 px-2 py-0.5 text-[11px] font-medium text-sky-900 dark:bg-sky-400/20 dark:text-sky-100">
-                {cards.length}
-              </span>
+          <div key={col.id} className={theme.column}>
+            <div className={theme.columnHeader}>
+              <span className={theme.columnLabel}>{col.label}</span>
+              <span className={theme.countBadge}>{cards.length}</span>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
               {cards.length === 0 ? (
-                <p className="px-1 py-6 text-center text-[11px] text-sky-700/70 dark:text-sky-300/70">Empty</p>
+                <p className={theme.empty}>Empty</p>
               ) : (
                 cards.map((t) => (
                   <button
@@ -47,10 +55,8 @@ export function AppsTeamKanban(props: {
                     type="button"
                     onClick={() => onSelect(t.id)}
                     className={`rounded-lg border px-2.5 py-2 text-left transition ${STATUS_TINT[t.status]} ${
-                      selectedId === t.id
-                        ? 'ring-2 ring-sky-500 ring-offset-1 ring-offset-sky-50 dark:ring-offset-sky-950/20'
-                        : 'hover:border-sky-400 hover:shadow-sm dark:hover:border-sky-600'
-                    } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-1`}
+                      selectedId === t.id ? theme.cardSelected : theme.cardHover
+                    } ${theme.cardFocus}`}
                   >
                     <p className="line-clamp-2 text-sm font-medium text-fg">{t.title}</p>
                     {t.active_agent ? (
