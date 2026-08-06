@@ -104,6 +104,7 @@ export function AppsTeamPage() {
               setInvokeError(sync.errorMessage || 'Sync failed')
               break
             }
+            if (sync.data.noop) break
             const afterSync = await applyOrchestration(current, sync.data)
             if (!afterSync) break
             current = afterSync

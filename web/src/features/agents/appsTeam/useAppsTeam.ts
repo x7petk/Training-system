@@ -189,6 +189,7 @@ export function useAppsTeam() {
   const applyOrchestration = useCallback(
     async (ticket: AppsTeamTicket, result: AppsTeamAdvanceResponse): Promise<AppsTeamTicket | null> => {
       if (!user) return null
+      if (result.noop) return ticket
 
       const artifacts: AppsTeamArtifacts = {
         ...ticket.artifacts,

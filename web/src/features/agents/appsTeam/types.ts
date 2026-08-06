@@ -128,6 +128,7 @@ export type AppsTeamAdvanceResponse = {
   needsCustomerInput?: boolean
   notifyCustomer?: boolean
   customerNote?: string
+  noop?: boolean
   messages: AppsTeamOrchestrationMessage[]
   events: AppsTeamOrchestrationEvent[]
 }
