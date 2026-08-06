@@ -355,6 +355,7 @@ export function AppsTeamPage() {
             variant="live-board"
           />
         </div>
+
         <section className="w-full rounded-xl border border-border bg-surface">
           <div className="border-b border-border px-4 py-3">
             <h2 className="text-sm font-semibold text-fg">Information</h2>
