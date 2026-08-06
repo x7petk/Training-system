@@ -11,10 +11,12 @@ import {
   Network,
   Shield,
   Sparkles,
+  Users,
 } from 'lucide-react'
 import type { SectionNavItem } from '../../components/AppSectionLayout'
 
 export const AGENTS_NAV_ITEMS: SectionNavItem[] = [
+  { to: '/agents/apps-team', label: 'Apps Team', icon: Users, end: true },
   { to: '/agents/problem-solve-advisor', label: 'Problem solve advisor', icon: Sparkles, end: true },
   { to: '/agents/planner', label: 'Planner', icon: ClipboardList, end: true },
   { to: '/agents/road-map-builder', label: 'Road Map Builder', icon: Map, end: true },

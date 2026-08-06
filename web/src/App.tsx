@@ -148,6 +148,9 @@ import { UxUiExpertPage } from './pages/UxUiExpertPage'
 const RoadMapBuilderPage = lazy(() =>
   import('./pages/RoadMapBuilderPage').then((m) => ({ default: m.RoadMapBuilderPage })),
 )
+const AppsTeamPage = lazy(() =>
+  import('./pages/AppsTeamPage').then((m) => ({ default: m.AppsTeamPage })),
+)
 const KpiCascadePage = lazy(() =>
   import('./pages/KpiCascadePage').then((m) => ({ default: m.KpiCascadePage })),
 )
@@ -320,7 +323,8 @@ export default function App() {
               </SectionAccessRoute>
             }
           >
-            <Route index element={<Navigate to="problem-solve-advisor" replace />} />
+            <Route index element={<Navigate to="apps-team" replace />} />
+            <Route path="apps-team" element={<AppsTeamPage />} />
             <Route path="problem-solve-advisor" element={<AgentsToolPage title="Problem solve advisor" />} />
             <Route path="planner" element={<AgentsToolPage title="Planner" />} />
             <Route path="road-map-builder" element={<RoadMapBuilderPage />} />
