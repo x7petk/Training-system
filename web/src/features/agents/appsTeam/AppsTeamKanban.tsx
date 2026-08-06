@@ -21,7 +21,7 @@ export function AppsTeamKanban(props: {
   const { tickets, selectedId, onSelect } = props
 
   return (
-    <div className="flex h-full min-h-0 gap-3 overflow-x-auto pb-2">
+    <div className="flex w-full gap-3 overflow-x-auto pb-2">
       {KANBAN_COLUMNS.map((col) => {
         const cards = tickets.filter((t) => t.status === col.id)
         return (
@@ -33,7 +33,7 @@ export function AppsTeamKanban(props: {
               <span className="text-xs font-semibold uppercase tracking-wide text-muted">{col.label}</span>
               <span className="rounded-full bg-muted/30 px-2 py-0.5 text-[11px] text-fg">{cards.length}</span>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
+            <div className="flex flex-col gap-2 p-2">
               {cards.length === 0 ? (
                 <p className="px-1 py-6 text-center text-[11px] text-muted">Empty</p>
               ) : (

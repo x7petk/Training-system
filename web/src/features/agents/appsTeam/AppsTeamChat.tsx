@@ -20,13 +20,16 @@ export function AppsTeamChat(props: {
   }, [chatMessages, sending])
 
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-xl border border-border bg-surface">
+    <div className="flex w-full flex-col rounded-xl border border-border bg-surface">
       <div className="border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold text-fg">Product Manager</h2>
         <p className="text-xs text-muted">Describe what you need. PM gathers requirements, then runs the team.</p>
       </div>
 
-      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      <div
+        ref={listRef}
+        className="min-h-[240px] max-h-[min(480px,50vh)] space-y-3 overflow-y-auto px-4 py-3"
+      >
         {chatMessages.length === 0 ? (
           <p className="text-sm text-muted">
             Say hello and describe the app change you want. The PM will ask questions until the ticket is solid.
