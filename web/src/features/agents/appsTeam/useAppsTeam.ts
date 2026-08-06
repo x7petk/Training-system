@@ -237,7 +237,7 @@ export function useAppsTeam() {
         }
         await supabase.from('apps_team_messages').insert({
           user_id: user.id,
-          ticket_id: isCustomerFacing ? null : ticket.id,
+          ticket_id: ticket.id,
           from_role: msg.fromRole,
           to_role: msg.toRole ?? null,
           body: msg.body,
@@ -246,7 +246,6 @@ export function useAppsTeam() {
             ...(isCustomerFacing
               ? {
                   kind: result.needsCustomerInput ? 'customer_question' : 'milestone',
-                  ticket_id: ticket.id,
                 }
               : {}),
           },
@@ -274,13 +273,12 @@ export function useAppsTeam() {
       ) {
         await supabase.from('apps_team_messages').insert({
           user_id: user.id,
-          ticket_id: null,
+          ticket_id: ticket.id,
           from_role: 'pm',
           to_role: 'customer',
           body: result.customerNote,
           meta: {
             kind: result.needsCustomerInput ? 'customer_question' : 'milestone',
-            ticket_id: ticket.id,
           },
         })
       }
