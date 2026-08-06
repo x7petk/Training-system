@@ -255,10 +255,12 @@ export function AppsTeamPage() {
           onSend={() => void sendChat()}
         />
 
-        <div className="min-h-0 rounded-xl border border-border bg-bg/60 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-fg">Live board</h2>
-            <span className="text-xs text-muted">{tickets.length} tickets</span>
+        <div className="min-h-0 rounded-xl border border-sky-200 bg-sky-50/70 p-3 dark:border-sky-800 dark:bg-sky-950/25">
+          <div className="mb-2 flex items-center justify-between border-b border-sky-200/80 pb-2 dark:border-sky-800/80">
+            <h2 className="text-sm font-semibold text-sky-900 dark:text-sky-100">Live board</h2>
+            <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-800 dark:text-sky-200">
+              {tickets.length} tickets
+            </span>
           </div>
           <AppsTeamKanban tickets={tickets} selectedId={selectedId} onSelect={setSelectedId} />
         </div>

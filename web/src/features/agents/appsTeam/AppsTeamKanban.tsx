@@ -27,15 +27,19 @@ export function AppsTeamKanban(props: {
         return (
           <div
             key={col.id}
-            className="flex w-56 shrink-0 flex-col rounded-xl border border-border bg-surface/80"
+            className="flex w-56 shrink-0 flex-col rounded-xl border border-sky-200 bg-sky-50/80 dark:border-sky-800 dark:bg-sky-950/20"
           >
-            <div className="flex items-center justify-between border-b border-border px-3 py-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted">{col.label}</span>
-              <span className="rounded-full bg-muted/30 px-2 py-0.5 text-[11px] text-fg">{cards.length}</span>
+            <div className="flex items-center justify-between border-b border-sky-200/80 bg-sky-500/15 px-3 py-2 dark:border-sky-800/80">
+              <span className="text-xs font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-200">
+                {col.label}
+              </span>
+              <span className="rounded-full bg-sky-600/15 px-2 py-0.5 text-[11px] font-medium text-sky-900 dark:bg-sky-400/20 dark:text-sky-100">
+                {cards.length}
+              </span>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
               {cards.length === 0 ? (
-                <p className="px-1 py-6 text-center text-[11px] text-muted">Empty</p>
+                <p className="px-1 py-6 text-center text-[11px] text-sky-700/70 dark:text-sky-300/70">Empty</p>
               ) : (
                 cards.map((t) => (
                   <button
