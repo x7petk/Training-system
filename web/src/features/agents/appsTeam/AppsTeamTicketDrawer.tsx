@@ -28,7 +28,7 @@ export function AppsTeamTicketDrawer(props: {
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
 
   return (
-    <div className="flex h-full min-h-0 flex-col border-l border-border bg-surface">
+    <div className="flex w-full flex-col">
       <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{ticket.status}</p>
@@ -64,7 +64,7 @@ export function AppsTeamTicketDrawer(props: {
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 text-sm">
+      <div className="space-y-5 px-4 py-4 text-sm">
         <section>
           <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Description</h3>
           <p className="whitespace-pre-wrap text-fg">{ticket.description || '—'}</p>
