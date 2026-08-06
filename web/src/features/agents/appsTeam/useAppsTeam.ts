@@ -254,6 +254,7 @@ export function useAppsTeam() {
       }
 
       for (const ev of result.events ?? []) {
+        if (ev.eventType !== 'handoff' && ev.eventType !== 'created') continue
         await supabase.from('apps_team_events').insert({
           user_id: user.id,
           ticket_id: ticket.id,

@@ -139,14 +139,19 @@ export const KANBAN_COLUMNS: Array<{
 }> = [
   { id: 'intake', label: 'Intake' },
   { id: 'design', label: 'Design' },
-  { id: 'pm_review_design', label: 'PM review' },
   { id: 'build', label: 'Build' },
-  { id: 'clarify', label: 'Clarify' },
   { id: 'test', label: 'Test' },
   { id: 'deploy', label: 'Deploy' },
   { id: 'done', label: 'Done' },
   { id: 'blocked', label: 'Blocked' },
 ]
+
+/** Map legacy/internal statuses onto visible board columns. */
+export function boardColumnForStatus(status: AppsTeamTicketStatus): AppsTeamTicketStatus {
+  if (status === 'pm_review_design') return 'design'
+  if (status === 'clarify') return 'build'
+  return status
+}
 
 export const AGENT_LABELS: Record<AppsTeamAgentRole, string> = {
   pm: 'Product Manager',
@@ -154,6 +159,46 @@ export const AGENT_LABELS: Record<AppsTeamAgentRole, string> = {
   developer: 'Developer',
   tester: 'Tester',
   devops: 'DevOps',
+}
+
+const STATUS_AGENT: Partial<Record<AppsTeamTicketStatus, AppsTeamAgentRole>> = {
+  intake: 'pm',
+  design: 'designer',
+  pm_review_design: 'pm',
+  build: 'developer',
+  clarify: 'pm',
+  test: 'tester',
+  deploy: 'devops',
+}
+
+/** Short handoff line for the progress log. */
+export function handoffLabel(event: {
+  event_type: string
+  actor_role: string | null
+  from_status: string | null
+  to_status: string | null
+  summary: string
+}): string | null {
+  if (event.event_type !== 'handoff' && event.event_type !== 'created') return null
+  const from =
+    (event.actor_role && event.actor_role in AGENT_LABELS
+      ? AGENT_LABELS[event.actor_role as AppsTeamAgentRole]
+      : null) ||
+    (event.from_status && STATUS_AGENT[event.from_status as AppsTeamTicketStatus]
+      ? AGENT_LABELS[STATUS_AGENT[event.from_status as AppsTeamTicketStatus]!]
+      : null)
+  const toRole =
+    event.to_status === 'done'
+      ? null
+      : event.to_status && STATUS_AGENT[event.to_status as AppsTeamTicketStatus]
+        ? AGENT_LABELS[STATUS_AGENT[event.to_status as AppsTeamTicketStatus]!]
+        : null
+  if (event.to_status === 'done') {
+    return from ? `${from} → Done` : 'Done'
+  }
+  if (from && toRole && from !== toRole) return `${from} → ${toRole}`
+  if (from && toRole) return `${from} → ${toRole}`
+  return null
 }
 
 export function ticketToSnapshot(t: AppsTeamTicket) {

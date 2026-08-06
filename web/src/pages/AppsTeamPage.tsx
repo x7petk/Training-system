@@ -366,7 +366,6 @@ export function AppsTeamPage() {
           {selected ? (
             <AppsTeamTicketDrawer
               ticket={selected}
-              messages={messages}
               events={events}
               busy={pipelineBusy}
               onClose={() => setSelectedId(null)}
@@ -377,7 +376,7 @@ export function AppsTeamPage() {
             />
           ) : (
             <div className="flex items-center justify-center px-4 py-12 text-sm text-muted">
-              Select a ticket to see requirements, agent log, and status.
+              Select a ticket to see requirements and handoffs.
             </div>
           )}
         </section>

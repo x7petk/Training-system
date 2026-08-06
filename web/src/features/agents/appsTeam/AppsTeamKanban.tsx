@@ -1,13 +1,13 @@
 import type { AppsTeamTicket, AppsTeamTicketStatus } from './types'
-import { AGENT_LABELS, KANBAN_COLUMNS } from './types'
+import { AGENT_LABELS, KANBAN_COLUMNS, boardColumnForStatus } from './types'
 import { LIVE_BOARD_KANBAN } from './liveBoardTheme'
 
 const STATUS_TINT: Record<AppsTeamTicketStatus, string> = {
   intake: 'border-slate-300 bg-slate-50',
   design: 'border-sky-300 bg-sky-50',
-  pm_review_design: 'border-indigo-300 bg-indigo-50',
+  pm_review_design: 'border-sky-300 bg-sky-50',
   build: 'border-amber-300 bg-amber-50',
-  clarify: 'border-orange-300 bg-orange-50',
+  clarify: 'border-amber-300 bg-amber-50',
   test: 'border-violet-300 bg-violet-50',
   deploy: 'border-teal-300 bg-teal-50',
   done: 'border-emerald-300 bg-emerald-50',
@@ -38,7 +38,7 @@ export function AppsTeamKanban(props: {
   return (
     <div className="flex w-full gap-3 overflow-x-auto pb-2">
       {KANBAN_COLUMNS.map((col) => {
-        const cards = tickets.filter((t) => t.status === col.id)
+        const cards = tickets.filter((t) => boardColumnForStatus(t.status) === col.id)
         return (
           <div key={col.id} className={theme.column}>
             <div className={theme.columnHeader}>
@@ -62,7 +62,7 @@ export function AppsTeamKanban(props: {
                     {t.active_agent ? (
                       <p className="mt-1 text-[11px] text-muted">{AGENT_LABELS[t.active_agent]}</p>
                     ) : null}
-                    {t.cursor_url ? (
+                    {t.cursor_url && t.status !== 'done' ? (
                       <p className="mt-1 truncate text-[10px] text-sky-700">Cloud agent active</p>
                     ) : null}
                   </button>
