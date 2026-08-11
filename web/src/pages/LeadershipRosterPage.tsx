@@ -756,8 +756,30 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
   ) {
     setError(null)
     const person = peopleById.get(ldrPersonId)
-    const targetWorkspaceId = activityWorkspaceById.get(activityId) ?? workspaceId
-    if (!targetWorkspaceId) return
+
+    // Cell-scope (and cell people) must never write into the site workspace.
+    let targetWorkspaceId: string | null = null
+    if (scopeLevel === 'cell') {
+      if (!cellId) {
+        setError('Select a cell before adding an assignment.')
+        return
+      }
+      const { data: cellWs, error: cellWsErr } = await supabase.rpc('ldr_ensure_workspace_cell', {
+        p_master_cell_id: cellId,
+      })
+      if (cellWsErr) {
+        setError(cellWsErr.message)
+        return
+      }
+      targetWorkspaceId = typeof cellWs === 'string' ? cellWs : null
+    } else {
+      targetWorkspaceId = activityWorkspaceById.get(activityId) ?? workspaceId
+    }
+    if (!targetWorkspaceId) {
+      setError('Could not resolve LDR workspace for this assignment.')
+      return
+    }
+
     const masterCellId =
       opts?.masterCellId ??
       (scopeLevel === 'cell' && cellId ? cellId : undefined) ??
