@@ -157,21 +157,26 @@ export function LdrWorkspaceProvider({ children }: { children: ReactNode }) {
   const prevPathnameRef = useRef<string>('')
 
   const setScopeLevel = useCallback((l: LdrScopeLevel) => {
+    // Clear immediately so children never load with a mismatched workspace.
+    setWorkspaceId(null)
     setScopeLevelState(l)
   }, [])
 
   const setSiteId = useCallback((id: string) => {
+    setWorkspaceId(null)
     setSiteIdState(id)
     setPlantIdState('')
     setCellIdState('')
   }, [])
 
   const setPlantId = useCallback((id: string) => {
+    setWorkspaceId(null)
     setPlantIdState(id)
     setCellIdState('')
   }, [])
 
   const setCellId = useCallback((id: string) => {
+    setWorkspaceId(null)
     setCellIdState(id)
   }, [])
 

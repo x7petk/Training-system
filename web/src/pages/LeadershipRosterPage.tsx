@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCheck, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -183,6 +183,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
   const [obsReadyByActivityId, setObsReadyByActivityId] = useState<Map<string, { sos: boolean; qos: boolean; ppo: boolean }>>(
     () => new Map(),
   )
+  const loadSeqRef = useRef(0)
 
   /** After HC / obs flows change workspace to cell scope, restore roster site vs cell choice when returning here. */
   useEffect(() => {
@@ -203,6 +204,8 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
   const weekEndStr = toYMD(addDays(weekStart, 6))
 
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current
+    const stale = () => seq !== loadSeqRef.current
     setError(null)
     if (!workspaceId) {
       setActivities([])
@@ -237,6 +240,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
         .gte('assignment_date', weekStartStr)
         .lte('assignment_date', weekEndStr),
     ])
+    if (stale()) return
     if (
       (peopleRes.error && isMissingMasterCellColumnError(peopleRes.error.message)) ||
       (asgRes.error && isMissingMasterCellColumnError(asgRes.error.message))
@@ -256,6 +260,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
           .gte('assignment_date', weekStartStr)
           .lte('assignment_date', weekEndStr),
       ])
+      if (stale()) return
       if (actRes.error) setError(actRes.error.message)
       else if (legacyPeopleRes.error) setError(legacyPeopleRes.error.message)
       else if (legacyLocationsRes.error) setError(legacyLocationsRes.error.message)
@@ -270,6 +275,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
           const { data: siteWsData, error: siteWsErr } = await supabase.rpc('ldr_ensure_workspace_site', {
             p_master_site_id: siteId,
           })
+          if (stale()) return
           const siteWsId = !siteWsErr && typeof siteWsData === 'string' ? siteWsData : null
           if (siteWsErr) setError(siteWsErr.message)
           if (siteWsId) {
@@ -294,6 +300,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
                 .lte('assignment_date', weekEndStr),
               supabase.from('ldr_locations').select('id, name').eq('workspace_id', siteWsId),
             ])
+            if (stale()) return
             if (siteActRes.error) setError(siteActRes.error.message)
             else if (sitePeopleRes.error) setError(sitePeopleRes.error.message)
             else if (siteAsgRes.error) setError(siteAsgRes.error.message)
@@ -334,9 +341,15 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
           }
         }
 
+        if (stale()) return
+        // Site scope must never show cell-workspace activities (guards against stale loads).
+        const scopedActivities =
+          scopeLevel === 'site'
+            ? allActivities.filter((a) => !a.workspace_id || a.workspace_id === workspaceId)
+            : allActivities
         setLegacyLdrLocations(mergedLegacyLocations)
         const legacyLocationById = new Map(mergedLegacyLocations.map((row) => [row.id, row.name]))
-        setActivities(allActivities)
+        setActivities(scopedActivities)
         setLdrPeople(
           peopleRaw.map((r) => ({
             ...r,
@@ -352,9 +365,10 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
           })),
         )
       }
-      setLoading(false)
+      if (!stale()) setLoading(false)
       return
     }
+    if (stale()) return
     if (actRes.error) setError(actRes.error.message)
     else if (peopleRes.error) setError(peopleRes.error.message)
     else if (asgRes.error) setError(asgRes.error.message)
@@ -368,6 +382,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
         const { data: siteWsData, error: siteWsErr } = await supabase.rpc('ldr_ensure_workspace_site', {
           p_master_site_id: siteId,
         })
+        if (stale()) return
         const siteWsId = !siteWsErr && typeof siteWsData === 'string' ? siteWsData : null
         if (siteWsErr) setError(siteWsErr.message)
         if (siteWsId) {
@@ -394,6 +409,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
               .lte('assignment_date', weekEndStr),
             supabase.from('ldr_locations').select('id, name').eq('workspace_id', siteWsId),
           ])
+          if (stale()) return
           let sitePeopleErr = sitePeopleResMaybe.error
           let siteAsgErr = siteAsgResMaybe.error
           let sitePeopleData = (sitePeopleResMaybe.data ?? []) as LdrPersonRow[]
@@ -405,6 +421,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
               .eq('workspace_id', siteWsId)
               .order('first_name')
               .order('last_name')
+            if (stale()) return
             sitePeopleErr = sitePeopleLegacyRes.error
             sitePeopleData = (sitePeopleLegacyRes.data ?? []) as LdrPersonRow[]
           }
@@ -415,6 +432,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
               .eq('workspace_id', siteWsId)
               .gte('assignment_date', weekStartStr)
               .lte('assignment_date', weekEndStr)
+            if (stale()) return
             siteAsgErr = siteAsgLegacyRes.error
             siteAsgData = (siteAsgLegacyRes.data ?? []) as LdrAssignmentRow[]
           }
@@ -459,7 +477,12 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
         }
       }
 
-      setActivities(allActivities)
+      if (stale()) return
+      const scopedActivities =
+        scopeLevel === 'site'
+          ? allActivities.filter((a) => !a.workspace_id || a.workspace_id === workspaceId)
+          : allActivities
+      setActivities(scopedActivities)
       setLdrPeople(
         peopleRaw.map((r) => ({
           ...r,
@@ -473,7 +496,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
         })),
       )
     }
-    setLoading(false)
+    if (!stale()) setLoading(false)
   }, [workspaceId, scopeLevel, siteId, cellId, weekStartStr, weekEndStr, siteCellOptions, masterCellJoinById])
 
   useEffect(() => {

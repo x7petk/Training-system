@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, LayoutDashboard, Pencil, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { LdrPersonAvatar } from '../features/ldr/LdrPersonAvatar'
@@ -479,7 +479,7 @@ function LdrPersonDialog(props: {
 }
 
 function LdrAdminActivitiesPanel() {
-  const { workspaceId, scopeLevel, siteId } = useLdrWorkspace()
+  const { workspaceId, scopeLevel, siteId, cellId } = useLdrWorkspace()
   const [rows, setRows] = useState<LdrActivity[]>([])
   const [siteRows, setSiteRows] = useState<LdrActivity[]>([])
   const [siteWorkspaceId, setSiteWorkspaceId] = useState<string | null>(null)
@@ -491,8 +491,11 @@ function LdrAdminActivitiesPanel() {
   const [editing, setEditing] = useState<LdrActivity | null>(null)
   const [sortMode, setSortMode] = useState<'custom' | 'name_asc' | 'name_desc'>('custom')
   const [reorderingId, setReorderingId] = useState<string | null>(null)
+  const loadSeqRef = useRef(0)
 
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current
+    const stale = () => seq !== loadSeqRef.current
     if (!workspaceId) {
       setRows([])
       setSiteRows([])
@@ -503,25 +506,28 @@ function LdrAdminActivitiesPanel() {
     setLoading(true)
     const { data, error: e } = await supabase
       .from('ldr_activities')
-      .select('id, name, sort_order')
+      .select('id, name, sort_order, workspace_id')
       .eq('workspace_id', workspaceId)
       .order('sort_order')
       .order('name')
+    if (stale()) return
     if (e) setError(e.message)
     else setRows((data ?? []) as LdrActivity[])
 
     if (scopeLevel === 'cell' && siteId) {
       const { data: sw, error: swErr } = await supabase.rpc('ldr_ensure_workspace_site', { p_master_site_id: siteId })
+      if (stale()) return
       const swid = !swErr && typeof sw === 'string' ? sw : null
       setSiteWorkspaceId(swid)
       if (swErr) setError(swErr.message)
       if (swid) {
         const { data: sActs, error: sActsErr } = await supabase
           .from('ldr_activities')
-          .select('id, name, sort_order')
+          .select('id, name, sort_order, workspace_id')
           .eq('workspace_id', swid)
           .order('sort_order')
           .order('name')
+        if (stale()) return
         if (sActsErr) setError(sActsErr.message)
         else {
           const siteActivities = (sActs ?? []) as LdrActivity[]
@@ -549,11 +555,10 @@ function LdrAdminActivitiesPanel() {
       setVisibleSiteActivityIds(new Set())
       setVisibilityLoadedKey(null)
     }
-    setLoading(false)
+    if (!stale()) setLoading(false)
   }, [workspaceId, scopeLevel, siteId])
 
   useEffect(() => {
-     
     void load()
   }, [load])
 
@@ -567,11 +572,46 @@ function LdrAdminActivitiesPanel() {
   async function add() {
     setError(null)
     const n = name.trim()
-    if (!n || !workspaceId) return
+    if (!n) return
+
+    // Resolve workspace from current scope so Cell creates never land on Site.
+    let targetWorkspaceId: string | null = null
+    if (scopeLevel === 'cell') {
+      if (!cellId) {
+        setError('Select a cell before adding a cell-level activity.')
+        return
+      }
+      const { data, error: wsErr } = await supabase.rpc('ldr_ensure_workspace_cell', {
+        p_master_cell_id: cellId,
+      })
+      if (wsErr) {
+        setError(wsErr.message)
+        return
+      }
+      targetWorkspaceId = typeof data === 'string' ? data : null
+    } else {
+      if (!siteId) {
+        setError('Select a site before adding a site-level activity.')
+        return
+      }
+      const { data, error: wsErr } = await supabase.rpc('ldr_ensure_workspace_site', {
+        p_master_site_id: siteId,
+      })
+      if (wsErr) {
+        setError(wsErr.message)
+        return
+      }
+      targetWorkspaceId = typeof data === 'string' ? data : null
+    }
+    if (!targetWorkspaceId) {
+      setError('Could not resolve LDR workspace for this scope.')
+      return
+    }
+
     const nextSortOrder = rows.reduce((max, row) => Math.max(max, row.sort_order), -1) + 1
     const { error: e } = await supabase
       .from('ldr_activities')
-      .insert({ workspace_id: workspaceId, name: n, sort_order: nextSortOrder })
+      .insert({ workspace_id: targetWorkspaceId, name: n, sort_order: nextSortOrder })
     if (e) setError(e.message)
     else {
       setName('')
@@ -730,6 +770,14 @@ function LdrAdminActivitiesPanel() {
   return (
     <section className="rounded-2xl border border-border bg-surface-raised/50 p-4 backdrop-blur-sm md:p-6">
       <h2 className="font-display text-lg font-semibold">Activities</h2>
+      {scopeLevel === 'cell' ? (
+        <p className="mt-1 text-sm text-muted">
+          Activities you add here belong to this cell only — they appear on the cell roster and do not show at Site
+          scope.
+        </p>
+      ) : (
+        <p className="mt-1 text-sm text-muted">Activities you add here are site-wide and appear on the site roster.</p>
+      )}
       {error ? (
         <p className="mt-2 text-sm text-danger" role="alert">
           {error}
@@ -745,7 +793,8 @@ function LdrAdminActivitiesPanel() {
         <button
           type="button"
           onClick={() => void add()}
-          className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white"
+          disabled={scopeLevel === 'cell' ? !cellId : !siteId}
+          className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus className="size-4" />
           Add
