@@ -1108,41 +1108,20 @@ function CellEditorModal(props: {
 }) {
   const assignedIds = useMemo(() => new Set(props.rows.map((r) => r.ldr_person_id)), [props.rows])
   const peopleById = useMemo(() => new Map(props.people.map((p) => [p.id, p])), [props.people])
-  /** Cell-owned activities → cell workspace people; site activities on cell roster → that activity’s people. */
+  /** At cell scope, always use cell-workspace people (Admin → People in that cell). */
   const personPickerWorkspaceId =
-    props.scopeLevel === 'cell' &&
-    props.rosterWorkspaceId &&
-    props.activityWorkspaceId === props.rosterWorkspaceId
+    props.scopeLevel === 'cell' && props.rosterWorkspaceId
       ? props.rosterWorkspaceId
       : props.activityWorkspaceId
-  const addable = useMemo(() => {
-    return props.people.filter((p) => {
-      if (assignedIds.has(p.id)) return false
-      if (ldrPersonWorkspaceId(p, personPickerWorkspaceId) !== personPickerWorkspaceId) return false
-      // On cell roster for a site activity, only people assigned to this cell.
-      if (
-        props.scopeLevel === 'cell' &&
-        props.contextMasterCellId &&
-        props.rosterWorkspaceId &&
-        props.activityWorkspaceId !== props.rosterWorkspaceId
-      ) {
-        if (p.master_cell_id && p.master_cell_id === props.contextMasterCellId) return true
-        const fromLegacy = masterCellIdForLegacyLocation(p.location_id, props.legacyLdrLocations, props.cells)
-        return fromLegacy === props.contextMasterCellId
-      }
-      return true
-    })
-  }, [
-    props.people,
-    assignedIds,
-    personPickerWorkspaceId,
-    props.scopeLevel,
-    props.contextMasterCellId,
-    props.rosterWorkspaceId,
-    props.activityWorkspaceId,
-    props.legacyLdrLocations,
-    props.cells,
-  ])
+  const addable = useMemo(
+    () =>
+      props.people.filter(
+        (p) =>
+          !assignedIds.has(p.id) &&
+          ldrPersonWorkspaceId(p, personPickerWorkspaceId) === personPickerWorkspaceId,
+      ),
+    [props.people, assignedIds, personPickerWorkspaceId],
+  )
   const hasUnassignedPeople = useMemo(
     () => props.people.some((p) => !assignedIds.has(p.id)),
     [props.people, assignedIds],
@@ -1389,9 +1368,14 @@ function CellEditorModal(props: {
             </div>
           ) : hasUnassignedPeople ? (
             <p className="rounded-xl border border-border bg-surface-raised/60 p-3 text-sm text-muted">
-              No people available for this activity&apos;s scope. Add matching people under{' '}
-              <strong className="text-fg/90">LDR tools → Admin → People</strong> for the same site or cell workspace
-              as the activity.
+              No people available for this {props.scopeLevel === 'cell' ? 'cell' : 'activity'} workspace. Add people
+              under <strong className="text-fg/90">LDR tools → Admin → People</strong>
+              {props.scopeLevel === 'cell' ? ' while Cell scope is selected for this cell.' : ' for the same workspace as the activity.'}
+            </p>
+          ) : props.scopeLevel === 'cell' ? (
+            <p className="rounded-xl border border-border bg-surface-raised/60 p-3 text-sm text-muted">
+              No people in this cell yet. Add them under{' '}
+              <strong className="text-fg/90">LDR tools → Admin → People</strong> with Cell scope selected.
             </p>
           ) : null}
         </div>
