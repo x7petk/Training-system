@@ -643,11 +643,88 @@ function LdrAdminActivitiesPanel() {
   }
 
   async function remove(id: string) {
-    if (!window.confirm('Delete this activity? Assignments will be removed.')) return
     setError(null)
+
+    const { data: hcType, error: hcTypeErr } = await supabase
+      .from('hc_types')
+      .select('id, name')
+      .eq('ldr_activity_id', id)
+      .maybeSingle()
+    if (hcTypeErr) {
+      setError(hcTypeErr.message)
+      return
+    }
+
+    if (hcType?.id) {
+      const [{ count: templateCount, error: tErr }, { count: recordCount, error: rErr }] = await Promise.all([
+        supabase.from('hc_templates').select('id', { count: 'exact', head: true }).eq('hc_type_id', hcType.id),
+        supabase.from('hc_records').select('id', { count: 'exact', head: true }).eq('hc_type_id', hcType.id),
+      ])
+      if (tErr) {
+        setError(tErr.message)
+        return
+      }
+      if (rErr) {
+        setError(rErr.message)
+        return
+      }
+      if ((templateCount ?? 0) > 0 || (recordCount ?? 0) > 0) {
+        setError(
+          `“${hcType.name}” is linked as a Health Check type with templates or records. Remove those under Admin → HC Types / HC Templates first, then delete the activity.`,
+        )
+        return
+      }
+    }
+
+    const { data: obsLinks, error: obsErr } = await supabase
+      .from('obs_system_activity_links')
+      .select('id, kind')
+      .eq('ldr_activity_id', id)
+    if (obsErr) {
+      setError(obsErr.message)
+      return
+    }
+
+    const extras: string[] = []
+    if (hcType?.id) extras.push('its Health Check type link')
+    if (obsLinks && obsLinks.length > 0) {
+      extras.push(`SOS/QOS/PPO system links (${obsLinks.map((l) => String(l.kind).toUpperCase()).join(', ')})`)
+    }
+    const confirmMsg =
+      extras.length > 0
+        ? `Delete this activity? Assignments will be removed, and ${extras.join(' and ')} will also be removed.`
+        : 'Delete this activity? Assignments will be removed.'
+    if (!window.confirm(confirmMsg)) return
+
+    if (obsLinks && obsLinks.length > 0) {
+      const { error: unlinkObsErr } = await supabase
+        .from('obs_system_activity_links')
+        .delete()
+        .eq('ldr_activity_id', id)
+      if (unlinkObsErr) {
+        setError(unlinkObsErr.message)
+        return
+      }
+    }
+
+    if (hcType?.id) {
+      const { error: unlinkHcErr } = await supabase.from('hc_types').delete().eq('id', hcType.id)
+      if (unlinkHcErr) {
+        setError(unlinkHcErr.message)
+        return
+      }
+    }
+
     const { error: e } = await supabase.from('ldr_activities').delete().eq('id', id)
-    if (e) setError(e.message)
-    else await load()
+    if (e) {
+      if (/hc_types_ldr_activity_id_fkey|obs_system_activity_links|foreign key/i.test(e.message)) {
+        setError(
+          'This activity is still linked to Health Checks or observation systems. Unlink it under Admin → HC Types / SOS·QOS·PPO first.',
+        )
+      } else {
+        setError(e.message)
+      }
+    } else await load()
   }
 
   return (

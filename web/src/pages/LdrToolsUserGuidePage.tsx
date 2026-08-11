@@ -55,8 +55,9 @@ const designProcessBlocks = [
   {
     title: 'How site-level planning shows when you use Cell scope',
     body: [
-      'Some activities belong to the site workspace; others belong to the cell workspace. On the roster, rows can be labelled so you can tell site-sourced activities from cell-sourced ones.',
+      'Some activities belong to the site workspace; others belong to the cell workspace. Activities you create while in Cell scope stay in that cell workspace and do not appear on the site roster.',
       'In Cell scope, Admins can choose which site activities are visible on the cell roster (Activities tab → site-activity visibility). That keeps the cell view relevant instead of listing the entire site plan.',
+      'When you add a person to an activity in Cell scope, the person list is the cell-level LDR people for that cell workspace.',
       'Assignments you see in Cell scope still respect the cell: you will see people and slots that apply to this cell — including site-planned work that is tied to this cell (for example by person or assignment cell).',
       'If something looks missing, check Admin → Activities visibility for the cell, or switch to Site scope to see the full site roster.',
     ],

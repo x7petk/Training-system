@@ -675,17 +675,6 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
     () => new Map(activities.map((activity) => [activity.id, activity.workspace_id ?? workspaceId])),
     [activities, workspaceId],
   )
-  const activityScopeTagById = useMemo(() => {
-    const m = new Map<string, 'site' | 'cell'>()
-    for (const activity of activities) {
-      if (scopeLevel === 'cell' && activity.workspace_id && workspaceId && activity.workspace_id !== workspaceId) {
-        m.set(activity.id, 'site')
-      } else {
-        m.set(activity.id, scopeLevel === 'cell' ? 'cell' : 'site')
-      }
-    }
-    return m
-  }, [activities, scopeLevel, workspaceId])
 
   const ensureLegacyLocationIdForMasterCell = useCallback(
     async (
@@ -947,20 +936,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
                 {activities.map((act) => (
                   <tr key={act.id}>
                     <td className={`sticky left-0 z-10 bg-surface font-medium text-fg ${embed ? 'py-0.5 pl-1 pr-1' : 'py-1.5 pl-2 pr-2'}`}>
-                      <span className="inline-flex items-center gap-0.5">
-                        <span className="truncate">{act.name}</span>
-                        {scopeLevel === 'cell' && !embed ? (
-                          <span
-                            className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                              activityScopeTagById.get(act.id) === 'site'
-                                ? 'border border-teal-600/35 bg-teal-100 text-teal-900'
-                                : 'border border-violet-500/35 bg-violet-100 text-violet-900'
-                            }`}
-                          >
-                            {activityScopeTagById.get(act.id) === 'site' ? 'Site' : 'Cell'}
-                          </span>
-                        ) : null}
-                      </span>
+                      <span className="truncate">{act.name}</span>
                     </td>
                     {weekDays.map((d) => {
                       const ymd = toYMD(d)
@@ -1054,6 +1030,7 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
           date={cellModal.date}
           people={ldrPeople}
           activityWorkspaceId={activityWorkspaceById.get(cellModal.activityId) ?? workspaceId ?? ''}
+          rosterWorkspaceId={workspaceId ?? ''}
           scopeLevel={scopeLevel}
           contextMasterCellId={cellId}
           cells={siteCellOptions}
@@ -1105,6 +1082,8 @@ function CellEditorModal(props: {
   people: LdrPersonRow[]
   /** Workspace that owns the activity row (site vs cell activity). */
   activityWorkspaceId: string
+  /** Current roster workspace (cell workspace when scope is cell). */
+  rosterWorkspaceId: string
   scopeLevel: 'site' | 'cell'
   contextMasterCellId: string
   cells: { id: string; label: string }[]
@@ -1129,15 +1108,41 @@ function CellEditorModal(props: {
 }) {
   const assignedIds = useMemo(() => new Set(props.rows.map((r) => r.ldr_person_id)), [props.rows])
   const peopleById = useMemo(() => new Map(props.people.map((p) => [p.id, p])), [props.people])
-  const addable = useMemo(
-    () =>
-      props.people.filter(
-        (p) =>
-          !assignedIds.has(p.id) &&
-          ldrPersonWorkspaceId(p, props.activityWorkspaceId) === props.activityWorkspaceId,
-      ),
-    [props.people, assignedIds, props.activityWorkspaceId],
-  )
+  /** Cell-owned activities → cell workspace people; site activities on cell roster → that activity’s people. */
+  const personPickerWorkspaceId =
+    props.scopeLevel === 'cell' &&
+    props.rosterWorkspaceId &&
+    props.activityWorkspaceId === props.rosterWorkspaceId
+      ? props.rosterWorkspaceId
+      : props.activityWorkspaceId
+  const addable = useMemo(() => {
+    return props.people.filter((p) => {
+      if (assignedIds.has(p.id)) return false
+      if (ldrPersonWorkspaceId(p, personPickerWorkspaceId) !== personPickerWorkspaceId) return false
+      // On cell roster for a site activity, only people assigned to this cell.
+      if (
+        props.scopeLevel === 'cell' &&
+        props.contextMasterCellId &&
+        props.rosterWorkspaceId &&
+        props.activityWorkspaceId !== props.rosterWorkspaceId
+      ) {
+        if (p.master_cell_id && p.master_cell_id === props.contextMasterCellId) return true
+        const fromLegacy = masterCellIdForLegacyLocation(p.location_id, props.legacyLdrLocations, props.cells)
+        return fromLegacy === props.contextMasterCellId
+      }
+      return true
+    })
+  }, [
+    props.people,
+    assignedIds,
+    personPickerWorkspaceId,
+    props.scopeLevel,
+    props.contextMasterCellId,
+    props.rosterWorkspaceId,
+    props.activityWorkspaceId,
+    props.legacyLdrLocations,
+    props.cells,
+  ])
   const hasUnassignedPeople = useMemo(
     () => props.people.some((p) => !assignedIds.has(p.id)),
     [props.people, assignedIds],
