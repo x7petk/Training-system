@@ -8,12 +8,12 @@
 
 /** Scoped wrapper identifier — all blue styling is applied inside this element only. */
 export const LIVE_BOARD_WRAPPER =
-  'apps-team-live-board min-h-0 rounded-xl border border-sky-200 bg-sky-50/70 p-3 dark:border-sky-800 dark:bg-sky-950/25'
+  'apps-team-live-board min-h-0 rounded-xl border border-sky-200 bg-sky-50/70 p-4 shadow-sm sm:p-5 dark:border-sky-800 dark:bg-sky-950/25'
 
 export const LIVE_BOARD_HEADER =
-  'mb-2 flex items-center justify-between border-b border-sky-200/80 pb-2 dark:border-sky-800/80'
+  'mb-3 flex items-center justify-between border-b border-sky-200/80 pb-3 dark:border-sky-800/80'
 
-export const LIVE_BOARD_TITLE = 'text-sm font-semibold text-sky-900 dark:text-sky-100'
+export const LIVE_BOARD_TITLE = 'text-base font-semibold text-sky-900 dark:text-sky-100'
 
 export const LIVE_BOARD_COUNT_BADGE =
   'rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-800 dark:text-sky-200'

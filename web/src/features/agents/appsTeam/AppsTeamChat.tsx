@@ -28,17 +28,17 @@ export function AppsTeamChat(props: {
   }, [chatMessages, sending])
 
   return (
-    <div className="flex w-full flex-col rounded-xl border border-border bg-surface">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-fg">Product Manager</h2>
-        <p className="text-xs text-muted">
+    <div className="flex w-full flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+      <div className="border-b border-border px-4 py-3.5 sm:px-5 sm:py-4">
+        <h2 className="text-base font-semibold text-fg">Product Manager</h2>
+        <p className="mt-0.5 text-xs text-muted sm:text-sm">
           Describe the outcome once. Reply only if the PM asks a question — otherwise watch the board.
         </p>
       </div>
 
       <div
         ref={listRef}
-        className="min-h-[240px] max-h-[min(480px,50vh)] space-y-3 overflow-y-auto px-4 py-3"
+        className="min-h-[240px] max-h-[min(480px,50vh)] space-y-4 overflow-y-auto px-4 py-4 sm:px-5"
       >
         {chatMessages.length === 0 ? (
           <p className="text-sm text-muted">
@@ -73,8 +73,8 @@ export function AppsTeamChat(props: {
         {sending ? <p className="text-xs text-muted">PM is thinking…</p> : null}
       </div>
 
-      <div className="border-t border-border p-3">
-        <div className="flex gap-2">
+      <div className="border-t border-border px-4 py-3.5 sm:px-5 sm:py-4">
+        <div className="flex gap-2.5">
           <textarea
             value={input}
             onChange={(e) => onInput(e.target.value)}

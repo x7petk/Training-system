@@ -36,7 +36,7 @@ export function AppsTeamKanban(props: {
   const theme = variant === 'live-board' ? LIVE_BOARD_KANBAN : NEUTRAL
 
   return (
-    <div className="flex w-full gap-3 overflow-x-auto pb-2">
+    <div className="flex w-full gap-3 overflow-x-auto pb-1 pt-0.5">
       {KANBAN_COLUMNS.map((col) => {
         const cards = tickets.filter((t) => boardColumnForStatus(t.status) === col.id)
         return (
