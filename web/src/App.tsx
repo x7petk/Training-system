@@ -148,9 +148,7 @@ import { UxUiExpertPage } from './pages/UxUiExpertPage'
 const RoadMapBuilderPage = lazy(() =>
   import('./pages/RoadMapBuilderPage').then((m) => ({ default: m.RoadMapBuilderPage })),
 )
-const AppsTeamPage = lazy(() =>
-  import('./pages/AppsTeamPage').then((m) => ({ default: m.AppsTeamPage })),
-)
+import { AppsTeamPage } from './pages/AppsTeamPage'
 const KpiCascadePage = lazy(() =>
   import('./pages/KpiCascadePage').then((m) => ({ default: m.KpiCascadePage })),
 )
