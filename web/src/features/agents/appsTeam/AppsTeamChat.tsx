@@ -1,48 +1,56 @@
 import { useEffect, useRef } from 'react'
 import { Send } from 'lucide-react'
-import type { AppsTeamMessage } from './types'
-
-function isCustomerChatMessage(m: AppsTeamMessage): boolean {
-  if (m.from_role === 'customer') return true
-  if (m.ticket_id != null) return false
-  const kind = typeof m.meta?.kind === 'string' ? m.meta.kind : ''
-  // Hide noisy status spam; show real chat, questions, and milestones (ticket created / done).
-  return kind === 'chat' || kind === 'customer_question' || kind === 'milestone' || kind === 'done' || !kind
-}
+import type { AppsTeamMessage, AppsTeamTicket } from './types'
+import { filterTicketChatMessages } from './appsTeamChatUtils'
 
 export function AppsTeamChat(props: {
+  selectedTicket: AppsTeamTicket | null
   messages: AppsTeamMessage[]
   input: string
   sending: boolean
   onInput: (v: string) => void
   onSend: () => void
+  className?: string
 }) {
-  const { messages, input, sending, onInput, onSend } = props
+  const { selectedTicket, messages, input, sending, onInput, onSend, className } = props
   const listRef = useRef<HTMLDivElement>(null)
 
-  const chatMessages = messages.filter(isCustomerChatMessage)
+  const chatMessages = selectedTicket ? filterTicketChatMessages(messages, selectedTicket.id) : []
 
   useEffect(() => {
     const el = listRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [chatMessages, sending])
+  }, [chatMessages, sending, selectedTicket?.id])
+
+  const hasSelection = selectedTicket != null
 
   return (
-    <div className="flex w-full flex-col rounded-xl border border-border bg-surface">
-      <div className="border-b border-border px-4 py-3">
+    <div
+      className={`flex w-full flex-col rounded-xl border border-border bg-surface ${className ?? ''}`}
+    >
+      <div className="border-b border-border px-4 py-2.5">
         <h2 className="text-sm font-semibold text-fg">Product Manager</h2>
-        <p className="text-xs text-muted">
-          Describe the outcome once. Reply only if the PM asks a question — otherwise watch the board.
-        </p>
+        {hasSelection ? (
+          <p className="text-xs text-muted">
+            Chat for <span className="font-medium text-fg">{selectedTicket.title}</span> — reply when
+            asked.
+          </p>
+        ) : (
+          <p className="text-xs text-muted">Select a ticket to view and send messages.</p>
+        )}
       </div>
 
       <div
         ref={listRef}
-        className="min-h-[240px] max-h-[min(480px,50vh)] space-y-3 overflow-y-auto px-4 py-3"
+        className="min-h-[120px] max-h-[min(240px,25vh)] space-y-2 overflow-y-auto px-4 py-2.5 md:max-h-[min(240px,30vh)]"
       >
-        {chatMessages.length === 0 ? (
+        {!hasSelection ? (
+          <div className="flex h-full min-h-[96px] items-center justify-center px-2 py-4 text-center">
+            <p className="text-sm text-muted">Select a ticket to view chat.</p>
+          </div>
+        ) : chatMessages.length === 0 ? (
           <p className="text-sm text-muted">
-            Tell the PM what you want built. They’ll decide details and run Designer → Dev → Test → Deploy.
+            No messages yet for this ticket. Reply when the PM asks a question.
           </p>
         ) : (
           chatMessages.map((m) => {
@@ -70,10 +78,10 @@ export function AppsTeamChat(props: {
             )
           })
         )}
-        {sending ? <p className="text-xs text-muted">PM is thinking…</p> : null}
+        {sending && hasSelection ? <p className="text-xs text-muted">PM is thinking…</p> : null}
       </div>
 
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border p-2.5">
         <div className="flex gap-2">
           <textarea
             value={input}
@@ -84,15 +92,20 @@ export function AppsTeamChat(props: {
                 onSend()
               }
             }}
-            rows={2}
-            placeholder="Message only when asked — or start a new request…"
-            className="min-h-[64px] flex-1 resize-none rounded-lg border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-sky-500"
+            rows={1}
+            disabled={!hasSelection || sending}
+            placeholder={
+              hasSelection
+                ? 'Message only when asked…'
+                : 'Select a ticket on the board to chat…'
+            }
+            className="min-h-[40px] flex-1 resize-none rounded-lg border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
           />
           <button
             type="button"
-            disabled={sending || !input.trim()}
+            disabled={!hasSelection || sending || !input.trim()}
             onClick={onSend}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center self-end rounded-lg bg-sky-600 text-white disabled:opacity-50"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center self-end rounded-lg bg-sky-600 text-white disabled:opacity-50"
             aria-label="Send"
           >
             <Send className="h-4 w-4" />
