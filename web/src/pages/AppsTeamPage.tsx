@@ -342,18 +342,20 @@ export function AppsTeamPage() {
           />
         </section>
 
-        <div className={LIVE_BOARD_WRAPPER}>
-          <div className={LIVE_BOARD_HEADER}>
-            <h2 className={LIVE_BOARD_TITLE}>Live board</h2>
-            <span className={LIVE_BOARD_COUNT_BADGE}>{tickets.length} tickets</span>
+        <section className="w-full">
+          <div className={LIVE_BOARD_WRAPPER}>
+            <div className={LIVE_BOARD_HEADER}>
+              <h2 className={LIVE_BOARD_TITLE}>Live board</h2>
+              <span className={LIVE_BOARD_COUNT_BADGE}>{tickets.length} tickets</span>
+            </div>
+            <AppsTeamKanban
+              tickets={tickets}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              variant="live-board"
+            />
           </div>
-          <AppsTeamKanban
-            tickets={tickets}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            variant="live-board"
-          />
-        </div>
+        </section>
 
         <section className="w-full rounded-xl border border-border bg-surface">
           <div className="border-b border-border px-4 py-3">
