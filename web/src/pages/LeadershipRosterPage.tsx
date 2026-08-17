@@ -866,7 +866,22 @@ export function LeadershipRosterPage({ embed = false }: LeadershipRosterPageProp
 
   async function moveAssignment(assignmentId: string, activityId: string, date: string) {
     setError(null)
-    const { error: e } = await supabase.from('ldr_assignments').update({ activity_id: activityId, assignment_date: date }).eq('id', assignmentId)
+    const patch: { activity_id: string; assignment_date: string; workspace_id?: string } = {
+      activity_id: activityId,
+      assignment_date: date,
+    }
+    // Keep cell-scope moves inside the cell workspace.
+    if (scopeLevel === 'cell' && cellId) {
+      const { data: cellWs, error: cellWsErr } = await supabase.rpc('ldr_ensure_workspace_cell', {
+        p_master_cell_id: cellId,
+      })
+      if (cellWsErr) {
+        setError(cellWsErr.message)
+        return
+      }
+      if (typeof cellWs === 'string') patch.workspace_id = cellWs
+    }
+    const { error: e } = await supabase.from('ldr_assignments').update(patch).eq('id', assignmentId)
     if (e) {
       setError(e.message)
       return
