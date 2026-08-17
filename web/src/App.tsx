@@ -32,6 +32,18 @@ const LdrAdminPage = lazy(() => import('./pages/LdrAdminPage').then((m) => ({ de
 const LdrToolsUserGuidePage = lazy(() =>
   import('./pages/LdrToolsUserGuidePage').then((m) => ({ default: m.LdrToolsUserGuidePage })),
 )
+const AgentsUserGuidePage = lazy(() =>
+  import('./pages/AgentsUserGuidePage').then((m) => ({ default: m.AgentsUserGuidePage })),
+)
+const ProblemSolveUserGuidePage = lazy(() =>
+  import('./pages/ProblemSolveUserGuidePage').then((m) => ({ default: m.ProblemSolveUserGuidePage })),
+)
+const BmsBrainUserGuidePage = lazy(() =>
+  import('./pages/BmsBrainUserGuidePage').then((m) => ({ default: m.BmsBrainUserGuidePage })),
+)
+const MasterDataUserGuidePage = lazy(() =>
+  import('./pages/MasterDataUserGuidePage').then((m) => ({ default: m.MasterDataUserGuidePage })),
+)
 const HcListPage = lazy(() => import('./pages/HcListPage').then((m) => ({ default: m.HcListPage })))
 const HcNewPage = lazy(() => import('./pages/HcNewPage').then((m) => ({ default: m.HcNewPage })))
 const HcRecordPage = lazy(() => import('./pages/HcRecordPage').then((m) => ({ default: m.HcRecordPage })))
@@ -239,14 +251,7 @@ export default function App() {
                   </AdminRoute>
                 }
               />
-              <Route
-                path="user-guide"
-                element={
-                  <AdminRoute>
-                    <UserGuidePage />
-                  </AdminRoute>
-                }
-              />
+              <Route path="user-guide" element={<UserGuidePage />} />
             </Route>
           </Route>
 
@@ -340,6 +345,7 @@ export default function App() {
             <Route path="sop-optimiser" element={<AgentsToolPage title="SOP optimiser" />} />
             <Route path="staff-calculator" element={<AgentsToolPage title="Staff Calculator" />} />
             <Route path="kpi-consultant" element={<AgentsToolPage title="KPI consultant" />} />
+            <Route path="user-guide" element={<AgentsUserGuidePage />} />
           </Route>
 
           <Route
@@ -418,6 +424,7 @@ export default function App() {
             <Route path="opm" element={<ProblemSolvePlaceholderPage title="OPM" />} />
             <Route path="safety" element={<ProblemSolvePlaceholderPage title="Safety" />} />
             <Route path="quality" element={<ProblemSolvePlaceholderPage title="Quality" />} />
+            <Route path="user-guide" element={<ProblemSolveUserGuidePage />} />
             <Route
               path="admin"
               element={
@@ -441,6 +448,7 @@ export default function App() {
             <Route path="processes" element={<BmsBrainProcessesPage />} />
             <Route path="processes/:id" element={<BmsBrainProcessEditorPage />} />
             <Route path="ai" element={<BmsBrainAiPage />} />
+            <Route path="user-guide" element={<BmsBrainUserGuidePage />} />
             <Route
               path="admin"
               element={
@@ -467,6 +475,7 @@ export default function App() {
             <Route index element={<Navigate to="structure" replace />} />
             <Route path="structure" element={<MasterDataStructurePage />} />
             <Route path="people" element={<MasterDataPeoplePage />} />
+            <Route path="user-guide" element={<MasterDataUserGuidePage />} />
           </Route>
         </Route>
 

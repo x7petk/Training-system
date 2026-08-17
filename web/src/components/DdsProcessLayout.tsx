@@ -23,6 +23,7 @@ import { useAuth } from '../hooks/useAuth'
 import { Plan24WorkspaceProvider } from '../features/plan24/Plan24WorkspaceContext'
 import { ShiftDdsShellProvider } from '../features/dds/ShiftDdsShellContext'
 import { Plan24ScopeBar } from '../features/plan24/Plan24ScopeBar'
+import { UserGuideMobileNavLink } from './userGuide/UserGuideKit'
 
 const adminBasePath = '/dds-process/admin'
 const userGuidePath = '/dds-process/user-guide'
@@ -49,6 +50,7 @@ export function DdsProcessLayout() {
         mainTop={showPlan24Scope ? <Plan24ScopeBar /> : null}
         headerIconClass="bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
         HeaderIcon={Layers}
+        navFooter={<UserGuideMobileNavLink to={userGuidePath} />}
         outletFallback={
           <div
             className="flex min-h-[14rem] items-center justify-center rounded-2xl border border-border bg-surface-raised/50 text-sm text-muted"

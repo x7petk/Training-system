@@ -125,6 +125,14 @@ export function SkillMatrixLayout() {
             <UserCircle className="size-4 shrink-0 opacity-80" aria-hidden />
             {!desktopCollapsed ? 'My skills' : null}
           </NavLink>
+          <NavLink
+            to="/user-guide"
+            className={(args) => `${navClass(desktopCollapsed)(args)} md:hidden`}
+            title="User Guide"
+          >
+            <BookOpenText className="size-4 shrink-0 opacity-80" aria-hidden />
+            User Guide
+          </NavLink>
           {profileReady && !isOperator ? (
             <NavLink
               to="/matrix"
@@ -210,24 +218,22 @@ export function SkillMatrixLayout() {
             <LogOut className="size-4" aria-hidden />
             {!desktopCollapsed ? 'Sign out' : null}
           </button>
-          {isAdmin ? (
-            <NavLink
-              to="/user-guide"
-              className={({ isActive }) =>
-                `mt-2 flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                  desktopCollapsed ? 'justify-center gap-0 px-2' : 'gap-2'
-                } ${
-                  isActive
-                    ? 'bg-accent-dim text-accent'
-                    : 'text-muted hover:bg-black/[0.06] hover:text-fg'
-                }`
-              }
-              title={desktopCollapsed ? 'User Guide' : undefined}
-            >
-              <BookOpenText className="size-4" aria-hidden />
-              {!desktopCollapsed ? 'User Guide' : null}
-            </NavLink>
-          ) : null}
+          <NavLink
+            to="/user-guide"
+            className={({ isActive }) =>
+              `mt-2 flex w-full items-center rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                desktopCollapsed ? 'justify-center gap-0 px-2' : 'gap-2'
+              } ${
+                isActive
+                  ? 'bg-accent-dim text-accent'
+                  : 'text-muted hover:bg-black/[0.06] hover:text-fg'
+              }`
+            }
+            title={desktopCollapsed ? 'User Guide' : undefined}
+          >
+            <BookOpenText className="size-4" aria-hidden />
+            {!desktopCollapsed ? 'User Guide' : null}
+          </NavLink>
         </div>
       </aside>
 

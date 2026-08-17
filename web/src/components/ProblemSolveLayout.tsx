@@ -12,14 +12,17 @@ import {
   Sparkles,
   TrendingUp,
 } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { AppSectionLayout } from './AppSectionLayout'
 import { useAuth } from '../hooks/useAuth'
 import { Plan24WorkspaceProvider } from '../features/plan24/Plan24WorkspaceContext'
 import { Plan24ScopeBar } from '../features/plan24/Plan24ScopeBar'
+import { UserGuideFooterLink, UserGuideMobileNavLink } from './userGuide/UserGuideKit'
 
 export function ProblemSolveLayout() {
   const { isAdmin, profileReady } = useAuth()
+  const location = useLocation()
+  const inUserGuide = location.pathname.startsWith('/problem-solve/user-guide')
 
   return (
     <Plan24WorkspaceProvider>
@@ -27,9 +30,10 @@ export function ProblemSolveLayout() {
         storageKey="problem-solve.sidebar-collapsed"
         title="Problem Solve"
         subtitle="Problem solve"
-        mainTop={<Plan24ScopeBar />}
+        mainTop={inUserGuide ? null : <Plan24ScopeBar />}
         headerIconClass="bg-orange-500/15 text-orange-900 dark:text-orange-300"
         HeaderIcon={Lightbulb}
+        navFooter={<UserGuideMobileNavLink to="/problem-solve/user-guide" />}
         outletFallback={
           <div
             className="flex min-h-[14rem] items-center justify-center rounded-2xl border border-border bg-surface-raised/50 text-sm text-muted"
@@ -52,21 +56,24 @@ export function ProblemSolveLayout() {
           { to: '/problem-solve/quality', label: 'Quality', icon: BadgeCheck, end: true },
         ]}
         accountFooter={
-          profileReady && isAdmin ? (
-            <NavLink
-              to="/problem-solve/admin"
-              end
-              className={({ isActive }) =>
-                [
-                  'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
-                  isActive ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
-                ].join(' ')
-              }
-            >
-              <LayoutDashboard className="size-4 shrink-0 opacity-80" aria-hidden />
-              Admin
-            </NavLink>
-          ) : null
+          <div className="flex flex-col gap-0.5">
+            <UserGuideFooterLink to="/problem-solve/user-guide" />
+            {profileReady && isAdmin ? (
+              <NavLink
+                to="/problem-solve/admin"
+                end
+                className={({ isActive }) =>
+                  [
+                    'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
+                    isActive ? 'bg-accent-dim text-accent' : 'text-muted hover:bg-black/[0.06] hover:text-fg',
+                  ].join(' ')
+                }
+              >
+                <LayoutDashboard className="size-4 shrink-0 opacity-80" aria-hidden />
+                Admin
+              </NavLink>
+            ) : null}
+          </div>
         }
       />
     </Plan24WorkspaceProvider>

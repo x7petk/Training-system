@@ -1,11 +1,12 @@
-import { BookOpenText, CalendarDays, ClipboardList, FileBarChart, LayoutDashboard, ListChecks, Users, UsersRound } from 'lucide-react'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { CalendarDays, ClipboardList, FileBarChart, LayoutDashboard, ListChecks, Users, UsersRound } from 'lucide-react'
+import { NavLink, useLocation } from 'react-router-dom'
 import { AppSectionLayout } from './AppSectionLayout'
 import { useAuth } from '../hooks/useAuth'
 import { LdrWorkspaceProvider } from '../features/ldr/LdrWorkspaceContext'
 import { LdrScopeFilterBar } from '../features/ldr/LdrScopeFilterBar'
 import { LdrHcObsScopeFilterBar } from '../features/ldr/LdrHcObsScopeFilterBar'
 import { isHcObsScopedPath } from '../features/ldr/ldrHcObsScope'
+import { UserGuideFooterLink, UserGuideMobileNavLink } from './userGuide/UserGuideKit'
 
 function ObservationSystemIcon({ className }: { className?: string }) {
   return (
@@ -31,6 +32,7 @@ export function LdrToolsLayout() {
         title="LDR tools"
         headerIconClass="bg-violet-500/15 text-violet-700 dark:text-violet-300"
         HeaderIcon={UsersRound}
+        navFooter={<UserGuideMobileNavLink to="/ldr-tools/user-guide" />}
         mainTop={
           showHcObsScope ? <LdrHcObsScopeFilterBar /> : showDefaultScope ? <LdrScopeFilterBar /> : null
         }
@@ -65,13 +67,7 @@ export function LdrToolsLayout() {
         ]}
         accountFooter={
           <>
-            <Link
-              to="/ldr-tools/user-guide"
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted transition-colors hover:bg-black/[0.06] hover:text-fg"
-            >
-              <BookOpenText className="size-4" aria-hidden />
-              User Guide
-            </Link>
+            <UserGuideFooterLink to="/ldr-tools/user-guide" />
             {profileReady && isAdmin ? (
               <NavLink
                 to="/ldr-tools/admin"

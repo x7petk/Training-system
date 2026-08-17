@@ -3,6 +3,7 @@ import { Link, NavLink, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { AccountsSummary } from '../features/admin/AccountsSummary'
 import { SectionAccessPanel } from '../features/admin/SectionAccessPanel'
+import { LoginAccountsUserGuide } from './LoginAccountsUserGuide'
 import { useAuth } from '../hooks/useAuth'
 
 const tabClass = (active: boolean) =>
@@ -16,7 +17,7 @@ export function LoginAccountsPage() {
   const { isSuperAdmin } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const rawTab = searchParams.get('tab')
-  const tab = rawTab === 'access' && isSuperAdmin ? 'access' : 'accounts'
+  const tab = rawTab === 'guide' ? 'guide' : rawTab === 'access' && isSuperAdmin ? 'access' : 'accounts'
 
   useEffect(() => {
     if (rawTab === 'access' && !isSuperAdmin) {
@@ -25,7 +26,7 @@ export function LoginAccountsPage() {
   }, [rawTab, isSuperAdmin, setSearchParams])
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 md:px-8 md:py-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <Link
           to="/"
@@ -43,10 +44,19 @@ export function LoginAccountsPage() {
               Section access
             </NavLink>
           ) : null}
+          <NavLink to="/login-accounts?tab=guide" className={() => tabClass(tab === 'guide')}>
+            User Guide
+          </NavLink>
         </nav>
       </div>
 
-      {tab === 'accounts' ? <AccountsSummary /> : <SectionAccessPanel />}
+      {tab === 'guide' ? (
+        <LoginAccountsUserGuide />
+      ) : tab === 'accounts' ? (
+        <AccountsSummary />
+      ) : (
+        <SectionAccessPanel />
+      )}
     </div>
   )
 }
