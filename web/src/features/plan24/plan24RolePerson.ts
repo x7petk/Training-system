@@ -128,3 +128,100 @@ export async function resolveRolePersonNamesForShifts(
 
   return result
 }
+
+export type RosterRoleRef = { id: string; name: string }
+
+/** Resolve operator display names for multiple roster roles on one shift (Plan 24 assignment order). */
+export async function resolveRosterRolePersonNames(
+  cellId: string,
+  roles: RosterRoleRef[],
+  planDate: string,
+  shiftKind: string,
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>()
+  for (const r of roles) result.set(r.id, '—')
+  if (roles.length === 0) return result
+
+  const rosterRes = await supabase
+    .from('plan24_rosters')
+    .select('id, pattern_length, pattern_start_date')
+    .eq('master_cell_id', cellId)
+    .eq('is_active', true)
+    .maybeSingle()
+  const roster = rosterRes.data as { id: string; pattern_length: number | null; pattern_start_date: string | null } | null
+  if (rosterRes.error || !roster?.id) return result
+
+  const roleIds = roles.map((r) => r.id)
+  const [rolesRes, asRes, patRes, rtdRes] = await Promise.all([
+    supabase
+      .from('plan24_roster_roles')
+      .select('id, name, default_person_id, default_person_day_id, default_person_night_id')
+      .eq('roster_id', roster.id)
+      .in('id', roleIds),
+    supabase
+      .from('plan24_role_day_assignments')
+      .select('role_name, person_id')
+      .eq('roster_id', roster.id)
+      .eq('plan_date', planDate)
+      .eq('shift_kind', shiftKind),
+    supabase.from('plan24_pattern_slots').select('pattern_day, shift_kind, team_id').eq('roster_id', roster.id),
+    supabase.from('plan24_role_team_defaults').select('role_id, team_id, person_id').in('role_id', roleIds),
+  ])
+  if (rolesRes.error) return result
+
+  const roleRows = (rolesRes.data ?? []) as Plan24RosterRoleRow[]
+  const assignments = (asRes.data ?? []) as Plan24RoleAssignmentRow[]
+  const patternSlots = (patRes.data ?? []) as Plan24PatternSlotRow[]
+  const roleTeamDefaults = (rtdRes.data ?? []) as (Plan24RoleTeamDefaultRow & { role_id: string })[]
+  const plen = roster.pattern_length != null ? roster.pattern_length : 8
+  const patternDay = patternDayIndex(planDate, roster.pattern_start_date ?? null, plen)
+  const slot = patternSlots.find((p) => p.pattern_day === patternDay && p.shift_kind === shiftKind)
+  const activeTeamId = slot?.team_id ?? null
+
+  const assignmentByRole = new Map<string, string | null>()
+  for (const a of assignments) {
+    assignmentByRole.set(a.role_name, a.person_id)
+  }
+
+  const personIdByRoleId = new Map<string, string | null>()
+  const personIds = new Set<string>()
+
+  for (const roleRow of roleRows) {
+    let personId: string | null = null
+    if (assignmentByRole.has(roleRow.name)) {
+      personId = assignmentByRole.get(roleRow.name) ?? null
+    } else {
+      if (activeTeamId) {
+        const d = roleTeamDefaults.find((x) => x.role_id === roleRow.id && x.team_id === activeTeamId)
+        personId = d?.person_id ?? null
+      }
+      if (!personId) personId = legacyDefaultPersonId(roleRow, shiftKind)
+    }
+    personIdByRoleId.set(roleRow.id, personId)
+    if (personId) personIds.add(personId)
+  }
+
+  if (personIds.size === 0) return result
+
+  const peRes = await supabase
+    .from('people')
+    .select('id, display_name, first_name, last_name')
+    .in('id', [...personIds])
+  if (peRes.error) return result
+
+  const peopleById = new Map<
+    string,
+    { id: string; display_name: string | null; first_name: string | null; last_name: string | null }
+  >()
+  for (const row of peRes.data ?? []) {
+    peopleById.set(row.id as string, row as any)
+  }
+
+  for (const [roleId, personId] of personIdByRoleId) {
+    if (!personId) continue
+    const person = peopleById.get(personId)
+    if (person) result.set(roleId, personLabel(person))
+  }
+
+  return result
+}

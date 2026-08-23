@@ -46,6 +46,7 @@ import {
   type P2pPlanTaskIssueRow,
 } from './ddsP2pPlanDayStats'
 import { ddsErr } from './ddsAdminCompactClasses'
+import { resolveRosterRolePersonNames } from '../plan24/plan24RolePerson'
 import {
   buildSubNoHoverLines,
   buildSubYesDetailLines,
@@ -223,6 +224,7 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
   const [planStatsError, setPlanStatsError] = useState<string | null>(null)
   /** Roles with a P2P audit submitted for this cell, date, and shift. */
   const [submittedRoleIds, setSubmittedRoleIds] = useState<Set<string>>(() => new Set())
+  const [rolePersonByRoleId, setRolePersonByRoleId] = useState<Record<string, string>>({})
 
   const [detailPop, setDetailPop] = useState<{
     top: number
@@ -245,6 +247,31 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
     () => activeRoles.filter((r) => viewPrefs.roles[r.name.trim()] !== false),
     [activeRoles, viewPrefs.roles],
   )
+
+  useEffect(() => {
+    if (!cellId || !planDate || !shiftKind || roleCols.length === 0) {
+      setRolePersonByRoleId({})
+      return
+    }
+    let cancelled = false
+    void resolveRosterRolePersonNames(
+      cellId,
+      roleCols.map((r) => ({ id: r.id, name: r.name })),
+      planDate,
+      shiftKind,
+    ).then((map) => {
+      if (cancelled) return
+      const next: Record<string, string> = {}
+      for (const r of roleCols) {
+        const label = map.get(r.id)
+        if (label && label !== '—') next[r.id] = label
+      }
+      setRolePersonByRoleId(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [cellId, planDate, shiftKind, roleCols])
 
   const questionRows = useMemo(
     () => matrixQuestions.filter((q) => viewPrefs.questions[q.key] !== false),
@@ -1138,12 +1165,22 @@ export const DdsP2pSummaryBody = forwardRef(function DdsP2pSummaryBody(
                         scope="col"
                         title={submitted ? 'P2P submitted for this role' : 'P2P not submitted yet'}
                       >
-                        <span className="mx-auto flex min-w-0 items-center justify-center gap-1">
-                          <span
-                            className={`size-1.5 shrink-0 rounded-full ${submitted ? 'bg-emerald-500' : 'bg-amber-400'}`}
-                            aria-hidden
-                          />
-                          <span className="min-w-0 truncate">{r.name}</span>
+                        <span className="mx-auto flex min-w-0 flex-col items-center justify-center gap-0.5">
+                          <span className="flex min-w-0 items-center justify-center gap-1">
+                            <span
+                              className={`size-1.5 shrink-0 rounded-full ${submitted ? 'bg-emerald-500' : 'bg-amber-400'}`}
+                              aria-hidden
+                            />
+                            <span className="min-w-0 truncate">{r.name}</span>
+                          </span>
+                          {rolePersonByRoleId[r.id] ? (
+                            <span
+                              className="max-w-full truncate text-[9px] font-normal leading-tight text-muted"
+                              title={rolePersonByRoleId[r.id]}
+                            >
+                              {rolePersonByRoleId[r.id]}
+                            </span>
+                          ) : null}
                         </span>
                       </th>
                     )

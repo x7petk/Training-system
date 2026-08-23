@@ -9,6 +9,7 @@ import { ddsP2pQuestionKey } from '../features/dds/ddsP2pQuestionKey'
 import { labelForDdsP2pResponseKind, type DdsP2pResponseKind } from '../features/dds/ddsP2pResponseKind'
 import { DdsP2pPlanPanel } from '../features/dds/DdsP2pPlanPanel'
 import { DdsP2pPlanDayStrip } from '../features/dds/DdsP2pPlanDayStrip'
+import { DdsP2pScopeFilterBar } from '../features/dds/DdsP2pScopeFilterBar'
 import { refreshKpiP2pRollups } from '../features/dds/ddsKpiP2pRollup'
 import { dispatchDdsP2pKpiRollupDone } from '../features/dds/ddsP2pKpiRollupEvents'
 import { isDdsKpiSiteByLine } from '../features/dds/ddsKpiSitePresentation'
@@ -22,7 +23,7 @@ import {
   type DdsP2pSubAnswerForm,
 } from '../features/dds/ddsP2pSoftSubQuestions'
 import { DdsP2pSubYesNoSummary } from '../features/dds/DdsP2pSubYesNoSummary'
-import { ddsErr, ddsHint, ddsInput, ddsSection, ddsSelect } from '../features/dds/ddsAdminCompactClasses'
+import { ddsErr, ddsHint, ddsSection } from '../features/dds/ddsAdminCompactClasses'
 
 type KpiGroup = { id: string; name: string; sort_order: number }
 
@@ -128,6 +129,10 @@ export function DdsP2pPage() {
   const [shiftKind, setShiftKind] = useState('')
   const [roleId, setRoleId] = useState('')
 
+  const [myPlanDate, setMyPlanDate] = useState(() => localYMD(new Date()))
+  const [myPlanShiftKind, setMyPlanShiftKind] = useState('')
+  const [myPlanRoleId, setMyPlanRoleId] = useState('')
+
   const [shifts, setShifts] = useState<ShiftRow[]>([])
   const [roles, setRoles] = useState<RosterRole[]>([])
   const [questions, setQuestions] = useState<P2pQuestion[]>([])
@@ -206,7 +211,7 @@ export function DdsP2pPage() {
   useEffect(() => {
     setPlanErr(null)
     setPlanSuccess(null)
-  }, [cellId, planDate, shiftKind, roleId])
+  }, [cellId, planDate, shiftKind, roleId, myPlanDate, myPlanShiftKind, myPlanRoleId])
 
   useEffect(() => {
     if (!planSuccess) return
@@ -216,6 +221,8 @@ export function DdsP2pPage() {
 
   const selectedRole = useMemo(() => roles.find((r) => r.id === roleId), [roles, roleId])
   const roleName = selectedRole?.name ?? ''
+  const myPlanRole = useMemo(() => roles.find((r) => r.id === myPlanRoleId), [roles, myPlanRoleId])
+  const myPlanRoleName = myPlanRole?.name ?? ''
 
   const handlePlanPanelError = useCallback((msg: string) => {
     setPlanErr(msg || null)
@@ -266,6 +273,8 @@ export function DdsP2pPage() {
       setRoles([])
       setShiftKind('')
       setRoleId('')
+      setMyPlanShiftKind('')
+      setMyPlanRoleId('')
       setLoading(false)
       return
     }
@@ -288,6 +297,8 @@ export function DdsP2pPage() {
       setRoles([])
       setShiftKind('')
       setRoleId('')
+      setMyPlanShiftKind('')
+      setMyPlanRoleId('')
       setLoading(false)
       return
     }
@@ -313,9 +324,17 @@ export function DdsP2pPage() {
       if (prev && shList.some((s) => s.kind === prev)) return prev
       return shList[0]?.kind ?? ''
     })
+    setMyPlanShiftKind((prev) => {
+      if (prev && shList.some((s) => s.kind === prev)) return prev
+      return shList[0]?.kind ?? ''
+    })
     const rList = sortGroups((roRes.data ?? []) as RosterRole[]).filter((r) => r.is_active)
     setRoles(rList)
     setRoleId((prev) => {
+      if (prev && rList.some((r) => r.id === prev)) return prev
+      return rList[0]?.id ?? ''
+    })
+    setMyPlanRoleId((prev) => {
       if (prev && rList.some((r) => r.id === prev)) return prev
       return rList[0]?.id ?? ''
     })
@@ -877,31 +896,19 @@ export function DdsP2pPage() {
       ) : null}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden lg:grid-cols-2 lg:grid-rows-1">
         <section className={`${ddsSection} flex min-h-0 min-w-0 flex-col overflow-hidden !p-2 sm:!p-2.5`}>
-          <div className="flex shrink-0 flex-wrap items-end gap-1.5 border-b border-border/60 pb-1.5">
-            <div>
-              <label className="text-[10px] font-medium text-muted">Date</label>
-              <input type="date" className={`${ddsInput} !mt-0 !h-7`} value={planDate} onChange={(e) => setPlanDate(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-[10px] font-medium text-muted">Shift</label>
-              <select className={`${ddsSelect} !mt-0 !h-7`} value={shiftKind} onChange={(e) => setShiftKind(e.target.value)}>
-                {shifts.map((s) => (
-                  <option key={s.kind} value={s.kind}>
-                    {s.display_name?.trim() || s.kind}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="min-w-[8rem] flex-1">
-              <label className="text-[10px] font-medium text-muted">Role</label>
-              <select className={`${ddsSelect} !mt-0 !h-7`} value={roleId} onChange={(e) => setRoleId(e.target.value)}>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border/60 pb-1">
+            <h2 className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted">Questions</h2>
+            <DdsP2pScopeFilterBar
+              planDate={planDate}
+              shiftKind={shiftKind}
+              roleId={roleId}
+              shifts={shifts}
+              roles={roles}
+              onPlanDateChange={setPlanDate}
+              onShiftKindChange={setShiftKind}
+              onRoleIdChange={setRoleId}
+              disabled={loading || roles.length === 0}
+            />
           </div>
           {error ? <p className={ddsErr}>{error}</p> : null}
           {loading ? (
@@ -1175,16 +1182,20 @@ export function DdsP2pPage() {
             </>
           )}
         </section>
-        {roleName && shiftKind ? (
+        {myPlanRoleName && myPlanShiftKind ? (
           <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <DdsP2pPlanPanel
             cellId={cellId}
-            planDate={planDate}
-            shiftKind={shiftKind}
-            rosterRoleId={roleId}
-            roleName={roleName}
+            planDate={myPlanDate}
+            shiftKind={myPlanShiftKind}
+            rosterRoleId={myPlanRoleId}
+            roleName={myPlanRoleName}
+            roles={roles}
             userId={user.id}
             shifts={shifts}
+            onPlanDateChange={setMyPlanDate}
+            onShiftKindChange={setMyPlanShiftKind}
+            onRoleIdChange={setMyPlanRoleId}
             onError={handlePlanPanelError}
             onSuccessMsg={handlePlanPanelSuccess}
             onPlanDataChanged={bumpPlanStats}

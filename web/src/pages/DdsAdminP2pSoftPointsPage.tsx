@@ -100,6 +100,7 @@ export function DdsAdminP2pSoftPointsPage() {
   const [subDrafts, setSubDrafts] = useState<Record<string, string>>({})
   const [newSubPromptByParent, setNewSubPromptByParent] = useState<Record<string, string>>({})
   const [expandedSubs, setExpandedSubs] = useState<Set<string>>(new Set())
+  const [stdQuestionsExpanded, setStdQuestionsExpanded] = useState(false)
   const [savingSubId, setSavingSubId] = useState<string | null>(null)
 
   const loadGlobalStandard = useCallback(async () => {
@@ -412,46 +413,63 @@ export function DdsAdminP2pSoftPointsPage() {
       {error ? <p className={ddsErr}>{error}</p> : null}
 
       <section className={ddsSection}>
-        <h2 className={ddsH2}>Global P2P standard questions</h2>
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 text-left"
+          aria-expanded={stdQuestionsExpanded}
+          onClick={() => setStdQuestionsExpanded((v) => !v)}
+        >
+          {stdQuestionsExpanded ? (
+            <ChevronDown className="size-4 shrink-0 text-muted" aria-hidden />
+          ) : (
+            <ChevronRight className="size-4 shrink-0 text-muted" aria-hidden />
+          )}
+          <h2 className={ddsH2}>Global P2P standard questions</h2>
+          {!loadingStd && stdQuestions.length > 0 ? (
+            <span className="text-[11px] text-muted">({stdQuestions.length})</span>
+          ) : null}
+        </button>
         <p className="mt-0.5 text-[11px] leading-snug text-muted">Defined under P2P standard. Read-only here.</p>
-        {loadingStd ? (
-          <p className="mt-2 text-xs text-muted">Loading…</p>
-        ) : stdQuestions.length === 0 ? (
-          <p className="mt-2 text-xs text-muted">
-            None yet. Add them under{' '}
-            <Link to="/dds-process/admin/p2p-standard" className="font-medium text-accent underline-offset-2 hover:underline">
-              P2P standard
-            </Link>
-            .
-          </p>
-        ) : (
-          <div className="mt-2 space-y-3">
-            {stdGrouped.map(([gname, qs]) => (
-              <div key={gname}>
-                <h3 className={ddsH3}>{gname}</h3>
-                <ul className="mt-1 divide-y divide-border rounded-lg border border-border bg-surface">
-                  {qs.map((q) => (
-                    <li key={q.id} className="px-3 py-2">
-                      <p className="text-xs leading-snug text-fg">{q.prompt}</p>
-                      <p className="mt-0.5 text-[11px] text-muted">
-                        {labelForDdsP2pResponseKind(q.response_kind)}
-                        {q.response_kind === 'number_with_target' && q.target_number != null
-                          ? ` · target ${q.target_number}`
-                          : null}
-                        {q.linked_kpi_id ? (
-                          <span className="text-fg/80">
-                            {' '}
-                            · KPI link: {kpiLabels[q.linked_kpi_id] ?? q.linked_kpi_id}
-                          </span>
-                        ) : null}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        )}
+        {stdQuestionsExpanded ? (
+          loadingStd ? (
+            <p className="mt-2 text-xs text-muted">Loading…</p>
+          ) : stdQuestions.length === 0 ? (
+            <p className="mt-2 text-xs text-muted">
+              None yet. Add them under{' '}
+              <Link to="/dds-process/admin/p2p-standard" className="font-medium text-accent underline-offset-2 hover:underline">
+                P2P standard
+              </Link>
+              .
+            </p>
+          ) : (
+            <div className="mt-2 space-y-3">
+              {stdGrouped.map(([gname, qs]) => (
+                <div key={gname}>
+                  <h3 className={ddsH3}>{gname}</h3>
+                  <ul className="mt-1 divide-y divide-border rounded-lg border border-border bg-surface">
+                    {qs.map((q) => (
+                      <li key={q.id} className="px-3 py-2">
+                        <p className="text-xs leading-snug text-fg">{q.prompt}</p>
+                        <p className="mt-0.5 text-[11px] text-muted">
+                          {labelForDdsP2pResponseKind(q.response_kind)}
+                          {q.response_kind === 'number_with_target' && q.target_number != null
+                            ? ` · target ${q.target_number}`
+                            : null}
+                          {q.linked_kpi_id ? (
+                            <span className="text-fg/80">
+                              {' '}
+                              · KPI link: {kpiLabels[q.linked_kpi_id] ?? q.linked_kpi_id}
+                            </span>
+                          ) : null}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )
+        ) : null}
       </section>
 
       {scopeStatus === 'ready' && !cellId ? (
