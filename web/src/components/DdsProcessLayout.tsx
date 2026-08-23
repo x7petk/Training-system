@@ -16,6 +16,7 @@ import {
   Table2,
   Zap,
   UsersRound,
+  UserRound,
 } from 'lucide-react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { AppSectionLayout } from './AppSectionLayout'
@@ -65,6 +66,7 @@ export function DdsProcessLayout() {
           { to: '/dds-process/dds-actions', label: 'DDS actions', icon: ListTodo, end: true },
           { to: '/dds-process/p2p', label: 'P2P', icon: UsersRound, end: true },
           { to: '/dds-process/p2p-summary', label: 'P2P Summary', icon: Table2, end: true },
+          { to: '/dds-process/p2p-op-view', label: 'P2P Op view', icon: UserRound, end: true },
           { to: '/dds-process/triggers', label: 'Triggers', icon: Zap, end: true },
           { to: '/dds-process/shift-dds', label: 'Shift DDS', icon: Clock, end: true },
           { to: '/dds-process/line-compliance', label: 'Line compliance', icon: ClipboardCheck, end: true },

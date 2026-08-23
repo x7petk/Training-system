@@ -80,7 +80,9 @@ export function Plan24ScopeBar() {
         ? 'Plant DDS'
         : p.endsWith('/line-dds') || p.includes('/dds-process/line-dds')
           ? 'Line DDS'
-          : 'Shift DDS'
+          : p.endsWith('/p2p-op-view') || p.includes('/dds-process/p2p-op-view')
+            ? 'P2P Op view'
+            : 'Shift DDS'
   const complianceDateLabel = onSiteCompliance ? 'Site compliance' : 'Line compliance'
   const dateOnlyStripLabel = complianceDayOnly ? complianceDateLabel : ddsDayShiftLabel
 

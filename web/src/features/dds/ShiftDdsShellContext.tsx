@@ -32,7 +32,9 @@ function isDdsDayShiftShellPath(pathname: string): boolean {
     pathname.endsWith('/site-dds') ||
     pathname.includes('/dds-process/site-dds') ||
     pathname.endsWith('/triggers') ||
-    pathname.includes('/dds-process/triggers')
+    pathname.includes('/dds-process/triggers') ||
+    pathname.endsWith('/p2p-op-view') ||
+    pathname.includes('/dds-process/p2p-op-view')
   )
 }
 

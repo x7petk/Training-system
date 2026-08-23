@@ -32,6 +32,42 @@ export function resolveNextShift(
   return { planDate: localYMD(d), shiftKind: sorted[0]!.kind }
 }
 
+export type ShiftScope = { planDate: string; shiftKind: string }
+
+/** Previous roster shift before `shiftKind` on `planDateYmd`; wraps to the last shift on the previous calendar day. */
+export function resolvePreviousShift(
+  planDateYmd: string,
+  shiftKind: string,
+  shifts: ShiftNavRow[],
+): ShiftScope {
+  const sorted = shiftsBySortOrder(shifts)
+  if (sorted.length === 0) return { planDate: planDateYmd, shiftKind }
+  const idx = sorted.findIndex((s) => s.kind === shiftKind)
+  if (idx > 0) {
+    return { planDate: planDateYmd, shiftKind: sorted[idx - 1]!.kind }
+  }
+  const d = parseYmdLocal(planDateYmd)
+  d.setDate(d.getDate() - 1)
+  return { planDate: localYMD(d), shiftKind: sorted[sorted.length - 1]!.kind }
+}
+
+/** Walk back `count` shifts ending at the anchor (oldest first, anchor last). */
+export function resolveLastNShifts(
+  planDateYmd: string,
+  shiftKind: string,
+  shifts: ShiftNavRow[],
+  count: number,
+): ShiftScope[] {
+  const n = Math.max(1, count)
+  const out: ShiftScope[] = []
+  let cur: ShiftScope = { planDate: planDateYmd, shiftKind }
+  for (let i = 0; i < n; i++) {
+    out.unshift(cur)
+    cur = resolvePreviousShift(cur.planDate, cur.shiftKind, shifts)
+  }
+  return out
+}
+
 /**
  * Shift window in browser-local time. Night (e.g. 17:00–05:00) spans to the next calendar day (D1, D14).
  */

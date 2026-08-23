@@ -107,6 +107,9 @@ const DdsP2pPage = lazy(() => import('./pages/DdsP2pPage').then((m) => ({ defaul
 const DdsP2pSummaryPage = lazy(() =>
   import('./pages/DdsP2pSummaryPage').then((m) => ({ default: m.DdsP2pSummaryPage })),
 )
+const DdsP2pOpViewPage = lazy(() =>
+  import('./pages/DdsP2pOpViewPage').then((m) => ({ default: m.DdsP2pOpViewPage })),
+)
 const ShiftDdsPage = lazy(() => import('./pages/ShiftDdsPage').then((m) => ({ default: m.ShiftDdsPage })))
 const LineDdsPage = lazy(() => import('./pages/LineDdsPage').then((m) => ({ default: m.LineDdsPage })))
 const PlantDdsPage = lazy(() => import('./pages/PlantDdsPage').then((m) => ({ default: m.PlantDdsPage })))
@@ -361,6 +364,7 @@ export default function App() {
             <Route path="dds-actions" element={<DdsActionsPage />} />
             <Route path="p2p" element={<DdsP2pPage />} />
             <Route path="p2p-summary" element={<DdsP2pSummaryPage />} />
+            <Route path="p2p-op-view" element={<DdsP2pOpViewPage />} />
             <Route path="triggers" element={<DdsTriggersPage />} />
             <Route path="shift-dds" element={<ShiftDdsPage />} />
             <Route path="line-compliance" element={<LineCompliancePage />} />
