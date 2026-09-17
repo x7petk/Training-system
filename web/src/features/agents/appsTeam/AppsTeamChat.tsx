@@ -38,7 +38,7 @@ export function AppsTeamChat(props: {
 
       <div
         ref={listRef}
-        className="min-h-[240px] max-h-[min(480px,50vh)] space-y-3 overflow-y-auto px-4 py-3"
+        className="min-h-[120px] max-h-[min(240px,25vh)] space-y-3 overflow-y-auto px-4 py-3"
       >
         {chatMessages.length === 0 ? (
           <p className="text-sm text-muted">
