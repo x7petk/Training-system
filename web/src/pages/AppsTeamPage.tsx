@@ -16,12 +16,17 @@ import {
 } from '../features/agents/appsTeam/liveBoardTheme'
 import { AppsTeamTicketDrawer } from '../features/agents/appsTeam/AppsTeamTicketDrawer'
 import { useAppsTeam } from '../features/agents/appsTeam/useAppsTeam'
+import { filterTicketChatMessages } from '../features/agents/appsTeam/appsTeamChatUtils'
+
 import type { AppsTeamChatTurn, AppsTeamTicket, AppsTeamTicketStatus } from '../features/agents/appsTeam/types'
 
-function toChatTurns(messages: { from_role: string; body: string; ticket_id: string | null }[]): AppsTeamChatTurn[] {
+function toChatTurns(
+  messages: { from_role: string; body: string; ticket_id: string | null }[],
+  ticketId: string,
+): AppsTeamChatTurn[] {
   const turns: AppsTeamChatTurn[] = []
   for (const m of messages) {
-    if (m.ticket_id != null) continue
+    if (m.ticket_id !== ticketId) continue
     if (m.from_role === 'customer') turns.push({ role: 'user', content: m.body })
     else if (m.from_role === 'pm') turns.push({ role: 'assistant', content: m.body })
   }
@@ -89,6 +94,10 @@ export function AppsTeamPage() {
     () => tickets.find((t) => t.id === selectedId) ?? null,
     [tickets, selectedId],
   )
+
+  useEffect(() => {
+    setInput('')
+  }, [selectedId])
 
   const runAdvance = useCallback(
     async (ticket: AppsTeamTicket, note?: string) => {
@@ -183,29 +192,35 @@ export function AppsTeamPage() {
 
   const sendChat = useCallback(async () => {
     const q = input.trim()
-    if (!q || sending || !session?.access_token) return
+    if (!q || sending || !session?.access_token || !selected) return
     setSending(true)
     setInvokeError(null)
     setInput('')
 
-    await addMessage({ from_role: 'customer', to_role: 'pm', body: q, ticket_id: null })
+    await addMessage({
+      from_role: 'customer',
+      to_role: 'pm',
+      body: q,
+      ticket_id: selected.id,
+    })
 
-    const history = toChatTurns([
-      ...messages
-        .filter((m) => m.ticket_id == null)
-        .map((m) => ({ from_role: m.from_role, body: m.body, ticket_id: m.ticket_id })),
-      { from_role: 'customer', body: q, ticket_id: null },
-    ])
-
-    const waitingTicket = tickets.find((t) => t.status === 'clarify' && t.artifacts.awaitingCustomer)
-    const activeTicket =
-      waitingTicket ||
-      (selected && selected.status !== 'done' ? selected : tickets.find((t) => t.status !== 'done') ?? null)
+    const ticketMessages = filterTicketChatMessages(messages, selected.id)
+    const history = toChatTurns(
+      [
+        ...ticketMessages.map((m) => ({
+          from_role: m.from_role,
+          body: m.body,
+          ticket_id: m.ticket_id,
+        })),
+        { from_role: 'customer', body: q, ticket_id: selected.id },
+      ],
+      selected.id,
+    )
 
     const { data, errorMessage } = await invokeAppsTeamChat(
       session.access_token,
       history,
-      activeTicket,
+      selected,
     )
     if (errorMessage || !data) {
       setInvokeError(errorMessage || 'Chat failed')
@@ -217,27 +232,26 @@ export function AppsTeamPage() {
       from_role: 'pm',
       to_role: 'customer',
       body: data.reply,
-      ticket_id: null,
+      ticket_id: selected.id,
       meta: {
         kind: data.needsCustomerInput ? 'customer_question' : data.readyForTicket ? 'milestone' : 'chat',
       },
     })
 
     // Customer answered → clear awaiting and resume that ticket.
-    if (waitingTicket && !data.needsCustomerInput) {
+    if (selected.status === 'clarify' && selected.artifacts.awaitingCustomer && !data.needsCustomerInput) {
       const resumed = {
-        ...waitingTicket,
+        ...selected,
         artifacts: {
-          ...waitingTicket.artifacts,
+          ...selected.artifacts,
           awaitingCustomer: false,
           lastCustomerAnswer: q,
-          lastAgentQuestion: `${waitingTicket.artifacts.lastAgentQuestion ?? ''}\n\nCustomer answer:\n${q}`,
+          lastAgentQuestion: `${selected.artifacts.lastAgentQuestion ?? ''}\n\nCustomer answer:\n${q}`,
         },
       }
-      // Persist artifact clear via a light update through advance path.
-      await applyOrchestration(waitingTicket, {
+      await applyOrchestration(selected, {
         action: 'advance',
-        fromStatus: waitingTicket.status,
+        fromStatus: selected.status,
         toStatus: 'clarify',
         activeAgent: 'pm',
         notifyCustomer: false,
@@ -263,9 +277,9 @@ export function AppsTeamPage() {
         ],
       })
       void runAdvance({
-        ...waitingTicket,
+        ...selected,
         artifacts: {
-          ...waitingTicket.artifacts,
+          ...selected.artifacts,
           awaitingCustomer: false,
           lastCustomerAnswer: q,
           lastAgentQuestion: resumed.artifacts.lastAgentQuestion as string,
@@ -281,8 +295,8 @@ export function AppsTeamPage() {
           from_role: 'pm',
           to_role: 'customer',
           body: `Ticket “${created.title}” is in progress. I’ll only message you if I need a decision.`,
-          ticket_id: null,
-          meta: { kind: 'milestone', ticket_id: created.id },
+          ticket_id: created.id,
+          meta: { kind: 'milestone' },
         })
         void runAdvance(created)
       }
@@ -296,7 +310,6 @@ export function AppsTeamPage() {
     addMessage,
     messages,
     selected,
-    tickets,
     createTicketFromDraft,
     runAdvance,
     applyOrchestration,
@@ -331,54 +344,58 @@ export function AppsTeamPage() {
         </div>
       )}
 
-      <div className="flex w-full flex-col gap-6">
-        <section className="w-full">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-6">
+          <div className={LIVE_BOARD_WRAPPER}>
+            <div className={LIVE_BOARD_HEADER}>
+              <h2 className={LIVE_BOARD_TITLE}>Live board</h2>
+              <span className={LIVE_BOARD_COUNT_BADGE}>{tickets.length} tickets</span>
+            </div>
+            <AppsTeamKanban
+              tickets={tickets}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              variant="live-board"
+            />
+          </div>
+
+          <section className="w-full rounded-xl border border-border bg-surface">
+            <div className="border-b border-border px-4 py-3">
+              <h2 className="text-sm font-semibold text-fg">Information</h2>
+              <p className="text-xs text-muted">
+                Requirements, progress, and agent activity for the selected ticket.
+              </p>
+            </div>
+
+            {selected ? (
+              <AppsTeamTicketDrawer
+                ticket={selected}
+                events={events}
+                busy={pipelineBusy}
+                onClose={() => setSelectedId(null)}
+                onDelete={async () => {
+                  await deleteTicket(selected.id)
+                  setSelectedId(null)
+                }}
+              />
+            ) : (
+              <div className="flex items-center justify-center px-4 py-12 text-sm text-muted">
+                Select a ticket to see requirements and handoffs.
+              </div>
+            )}
+          </section>
+        </div>
+
+        <section className="w-full lg:max-w-none">
           <AppsTeamChat
+            selectedTicket={selected}
             messages={messages}
             input={input}
             sending={sending}
             onInput={setInput}
             onSend={() => void sendChat()}
+            className="lg:sticky lg:top-4"
           />
-        </section>
-
-        <div className={LIVE_BOARD_WRAPPER}>
-          <div className={LIVE_BOARD_HEADER}>
-            <h2 className={LIVE_BOARD_TITLE}>Live board</h2>
-            <span className={LIVE_BOARD_COUNT_BADGE}>{tickets.length} tickets</span>
-          </div>
-          <AppsTeamKanban
-            tickets={tickets}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            variant="live-board"
-          />
-        </div>
-
-        <section className="w-full rounded-xl border border-border bg-surface">
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-semibold text-fg">Information</h2>
-            <p className="text-xs text-muted">
-              Requirements, progress, and agent activity for the selected ticket.
-            </p>
-          </div>
-
-          {selected ? (
-            <AppsTeamTicketDrawer
-              ticket={selected}
-              events={events}
-              busy={pipelineBusy}
-              onClose={() => setSelectedId(null)}
-              onDelete={async () => {
-                await deleteTicket(selected.id)
-                setSelectedId(null)
-              }}
-            />
-          ) : (
-            <div className="flex items-center justify-center px-4 py-12 text-sm text-muted">
-              Select a ticket to see requirements and handoffs.
-            </div>
-          )}
         </section>
       </div>
     </div>
