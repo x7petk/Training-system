@@ -6,7 +6,7 @@ import {
   invokeAppsTeamChat,
   invokeAppsTeamSync,
 } from '../lib/appsTeamProxy'
-import { AppsTeamChat } from '../features/agents/appsTeam/AppsTeamChat'
+import { AppsTeamChat, getTicketChatMessages } from '../features/agents/appsTeam/AppsTeamChat'
 import { AppsTeamKanban } from '../features/agents/appsTeam/AppsTeamKanban'
 import {
   LIVE_BOARD_COUNT_BADGE,
@@ -89,6 +89,10 @@ export function AppsTeamPage() {
     () => tickets.find((t) => t.id === selectedId) ?? null,
     [tickets, selectedId],
   )
+
+  useEffect(() => {
+    if (!selectedId) setInput('')
+  }, [selectedId])
 
   const runAdvance = useCallback(
     async (ticket: AppsTeamTicket, note?: string) => {
@@ -183,24 +187,32 @@ export function AppsTeamPage() {
 
   const sendChat = useCallback(async () => {
     const q = input.trim()
-    if (!q || sending || !session?.access_token) return
+    if (!q || sending || !session?.access_token || !selected) return
     setSending(true)
     setInvokeError(null)
     setInput('')
 
-    await addMessage({ from_role: 'customer', to_role: 'pm', body: q, ticket_id: null })
+    await addMessage({
+      from_role: 'customer',
+      to_role: 'pm',
+      body: q,
+      ticket_id: null,
+      meta: { ticket_id: selected.id },
+    })
 
+    const ticketMessages = getTicketChatMessages(messages, selected.id)
     const history = toChatTurns([
-      ...messages
-        .filter((m) => m.ticket_id == null)
-        .map((m) => ({ from_role: m.from_role, body: m.body, ticket_id: m.ticket_id })),
+      ...ticketMessages.map((m) => ({ from_role: m.from_role, body: m.body, ticket_id: m.ticket_id })),
       { from_role: 'customer', body: q, ticket_id: null },
     ])
 
     const waitingTicket = tickets.find((t) => t.status === 'clarify' && t.artifacts.awaitingCustomer)
     const activeTicket =
-      waitingTicket ||
-      (selected && selected.status !== 'done' ? selected : tickets.find((t) => t.status !== 'done') ?? null)
+      waitingTicket?.id === selected.id
+        ? waitingTicket
+        : selected.status !== 'done'
+          ? selected
+          : waitingTicket || null
 
     const { data, errorMessage } = await invokeAppsTeamChat(
       session.access_token,
@@ -220,6 +232,7 @@ export function AppsTeamPage() {
       ticket_id: null,
       meta: {
         kind: data.needsCustomerInput ? 'customer_question' : data.readyForTicket ? 'milestone' : 'chat',
+        ticket_id: selected.id,
       },
     })
 
@@ -334,6 +347,7 @@ export function AppsTeamPage() {
       <div className="flex w-full flex-col gap-6">
         <section className="w-full">
           <AppsTeamChat
+            selectedTicketId={selectedId}
             messages={messages}
             input={input}
             sending={sending}
