@@ -18,6 +18,13 @@ async function postAiVideoCreator(
     try {
       parsed = JSON.parse(text) as unknown
     } catch {
+      if (res.status === 504 || res.status === 502 || res.status === 503) {
+        return {
+          data: null,
+          errorMessage:
+            'Sora took too long to answer. Your video is saved and keeps going in the background — this page will pick it up again in a moment.',
+        }
+      }
       return {
         data: null,
         errorMessage: `AI Video Creator returned non-JSON (HTTP ${res.status}): ${text.slice(0, 280)}`,

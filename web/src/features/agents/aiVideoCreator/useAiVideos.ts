@@ -69,9 +69,13 @@ function normalizeJob(row: DbJob): AiVideoJob {
   }
 }
 
+const SIGNED_URL_TTL_SECONDS = 6 * 60 * 60
+
 async function signPath(path: string | null): Promise<string | null> {
   if (!path) return null
-  const { data, error } = await supabase.storage.from(AI_VIDEO_BUCKET).createSignedUrl(path, 60 * 60)
+  const { data, error } = await supabase.storage
+    .from(AI_VIDEO_BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS)
   if (error) return null
   return data.signedUrl
 }
@@ -166,6 +170,23 @@ export function useAiVideos() {
     [user],
   )
 
+  const removeUploadedImages = useCallback(async (paths: string[]) => {
+    if (paths.length === 0) return
+    await supabase.storage.from(AI_VIDEO_BUCKET).remove([...new Set(paths)])
+  }, [])
+
+  /** Source pictures of a saved job, as files, so it can be edited and run again. */
+  const loadSourceStills = useCallback(async (job: AiVideoJob): Promise<File[]> => {
+    const paths = job.image_paths.length > 0 ? job.image_paths : job.image_path ? [job.image_path] : []
+    const files: File[] = []
+    for (const [index, path] of paths.entries()) {
+      const { data, error: dlErr } = await supabase.storage.from(AI_VIDEO_BUCKET).download(path)
+      if (dlErr || !data) throw new Error(dlErr?.message || 'Could not load a picture from that video.')
+      files.push(new File([data], `scene-${index + 1}.jpg`, { type: data.type || 'image/jpeg' }))
+    }
+    return files
+  }, [])
+
   const saveJoinedVideo = useCallback(
     async (job: AiVideoJob, blob: Blob, ext: 'mp4' | 'webm'): Promise<AiVideoJobView | null> => {
       if (!user) return null
@@ -215,5 +236,16 @@ export function useAiVideos() {
     return true
   }, [])
 
-  return { rows, loading, error, reload: load, upsertJob, uploadSourceImage, saveJoinedVideo, deleteJob }
+  return {
+    rows,
+    loading,
+    error,
+    reload: load,
+    upsertJob,
+    uploadSourceImage,
+    removeUploadedImages,
+    loadSourceStills,
+    saveJoinedVideo,
+    deleteJob,
+  }
 }

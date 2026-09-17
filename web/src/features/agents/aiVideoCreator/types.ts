@@ -8,15 +8,15 @@ export const AI_VIDEO_SECONDS = [
 ] as const
 
 export const AI_VIDEO_MODELS = [
-  { id: 'sora-2', label: 'Sora', hint: 'Faster' },
-  { id: 'sora-2-pro', label: 'Sora Pro', hint: 'Higher quality' },
+  { id: 'sora-2', label: 'Sora', hint: 'Faster, standard shapes' },
+  { id: 'sora-2-pro', label: 'Sora Pro', hint: 'Higher quality, all shapes' },
 ] as const
 
 export const AI_VIDEO_SIZES = [
-  { id: '1280x720', label: 'Landscape 16:9', hint: '1280 × 720', width: 1280, height: 720 },
-  { id: '720x1280', label: 'Portrait 9:16', hint: '720 × 1280', width: 720, height: 1280 },
-  { id: '1792x1024', label: 'Wide landscape', hint: '1792 × 1024', width: 1792, height: 1024 },
-  { id: '1024x1792', label: 'Tall portrait', hint: '1024 × 1792', width: 1024, height: 1792 },
+  { id: '1280x720', label: 'Landscape 16:9', hint: '1280 × 720', width: 1280, height: 720, proOnly: false },
+  { id: '720x1280', label: 'Portrait 9:16', hint: '720 × 1280', width: 720, height: 1280, proOnly: false },
+  { id: '1792x1024', label: 'Wide landscape', hint: '1792 × 1024', width: 1792, height: 1024, proOnly: true },
+  { id: '1024x1792', label: 'Tall portrait', hint: '1024 × 1792', width: 1024, height: 1792, proOnly: true },
 ] as const
 
 export type AiVideoSeconds = (typeof AI_VIDEO_SECONDS)[number]['id']
@@ -70,6 +70,17 @@ export function videoModelMeta(model: string) {
 
 export function videoSizeMeta(size: string) {
   return AI_VIDEO_SIZES.find((item) => item.id === size) ?? AI_VIDEO_SIZES[0]
+}
+
+/** Sora only renders the two standard shapes; the wide/tall ones need Sora Pro. */
+export function modelSupportsSize(model: AiVideoModel, size: AiVideoSize): boolean {
+  return model === 'sora-2-pro' || !videoSizeMeta(size).proOnly
+}
+
+/** Closest shape the given model can render, so switching model never sends an invalid pair. */
+export function sizeForModel(model: AiVideoModel, size: AiVideoSize): AiVideoSize {
+  if (modelSupportsSize(model, size)) return size
+  return videoSizeMeta(size).width >= videoSizeMeta(size).height ? '1280x720' : '720x1280'
 }
 
 export function asPathList(value: unknown): string[] {

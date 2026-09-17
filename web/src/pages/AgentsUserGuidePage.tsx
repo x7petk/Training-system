@@ -65,8 +65,10 @@ const functionality = [
   {
     title: 'AI Video Creator (live)',
     body: [
-      'Upload one or more stills in scene order: from this computer, Take photo / Photo library on a phone, or From phone (QR/link) to send camera-roll pictures into the same login. Write what should happen. Pick Sora or Sora Pro, duration (4 / 8 / 12 seconds per scene), and shape (landscape or portrait).',
+      'Upload one or more stills in scene order: from this computer, Take photo / Photo library on a phone, or From phone (QR/link) to send camera-roll pictures into the same login. Write what should happen. Pick Sora or Sora Pro, duration (4 / 8 / 12 seconds per scene), and shape. Sora renders landscape 16:9 and portrait 9:16; the wide and tall shapes need Sora Pro, so choosing one switches the model for you.',
       'Each picture becomes its own Sora clip (first frame). Several pictures are then joined into one video. Finished files stay under Your videos for replay and download. Clips belong to your login.',
+      'Edit & run again reloads any saved video’s pictures, description, and settings into the form. Changing anything and creating makes a new video — the original stays in your history.',
+      'Sora refuses pictures where a person’s face is visible, plus real or famous people, copyrighted characters, and brand logos; those attempts come back as blocked by the safety system. Note that OpenAI retires the Sora 2 API on 24 September 2026.',
     ],
   },
   {

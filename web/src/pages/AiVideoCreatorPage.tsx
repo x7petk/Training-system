@@ -7,6 +7,8 @@ import {
   Copy,
   Download,
   Image as ImageIcon,
+  Info,
+  Pencil,
   Smartphone,
   Sparkles,
   Trash2,
@@ -28,6 +30,8 @@ import {
   jobNeedsStitch,
   jobSceneCount,
   jobTotalSeconds,
+  modelSupportsSize,
+  sizeForModel,
   videoModelMeta,
   videoSizeMeta,
   type AiVideoJobView,
@@ -65,8 +69,11 @@ async function downloadFromUrl(url: string, filename: string) {
   const a = document.createElement('a')
   a.href = href
   a.download = filename
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(href)
+  a.remove()
+  // Safari and Firefox cancel the download if the blob URL is released too early.
+  window.setTimeout(() => URL.revokeObjectURL(href), 10_000)
 }
 
 function safeFileName(title: string): string {
@@ -75,7 +82,17 @@ function safeFileName(title: string): string {
 
 export function AiVideoCreatorPage() {
   const { session, user } = useAuth()
-  const { rows, loading, error: rowsError, upsertJob, uploadSourceImage, saveJoinedVideo, deleteJob } = useAiVideos()
+  const {
+    rows,
+    loading,
+    error: rowsError,
+    upsertJob,
+    uploadSourceImage,
+    removeUploadedImages,
+    loadSourceStills,
+    saveJoinedVideo,
+    deleteJob,
+  } = useAiVideos()
 
   const [stills, setStills] = useState<PickedStill[]>([])
   const [prompt, setPrompt] = useState('')
@@ -83,21 +100,27 @@ export function AiVideoCreatorPage() {
   const [model, setModel] = useState<AiVideoModel>('sora-2')
   const [size, setSize] = useState<AiVideoSize>('1280x720')
   const [creating, setCreating] = useState(false)
+  const [reusingId, setReusingId] = useState<string | null>(null)
+  const [reusedFrom, setReusedFrom] = useState<string | null>(null)
   const [stitchingId, setStitchingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const [phoneOpen, setPhoneOpen] = useState(false)
   const [phoneUrl, setPhoneUrl] = useState('')
   const [copied, setCopied] = useState(false)
+  const formRef = useRef<HTMLElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const cameraRef = useRef<HTMLInputElement | null>(null)
   const libraryRef = useRef<HTMLInputElement | null>(null)
   const syncingRef = useRef<Set<string>>(new Set())
   const stitchingRef = useRef<Set<string>>(new Set())
+  const stitchFailedRef = useRef<Set<string>>(new Set())
   const activeIdRef = useRef<string | null>(null)
   const stillsRef = useRef<PickedStill[]>([])
   const seenInboxRef = useRef<Set<string>>(new Set())
+  const syncErrorRef = useRef<string | null>(null)
 
   useEffect(() => {
     activeIdRef.current = activeId
@@ -127,8 +150,8 @@ export function AiVideoCreatorPage() {
           if (cancelled) return
           if (seenInboxRef.current.has(item.id)) continue
           if (stillsRef.current.length >= AI_VIDEO_MAX_IMAGES) break
-          seenInboxRef.current.add(item.id)
           const file = await consumePhoneInboxItem(item)
+          seenInboxRef.current.add(item.id)
           if (cancelled) return
           const previewUrl = URL.createObjectURL(file)
           setStills((prev) => {
@@ -188,7 +211,15 @@ export function AiVideoCreatorPage() {
       try {
         const { data, errorMessage } = await invokeAiVideoSync(session.access_token, id)
         if (data?.job) await upsertJob(data.job)
-        if (errorMessage && id === activeIdRef.current) setError(errorMessage)
+        if (id !== activeIdRef.current) return
+        if (errorMessage) {
+          syncErrorRef.current = errorMessage
+          setError(errorMessage)
+        } else if (syncErrorRef.current) {
+          const stale = syncErrorRef.current
+          syncErrorRef.current = null
+          setError((current) => (current === stale ? null : current))
+        }
       } finally {
         syncingRef.current.delete(id)
       }
@@ -209,7 +240,7 @@ export function AiVideoCreatorPage() {
     void tick()
     const timer = window.setInterval(() => {
       void tick()
-    }, 4500)
+    }, 6000)
     return () => {
       cancelled = true
       window.clearInterval(timer)
@@ -217,8 +248,11 @@ export function AiVideoCreatorPage() {
   }, [pendingKey, session?.access_token, syncJob])
 
   const stitchJob = useCallback(
-    async (job: AiVideoJobView) => {
+    async (job: AiVideoJobView, manual = false) => {
       if (stitchingRef.current.has(job.id) || job.segmentUrls.length < 2) return
+      // A failed join must not retry on every poll; the user can retry with the button.
+      if (!manual && stitchFailedRef.current.has(job.id)) return
+      if (manual) stitchFailedRef.current.delete(job.id)
       stitchingRef.current.add(job.id)
       setStitchingId(job.id)
       try {
@@ -232,9 +266,12 @@ export function AiVideoCreatorPage() {
         const joined = await stitchVideoBlobs(blobs, job.size)
         const saved = await saveJoinedVideo(job, joined.blob, joined.ext)
         if (!saved) throw new Error('Could not save the joined video.')
+        stitchFailedRef.current.delete(job.id)
       } catch (e) {
+        stitchFailedRef.current.add(job.id)
         if (job.id === activeIdRef.current) {
-          setError(e instanceof Error ? e.message : String(e))
+          const detail = e instanceof Error ? e.message : String(e)
+          setError(`${detail} The scenes are safe — use “Join scenes into one video” to try again.`)
         }
       } finally {
         stitchingRef.current.delete(job.id)
@@ -263,26 +300,83 @@ export function AiVideoCreatorPage() {
       for (const file of incoming) {
         converted.push(await fileToJpegFile(file))
       }
-      setStills((prev) => {
-        const room = AI_VIDEO_MAX_IMAGES - prev.length
-        const next = converted.slice(0, Math.max(0, room)).map((file) => ({
-          id: crypto.randomUUID(),
-          file,
-          previewUrl: URL.createObjectURL(file),
-        }))
-        return [...prev, ...next]
-      })
+      const room = Math.max(0, AI_VIDEO_MAX_IMAGES - stillsRef.current.length)
+      const accepted = converted.slice(0, room)
+      const skipped = converted.length - accepted.length
+      const next = accepted.map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }))
+      if (next.length > 0) {
+        setStills((prev) => [...prev, ...next].slice(0, AI_VIDEO_MAX_IMAGES))
+      }
+      setNotice(
+        skipped > 0
+          ? `${skipped} picture${skipped === 1 ? '' : 's'} not added — ${AI_VIDEO_MAX_IMAGES} is the limit per video.`
+          : null,
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
   }
 
+  function clearStills() {
+    stillsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl))
+    setStills([])
+  }
+
+  /** Load a saved video's pictures and settings back into the form so it can be changed and run again. */
+  async function handleReuse(job: AiVideoJobView) {
+    if (reusingId) return
+    setReusingId(job.id)
+    setError(null)
+    setNotice(null)
+    try {
+      const files = await loadSourceStills(job)
+      if (files.length === 0) throw new Error('That video has no saved pictures to reuse.')
+      clearStills()
+      setStills(
+        files.map((file) => ({
+          id: crypto.randomUUID(),
+          file,
+          previewUrl: URL.createObjectURL(file),
+        })),
+      )
+      setPrompt(job.prompt)
+      setSeconds(job.seconds)
+      setModel(job.model)
+      setSize(sizeForModel(job.model, job.size))
+      setReusedFrom(job.title)
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setReusingId(null)
+    }
+  }
+
+  function handleModelChange(next: AiVideoModel) {
+    setModel(next)
+    const nextSize = sizeForModel(next, size)
+    if (nextSize !== size) {
+      setSize(nextSize)
+      setNotice(`${videoSizeMeta(size).label} needs Sora Pro, so the shape moved to ${videoSizeMeta(nextSize).label}.`)
+    }
+  }
+
+  function handleSizeChange(next: AiVideoSize) {
+    setSize(next)
+    if (!modelSupportsSize(model, next)) {
+      setModel('sora-2-pro')
+      setNotice(`${videoSizeMeta(next).label} is a Sora Pro shape, so the model switched to Sora Pro.`)
+    }
+  }
+
   function removeStill(id: string) {
-    setStills((prev) => {
-      const found = prev.find((item) => item.id === id)
-      if (found) URL.revokeObjectURL(found.previewUrl)
-      return prev.filter((item) => item.id !== id)
-    })
+    const found = stillsRef.current.find((item) => item.id === id)
+    if (found) URL.revokeObjectURL(found.previewUrl)
+    setStills((prev) => prev.filter((item) => item.id !== id))
   }
 
   function moveStill(id: string, direction: -1 | 1) {
@@ -312,31 +406,38 @@ export function AiVideoCreatorPage() {
     }
     setCreating(true)
     setError(null)
+    setNotice(null)
     const jobId = crypto.randomUUID()
+    const uploaded: string[] = []
     try {
-      const imagePaths: string[] = []
+      const safeSize = sizeForModel(model, size)
       for (let i = 0; i < stills.length; i++) {
-        const frame = await resizeImageToVideoFrame(stills[i].file, size)
-        imagePaths.push(await uploadSourceImage(jobId, frame, i))
+        const frame = await resizeImageToVideoFrame(stills[i].file, safeSize)
+        uploaded.push(await uploadSourceImage(jobId, frame, i))
       }
       const { data, errorMessage } = await invokeAiVideoCreate(session.access_token, {
         id: jobId,
         prompt: prompt.trim(),
         seconds,
-        size,
+        size: safeSize,
         model,
-        imagePath: imagePaths[0],
-        imagePaths,
+        imagePath: uploaded[0],
+        imagePaths: uploaded,
       })
       if (data?.job) {
         await upsertJob(data.job)
         setActiveId(data.job.id)
+        setReusedFrom(null)
+      } else {
+        // Nothing was saved, so don't leave the uploaded pictures behind.
+        await removeUploadedImages(uploaded)
       }
       if (errorMessage) {
         setError(errorMessage)
         return
       }
     } catch (e) {
+      await removeUploadedImages(uploaded).catch(() => undefined)
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setCreating(false)
@@ -354,6 +455,7 @@ export function AiVideoCreatorPage() {
   const canSubmit = Boolean(stills.length > 0 && prompt.trim() && session?.access_token && !creating)
   const activeStitching = Boolean(active && stitchingId === active.id)
   const activeScenes = active ? jobSceneCount(active) : 0
+  const activeStarted = active ? active.openai_video_ids.length : 0
 
   return (
     <div className="space-y-4 pb-24 md:space-y-6 md:pb-0">
@@ -369,7 +471,27 @@ export function AiVideoCreatorPage() {
         </p>
       </header>
 
-      <section className="rounded-2xl border border-border bg-surface-raised/40 p-3 sm:p-6">
+      <section ref={formRef} className="rounded-2xl border border-border bg-surface-raised/40 p-3 sm:p-6">
+        {reusedFrom ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent/40 bg-accent-dim/25 px-3 py-2 text-sm">
+            <span className="text-fg">
+              Editing a copy of <span className="font-medium">{reusedFrom}</span>. Creating makes a new video and keeps
+              the original.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setReusedFrom(null)
+                clearStills()
+                setPrompt('')
+              }}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-border bg-canvas px-2.5 py-1 text-xs font-medium text-fg"
+            >
+              <X className="size-3.5" />
+              Start blank
+            </button>
+          </div>
+        ) : null}
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           <div className="space-y-4">
             <div className="space-y-2 text-sm">
@@ -551,6 +673,13 @@ export function AiVideoCreatorPage() {
                   ))}
                 </ul>
               ) : null}
+              <p className="flex gap-2 rounded-lg border border-border bg-canvas px-3 py-2 text-xs text-muted">
+                <Info className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  Sora refuses pictures where a person’s face is visible, plus real or famous people, copyrighted
+                  characters, and brand logos. Products, places, animals, and drawings work best.
+                </span>
+              </p>
             </div>
 
             <label className="block space-y-2 text-sm">
@@ -575,7 +704,7 @@ export function AiVideoCreatorPage() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setModel(item.id)}
+                    onClick={() => handleModelChange(item.id)}
                     className={`min-h-14 rounded-lg border px-3 py-2 text-left text-sm transition ${
                       model === item.id
                         ? 'border-accent bg-accent text-white'
@@ -625,7 +754,7 @@ export function AiVideoCreatorPage() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setSize(item.id)}
+                    onClick={() => handleSizeChange(item.id)}
                     className={`min-h-14 rounded-lg border px-3 py-2 text-left text-sm transition ${
                       size === item.id
                         ? 'border-accent bg-accent text-white'
@@ -635,6 +764,7 @@ export function AiVideoCreatorPage() {
                     <span className="block font-medium">{item.label}</span>
                     <span className={`block text-xs ${size === item.id ? 'text-white/80' : 'text-muted'}`}>
                       {item.hint}
+                      {item.proOnly ? ' · Sora Pro' : ''}
                     </span>
                   </button>
                 ))}
@@ -643,13 +773,20 @@ export function AiVideoCreatorPage() {
 
             <p className="text-xs text-muted">
               One picture usually takes 1–3 minutes. Several pictures take longer because each scene is
-              rendered, then joined.
+              rendered, then joined. Sora Pro is slower and costs more than Sora.
+            </p>
+            <p className="text-xs text-muted">
+              Heads-up: OpenAI retires the Sora 2 API on 24 September 2026, so this agent needs a new video model
+              after that date.
             </p>
           </div>
         </div>
 
         {error ? (
           <p className="mt-4 rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>
+        ) : null}
+        {notice ? (
+          <p className="mt-4 rounded-lg border border-border bg-canvas px-3 py-2 text-sm text-muted">{notice}</p>
         ) : null}
         {rowsError ? (
           <p className="mt-4 rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger">
@@ -695,16 +832,19 @@ export function AiVideoCreatorPage() {
               <p className="mt-2 text-xs text-muted">
                 {activeStitching
                   ? 'Scenes are ready. Joining them into one video…'
-                  : activeScenes > 1
-                    ? `Sora is rendering ${activeScenes} scenes. You can keep working.`
-                    : 'Sora is rendering this clip. You can keep working.'}
+                  : activeStarted < activeScenes
+                    ? `Sending scene ${activeStarted + 1} of ${activeScenes} to Sora…`
+                    : activeScenes > 1
+                      ? `Sora is rendering ${activeScenes} scenes. You can keep working.`
+                      : 'Sora is rendering this clip. You can keep working.'}
               </p>
             </div>
           ) : null}
 
-          {active.status === 'failed' && active.error_message ? (
+          {active.status === 'failed' ? (
             <p className="mt-4 rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger">
-              {active.error_message}
+              {active.error_message ||
+                'Sora could not finish this video. Change the picture or the description, then run it again.'}
             </p>
           ) : null}
 
@@ -712,7 +852,7 @@ export function AiVideoCreatorPage() {
             <div className="mt-4">
               <button
                 type="button"
-                onClick={() => void stitchJob(active)}
+                onClick={() => void stitchJob(active, true)}
                 className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-base font-semibold text-white sm:w-auto sm:min-h-0 sm:rounded-lg sm:py-2 sm:text-sm"
               >
                 Join scenes into one video
@@ -787,6 +927,15 @@ export function AiVideoCreatorPage() {
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                 <button
                   type="button"
+                  disabled={reusingId === active.id}
+                  onClick={() => void handleReuse(active)}
+                  className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Pencil className="size-4" />
+                  {reusingId === active.id ? 'Loading…' : 'Edit & run again'}
+                </button>
+                <button
+                  type="button"
                   disabled={!active.videoUrl}
                   onClick={() => {
                     if (!active.videoUrl) return
@@ -855,6 +1004,17 @@ export function AiVideoCreatorPage() {
                       </span>
                     </div>
                   </button>
+                  <div className="border-t border-border px-3 py-2">
+                    <button
+                      type="button"
+                      disabled={reusingId === job.id}
+                      onClick={() => void handleReuse(job)}
+                      className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-border bg-canvas px-3 py-1.5 text-xs font-medium text-fg hover:border-accent/40 disabled:opacity-60"
+                    >
+                      <Pencil className="size-3.5" />
+                      {reusingId === job.id ? 'Loading…' : 'Edit & run again'}
+                    </button>
+                  </div>
                 </article>
               )
             })}
