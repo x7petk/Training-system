@@ -90,6 +90,18 @@ export default defineConfig(({ mode }) => {
               })
             },
           },
+          '/api/ai-video-studio': {
+            target,
+            changeOrigin: true,
+            secure: true,
+            rewrite: () => '/functions/v1/ai-video-studio',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            configure: (proxy: any) => {
+              proxy.on('proxyReq', (proxyReq: { setHeader: (k: string, v: string) => void }) => {
+                proxyReq.setHeader('apikey', anon)
+              })
+            },
+          },
           '/api/bms-brain-ai': {
             target,
             changeOrigin: true,

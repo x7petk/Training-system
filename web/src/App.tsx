@@ -175,6 +175,9 @@ const KpiCascadePage = lazy(() =>
 const StandardWorkProcessPage = lazy(() =>
   import('./pages/StandardWorkProcessPage').then((m) => ({ default: m.StandardWorkProcessPage })),
 )
+const AiVideoStudioPage = lazy(() =>
+  import('./pages/AiVideoStudioPage').then((m) => ({ default: m.AiVideoStudioPage })),
+)
 import { DdsAdminRoute } from './components/DdsAdminRoute'
 import { DdsProcessLayout } from './components/DdsProcessLayout'
 import { ProblemSolveAdminRoute } from './components/ProblemSolveAdminRoute'
@@ -334,7 +337,8 @@ export default function App() {
               </SectionAccessRoute>
             }
           >
-            <Route index element={<Navigate to="apps-team" replace />} />
+            <Route index element={<Navigate to="ai-video-studio" replace />} />
+            <Route path="ai-video-studio" element={<AiVideoStudioPage />} />
             <Route path="apps-team" element={<AppsTeamPage />} />
             <Route path="problem-solve-advisor" element={<AgentsToolPage title="Problem solve advisor" />} />
             <Route path="planner" element={<AgentsToolPage title="Planner" />} />
