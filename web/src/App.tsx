@@ -163,6 +163,9 @@ import { MasterDataPeoplePage } from './pages/MasterDataPeoplePage'
 import { AgentsLayout } from './components/AgentsLayout'
 import { AgentsToolPage } from './pages/AgentsToolPage'
 import { UxUiExpertPage } from './pages/UxUiExpertPage'
+const AiVideoCreatorPage = lazy(() =>
+  import('./pages/AiVideoCreatorPage').then((m) => ({ default: m.AiVideoCreatorPage })),
+)
 const RoadMapBuilderPage = lazy(() =>
   import('./pages/RoadMapBuilderPage').then((m) => ({ default: m.RoadMapBuilderPage })),
 )
@@ -342,6 +345,7 @@ export default function App() {
             <Route path="kpi-cascade" element={<KpiCascadePage />} />
             <Route path="standard-work-process" element={<StandardWorkProcessPage />} />
             <Route path="ux-ui-expert" element={<UxUiExpertPage />} />
+            <Route path="ai-video-creator" element={<AiVideoCreatorPage />} />
             <Route path="q-and-a" element={<AgentsToolPage title="Q&A" />} />
             <Route path="reliability-engineer" element={<AgentsToolPage title="Reliability Engineer" />} />
             <Route path="flex-trends" element={<AgentsToolPage title="Flex trends" />} />

@@ -53,6 +53,18 @@ export default defineConfig(({ mode }) => {
               })
             },
           },
+          '/api/ai-video-creator': {
+            target,
+            changeOrigin: true,
+            secure: true,
+            rewrite: () => '/functions/v1/ai-video-creator',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            configure: (proxy: any) => {
+              proxy.on('proxyReq', (proxyReq: { setHeader: (k: string, v: string) => void }) => {
+                proxyReq.setHeader('apikey', anon)
+              })
+            },
+          },
           '/api/road-map-builder': {
             target,
             changeOrigin: true,

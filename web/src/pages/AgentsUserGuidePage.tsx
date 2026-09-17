@@ -34,6 +34,7 @@ const value = [
   'Road Map Builder drafts Now / Next / Later, quarterly, or Gantt views you can save and export.',
   'KPI Cascade and Forum Cascade make trees you can govern instead of slides that drift.',
   'Standard Work Process links roles and systems to how work should run, using the same cascade language.',
+  'AI Video Creator turns a still picture plus your description into a short Sora clip, then keeps it in your history.',
 ]
 
 const functionality = [
@@ -60,6 +61,13 @@ const functionality = [
   {
     title: 'UX/UI expert (live enough to use)',
     body: 'Specialist critique surface for screens and interaction. Use it when you want structured UX notes, not a kanban.',
+  },
+  {
+    title: 'AI Video Creator (live)',
+    body: [
+      'Upload a JPG, PNG, or WEBP. Write what should happen. Pick duration (4 / 8 / 12 seconds) and shape (landscape or portrait).',
+      'Sora uses the picture as the first frame. Rendering takes a minute or two. Finished MP4s stay under Your videos for replay and download. Clips belong to your login.',
+    ],
   },
   {
     title: 'Placeholder tools',
@@ -89,7 +97,7 @@ const process = [
   },
   {
     title: '3. For strategy or KPIs',
-    body: 'Use Road Map Builder for time-phased intent. Use KPI Cascade for measure trees. Use Standard Work when you need the process that those KPIs sit on.',
+    body: 'Use Road Map Builder for time-phased intent. Use KPI Cascade for measure trees. Use Standard Work when you need the process that those KPIs sit on. Use AI Video Creator to animate a still into a short clip.',
   },
 ]
 
@@ -121,7 +129,7 @@ const connections = [
 const access = [
   {
     title: 'Anyone with the Agents tile',
-    body: 'Use every Agents screen, including this User Guide. Tickets and saved maps belong to your login.',
+    body: 'Use every Agents screen, including this User Guide. Tickets, saved maps, and AI videos belong to your login.',
   },
   {
     title: 'Admin / super admin',
@@ -134,7 +142,7 @@ export function AgentsUserGuidePage() {
     <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pb-8">
       <UserGuideHeader
         title="Agents — User Guide"
-        subtitle="Apps Team, road maps, KPI cascade, standard work, and which tools are live versus placeholders."
+        subtitle="Apps Team, road maps, KPI cascade, standard work, AI video, and which tools are live versus placeholders."
         iconClass="bg-fuchsia-500/15 text-fuchsia-800 dark:text-fuchsia-300"
       />
 
