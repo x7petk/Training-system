@@ -8,12 +8,7 @@ import {
 } from '../lib/appsTeamProxy'
 import { AppsTeamChat } from '../features/agents/appsTeam/AppsTeamChat'
 import { AppsTeamKanban } from '../features/agents/appsTeam/AppsTeamKanban'
-import {
-  LIVE_BOARD_COUNT_BADGE,
-  LIVE_BOARD_HEADER,
-  LIVE_BOARD_TITLE,
-  LIVE_BOARD_WRAPPER,
-} from '../features/agents/appsTeam/liveBoardTheme'
+import { AppsTeamStackedLayout } from '../features/agents/appsTeam/AppsTeamStackedLayout'
 import { AppsTeamTicketDrawer } from '../features/agents/appsTeam/AppsTeamTicketDrawer'
 import { useAppsTeam } from '../features/agents/appsTeam/useAppsTeam'
 import type { AppsTeamChatTurn, AppsTeamTicket, AppsTeamTicketStatus } from '../features/agents/appsTeam/types'
@@ -331,8 +326,8 @@ export function AppsTeamPage() {
         </div>
       )}
 
-      <div className="flex w-full flex-col gap-6">
-        <section className="w-full">
+      <AppsTeamStackedLayout
+        chat={
           <AppsTeamChat
             messages={messages}
             input={input}
@@ -340,30 +335,18 @@ export function AppsTeamPage() {
             onInput={setInput}
             onSend={() => void sendChat()}
           />
-        </section>
-
-        <div className={LIVE_BOARD_WRAPPER}>
-          <div className={LIVE_BOARD_HEADER}>
-            <h2 className={LIVE_BOARD_TITLE}>Live board</h2>
-            <span className={LIVE_BOARD_COUNT_BADGE}>{tickets.length} tickets</span>
-          </div>
+        }
+        ticketCount={tickets.length}
+        liveBoard={
           <AppsTeamKanban
             tickets={tickets}
             selectedId={selectedId}
             onSelect={setSelectedId}
             variant="live-board"
           />
-        </div>
-
-        <section className="w-full rounded-xl border border-border bg-surface">
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-semibold text-fg">Information</h2>
-            <p className="text-xs text-muted">
-              Requirements, progress, and agent activity for the selected ticket.
-            </p>
-          </div>
-
-          {selected ? (
+        }
+        information={
+          selected ? (
             <AppsTeamTicketDrawer
               ticket={selected}
               events={events}
@@ -378,9 +361,9 @@ export function AppsTeamPage() {
             <div className="flex items-center justify-center px-4 py-12 text-sm text-muted">
               Select a ticket to see requirements and handoffs.
             </div>
-          )}
-        </section>
-      </div>
+          )
+        }
+      />
     </div>
   )
 }

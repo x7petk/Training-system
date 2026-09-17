@@ -32,7 +32,7 @@ export function AppsTeamKanban(props: {
   /** When `live-board`, applies sky theme classes from liveBoardTheme (scoped by page wrapper). */
   variant?: 'neutral' | 'live-board'
 }) {
-  const { tickets, selectedId, onSelect, variant = 'neutral' } = props
+  const { tickets, selectedId, onSelect, variant = 'live-board' } = props
   const theme = variant === 'live-board' ? LIVE_BOARD_KANBAN : NEUTRAL
 
   return (
