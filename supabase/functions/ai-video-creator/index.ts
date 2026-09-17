@@ -9,9 +9,12 @@ const corsHeaders: Record<string, string> = {
 }
 
 const BUCKET = 'ai-video-creator'
-const MODEL = Deno.env.get('SORA_MODEL') || 'sora-2'
+const ALLOWED_MODELS = new Set(['sora-2', 'sora-2-pro'])
 const ALLOWED_SECONDS = new Set(['4', '8', '12'])
 const ALLOWED_SIZES = new Set(['1280x720', '720x1280', '1792x1024', '1024x1792'])
+const MAX_IMAGES = 5
+const JOB_COLUMNS =
+  'id, user_id, title, prompt, seconds, size, model, status, progress, openai_video_id, image_path, video_path, image_paths, openai_video_ids, segment_paths, error_message, created_at, updated_at'
 
 type JobRow = {
   id: string
@@ -20,11 +23,15 @@ type JobRow = {
   prompt: string
   seconds: string
   size: string
+  model?: string
   status: string
   progress: number
   openai_video_id: string | null
   image_path: string | null
   video_path: string | null
+  image_paths?: unknown
+  openai_video_ids?: unknown
+  segment_paths?: unknown
   error_message: string | null
   created_at: string
   updated_at: string
@@ -50,6 +57,11 @@ function sanitize(v: unknown, max = 4_000): string {
 
 function isUuid(v: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)
+}
+
+function asPathList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => sanitize(item, 240)).filter(Boolean)
 }
 
 function titleFromPrompt(prompt: string): string {
@@ -104,6 +116,54 @@ async function openaiJson(path: string, apiKey: string, init?: RequestInit): Pro
   return { ok: res.ok, status: res.status, payload, raw }
 }
 
+function isOwnedImagePath(path: string, userId: string, jobId: string): boolean {
+  const prefix = `${userId}/${jobId}/`
+  if (!path.startsWith(prefix) || !path.endsWith('.jpg')) return false
+  const name = path.slice(prefix.length)
+  return name === 'source.jpg' || /^source-\d+\.jpg$/.test(name)
+}
+
+function shotPrompt(prompt: string, index: number, total: number): string {
+  if (total <= 1) return prompt
+  return (
+    `${prompt}\n\nThis is shot ${index + 1} of ${total} in a continuous sequence. ` +
+    `Animate this still as scene ${index + 1}. Keep subject, lighting, and style consistent. ` +
+    `Do not add titles, captions, or watermarks.`
+  )
+}
+
+async function startSoraJob(
+  openaiKey: string,
+  imageBlob: Blob,
+  prompt: string,
+  seconds: string,
+  size: string,
+  model: string,
+): Promise<{ id: string; status: string; progress: number } | { error: string }> {
+  const imageBytes = new Uint8Array(await imageBlob.arrayBuffer())
+  const form = new FormData()
+  form.append('model', model)
+  form.append('prompt', prompt)
+  form.append('seconds', seconds)
+  form.append('size', size)
+  form.append('input_reference', new Blob([imageBytes], { type: 'image/jpeg' }), 'frame.jpg')
+  const created = await fetch('https://api.openai.com/v1/videos', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${openaiKey}` },
+    body: form,
+  })
+  if (!created.ok) return { error: await readOpenAiError(created) }
+  const video = (await created.json()) as OpenAiVideo
+  const openaiId = sanitize(video.id, 120)
+  if (!openaiId) return { error: 'Sora did not return a video job id.' }
+  const status = video.status === 'in_progress' || video.status === 'completed' ? video.status : 'queued'
+  return {
+    id: openaiId,
+    status,
+    progress: Math.max(0, Math.min(100, Math.round(Number(video.progress) || 0))),
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -139,7 +199,9 @@ Deno.serve(async (req) => {
       prompt?: string
       seconds?: string
       size?: string
+      model?: string
       imagePath?: string
+      imagePaths?: unknown
     }
     const action = sanitize(body.action, 40) || 'create'
 
@@ -148,75 +210,76 @@ Deno.serve(async (req) => {
       const prompt = sanitize(body.prompt, 4_000)
       const seconds = sanitize(body.seconds, 8)
       const size = sanitize(body.size, 20)
-      const imagePath = sanitize(body.imagePath, 240)
+      const model = sanitize(body.model, 40) || 'sora-2'
+      const imagePaths = asPathList(body.imagePaths)
+      const singlePath = sanitize(body.imagePath, 240)
+      const paths = imagePaths.length > 0 ? imagePaths : singlePath ? [singlePath] : []
 
       if (!isUuid(id)) return json({ error: 'A valid job id is required.' }, 400)
       if (!prompt) return json({ error: 'Describe the video you want.' }, 400)
       if (!ALLOWED_SECONDS.has(seconds)) return json({ error: 'Duration must be 4, 8, or 12 seconds.' }, 400)
       if (!ALLOWED_SIZES.has(size)) return json({ error: 'Choose a supported video size.' }, 400)
-      if (!imagePath.startsWith(`${userId}/`) || !imagePath.endsWith('/source.jpg')) {
+      if (!ALLOWED_MODELS.has(model)) return json({ error: 'Choose Sora or Sora Pro.' }, 400)
+      if (paths.length === 0) return json({ error: 'Upload at least one picture.' }, 400)
+      if (paths.length > MAX_IMAGES) return json({ error: `You can use up to ${MAX_IMAGES} pictures.` }, 400)
+      if (paths.some((p) => !isOwnedImagePath(p, userId, id))) {
         return json({ error: 'Image path is invalid for this user.' }, 400)
       }
 
-      const { data: existing } = await supabase
-        .from('ai_video_jobs')
-        .select(
-          'id, user_id, title, prompt, seconds, size, status, progress, openai_video_id, image_path, video_path, error_message, created_at, updated_at',
-        )
-        .eq('id', id)
-        .maybeSingle()
+      const { data: existing } = await supabase.from('ai_video_jobs').select(JOB_COLUMNS).eq('id', id).maybeSingle()
       if (existing) return json({ job: existing as JobRow })
 
-      const { data: imageBlob, error: dlErr } = await supabase.storage.from(BUCKET).download(imagePath)
-      if (dlErr || !imageBlob) {
-        return json({ error: dlErr?.message || 'Could not read the uploaded picture.' }, 400)
-      }
-
-      const imageBytes = new Uint8Array(await imageBlob.arrayBuffer())
-      const form = new FormData()
-      form.append('model', MODEL)
-      form.append('prompt', prompt)
-      form.append('seconds', seconds)
-      form.append('size', size)
-      form.append('input_reference', new Blob([imageBytes], { type: 'image/jpeg' }), 'frame.jpg')
-
-      const created = await fetch('https://api.openai.com/v1/videos', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${openaiKey}` },
-        body: form,
-      })
-      if (!created.ok) {
-        const detail = await readOpenAiError(created)
-        const failedRow = {
-          id,
-          user_id: userId,
-          title: titleFromPrompt(prompt),
-          prompt,
+      const openaiIds: string[] = []
+      let firstStatus = 'queued'
+      let firstProgress = 0
+      for (let i = 0; i < paths.length; i++) {
+        const { data: imageBlob, error: dlErr } = await supabase.storage.from(BUCKET).download(paths[i])
+        if (dlErr || !imageBlob) {
+          return json({ error: dlErr?.message || `Could not read picture ${i + 1}.` }, 400)
+        }
+        const started = await startSoraJob(
+          openaiKey,
+          imageBlob,
+          shotPrompt(prompt, i, paths.length),
           seconds,
           size,
-          status: 'failed',
-          progress: 0,
-          openai_video_id: null,
-          image_path: imagePath,
-          video_path: null,
-          error_message: detail,
+          model,
+        )
+        if ('error' in started) {
+          const failedRow = {
+            id,
+            user_id: userId,
+            title: titleFromPrompt(prompt),
+            prompt,
+            seconds,
+            size,
+            model,
+            status: 'failed',
+            progress: 0,
+            openai_video_id: openaiIds[0] ?? null,
+            image_path: paths[0],
+            video_path: null,
+            image_paths: paths,
+            openai_video_ids: openaiIds,
+            segment_paths: [],
+            error_message: paths.length > 1 ? `Scene ${i + 1}: ${started.error}` : started.error,
+          }
+          const { data: inserted, error: insertErr } = await supabase
+            .from('ai_video_jobs')
+            .insert(failedRow)
+            .select(JOB_COLUMNS)
+            .single()
+          if (insertErr) return json({ error: `${started.error} (also could not save history: ${insertErr.message})` }, 502)
+          return json({ job: inserted as JobRow, error: failedRow.error_message }, 502)
         }
-        const { data: inserted, error: insertErr } = await supabase
-          .from('ai_video_jobs')
-          .insert(failedRow)
-          .select(
-            'id, user_id, title, prompt, seconds, size, status, progress, openai_video_id, image_path, video_path, error_message, created_at, updated_at',
-          )
-          .single()
-        if (insertErr) return json({ error: `${detail} (also could not save history: ${insertErr.message})` }, 502)
-        return json({ job: inserted as JobRow, error: detail }, 502)
+        openaiIds.push(started.id)
+        if (i === 0) {
+          firstStatus = started.status
+          firstProgress = started.progress
+        }
       }
 
-      const video = (await created.json()) as OpenAiVideo
-      const openaiId = sanitize(video.id, 120)
-      if (!openaiId) return json({ error: 'Sora did not return a video job id.' }, 502)
-
-      const status = video.status === 'in_progress' || video.status === 'completed' ? video.status : 'queued'
+      const status = paths.length > 1 ? 'in_progress' : firstStatus
       const { data: inserted, error: insertErr } = await supabase
         .from('ai_video_jobs')
         .insert({
@@ -226,16 +289,18 @@ Deno.serve(async (req) => {
           prompt,
           seconds,
           size,
+          model,
           status,
-          progress: Math.max(0, Math.min(100, Math.round(Number(video.progress) || 0))),
-          openai_video_id: openaiId,
-          image_path: imagePath,
+          progress: paths.length > 1 ? Math.round(firstProgress / paths.length) : firstProgress,
+          openai_video_id: openaiIds[0] ?? null,
+          image_path: paths[0],
           video_path: null,
+          image_paths: paths,
+          openai_video_ids: openaiIds,
+          segment_paths: [],
           error_message: null,
         })
-        .select(
-          'id, user_id, title, prompt, seconds, size, status, progress, openai_video_id, image_path, video_path, error_message, created_at, updated_at',
-        )
+        .select(JOB_COLUMNS)
         .single()
       if (insertErr) return json({ error: insertErr.message }, 500)
       return json({ job: inserted as JobRow })
@@ -245,64 +310,67 @@ Deno.serve(async (req) => {
       const id = sanitize(body.id, 80)
       if (!isUuid(id)) return json({ error: 'A valid job id is required.' }, 400)
 
-      const { data: row, error: loadErr } = await supabase
-        .from('ai_video_jobs')
-        .select(
-          'id, user_id, title, prompt, seconds, size, status, progress, openai_video_id, image_path, video_path, error_message, created_at, updated_at',
-        )
-        .eq('id', id)
-        .maybeSingle()
+      const { data: row, error: loadErr } = await supabase.from('ai_video_jobs').select(JOB_COLUMNS).eq('id', id).maybeSingle()
       if (loadErr) return json({ error: loadErr.message }, 500)
       if (!row) return json({ error: 'Video job not found.' }, 404)
       const job = row as JobRow
 
       if (job.status === 'completed' && job.video_path) return json({ job })
       if (job.status === 'failed') return json({ job })
-      if (!job.openai_video_id) return json({ error: 'This job has no Sora render id yet.' }, 409)
 
-      const latest = await openaiJson(`/videos/${job.openai_video_id}`, openaiKey)
-      if (!latest.ok) {
-        const detail = openaiErrorMessage(latest.payload, latest.raw.slice(0, 400) || `OpenAI HTTP ${latest.status}`)
-        return json({ error: detail }, latest.status >= 400 && latest.status < 500 ? latest.status : 502)
+      const openaiIds = asPathList(job.openai_video_ids)
+      if (openaiIds.length === 0 && job.openai_video_id) openaiIds.push(job.openai_video_id)
+      if (openaiIds.length === 0) return json({ error: 'This job has no Sora render id yet.' }, 409)
+
+      const latestList: OpenAiVideo[] = []
+      for (const videoId of openaiIds) {
+        const latest = await openaiJson(`/videos/${videoId}`, openaiKey)
+        if (!latest.ok) {
+          const detail = openaiErrorMessage(latest.payload, latest.raw.slice(0, 400) || `OpenAI HTTP ${latest.status}`)
+          return json({ error: detail }, latest.status >= 400 && latest.status < 500 ? latest.status : 502)
+        }
+        latestList.push(latest.payload)
       }
 
-      const nextStatus = latest.payload.status || job.status
-      const nextProgress = Math.max(0, Math.min(100, Math.round(Number(latest.payload.progress) || job.progress)))
-
-      if (nextStatus === 'failed') {
-        const detail = openaiErrorMessage(latest.payload, 'Sora failed to generate this video.')
+      const failed = latestList.find((item) => item.status === 'failed')
+      if (failed) {
+        const detail = openaiErrorMessage(failed, 'Sora failed to generate this video.')
         const { data: updated, error: updErr } = await supabase
           .from('ai_video_jobs')
-          .update({ status: 'failed', progress: nextProgress, error_message: detail })
+          .update({ status: 'failed', error_message: detail })
           .eq('id', id)
-          .select(
-            'id, user_id, title, prompt, seconds, size, status, progress, openai_video_id, image_path, video_path, error_message, created_at, updated_at',
-          )
+          .select(JOB_COLUMNS)
           .single()
         if (updErr) return json({ error: updErr.message }, 500)
         return json({ job: updated as JobRow })
       }
 
-      if (nextStatus !== 'completed') {
+      const progressAvg = Math.round(
+        latestList.reduce((sum, item) => sum + Math.max(0, Math.min(100, Number(item.progress) || 0)), 0) /
+          latestList.length,
+      )
+      const allComplete = latestList.every((item) => item.status === 'completed')
+      if (!allComplete) {
         const { data: updated, error: updErr } = await supabase
           .from('ai_video_jobs')
           .update({
-            status: nextStatus === 'in_progress' ? 'in_progress' : 'queued',
-            progress: nextProgress,
+            status: 'in_progress',
+            progress: Math.min(90, Math.round(progressAvg * 0.9)),
             error_message: null,
           })
           .eq('id', id)
-          .select(
-            'id, user_id, title, prompt, seconds, size, status, progress, openai_video_id, image_path, video_path, error_message, created_at, updated_at',
-          )
+          .select(JOB_COLUMNS)
           .single()
         if (updErr) return json({ error: updErr.message }, 500)
         return json({ job: updated as JobRow })
       }
 
-      const videoPath = `${userId}/${id}/video.mp4`
-      if (!job.video_path) {
-        const contentRes = await fetch(`https://api.openai.com/v1/videos/${job.openai_video_id}/content`, {
+      const segmentPaths = asPathList(job.segment_paths)
+      if (segmentPaths.length < openaiIds.length) {
+        const index = segmentPaths.length
+        const videoId = openaiIds[index]
+        const segmentPath = `${userId}/${id}/segment-${index}.mp4`
+        const contentRes = await fetch(`https://api.openai.com/v1/videos/${videoId}/content`, {
           headers: { Authorization: `Bearer ${openaiKey}` },
         })
         if (!contentRes.ok) {
@@ -311,25 +379,60 @@ Deno.serve(async (req) => {
         }
         const bytes = new Uint8Array(await contentRes.arrayBuffer())
         const videoBlob = new Blob([bytes], { type: 'video/mp4' })
-        const { error: upErr } = await supabase.storage.from(BUCKET).upload(videoPath, videoBlob, {
+        const { error: upErr } = await supabase.storage.from(BUCKET).upload(segmentPath, videoBlob, {
           contentType: 'video/mp4',
           upsert: true,
         })
         if (upErr) return json({ error: upErr.message }, 500)
+        const nextSegments = [...segmentPaths, segmentPath]
+        const downloadedRatio = nextSegments.length / openaiIds.length
+        const patch: Record<string, unknown> = {
+          segment_paths: nextSegments,
+          progress: Math.min(95, 90 + Math.round(downloadedRatio * 5)),
+          status: 'in_progress',
+          error_message: null,
+        }
+        if (openaiIds.length === 1) {
+          patch.video_path = segmentPath
+          patch.status = 'completed'
+          patch.progress = 100
+        }
+        const { data: updated, error: updErr } = await supabase
+          .from('ai_video_jobs')
+          .update(patch)
+          .eq('id', id)
+          .select(JOB_COLUMNS)
+          .single()
+        if (updErr) return json({ error: updErr.message }, 500)
+        return json({ job: updated as JobRow })
+      }
+
+      if (openaiIds.length === 1) {
+        const videoPath = segmentPaths[0]
+        const { data: updated, error: updErr } = await supabase
+          .from('ai_video_jobs')
+          .update({
+            status: 'completed',
+            progress: 100,
+            video_path: videoPath,
+            error_message: null,
+          })
+          .eq('id', id)
+          .select(JOB_COLUMNS)
+          .single()
+        if (updErr) return json({ error: updErr.message }, 500)
+        return json({ job: updated as JobRow })
       }
 
       const { data: updated, error: updErr } = await supabase
         .from('ai_video_jobs')
         .update({
-          status: 'completed',
-          progress: 100,
-          video_path: videoPath,
+          status: 'in_progress',
+          progress: 95,
           error_message: null,
         })
         .eq('id', id)
-        .select(
-          'id, user_id, title, prompt, seconds, size, status, progress, openai_video_id, image_path, video_path, error_message, created_at, updated_at',
-        )
+        .select(JOB_COLUMNS)
         .single()
       if (updErr) return json({ error: updErr.message }, 500)
       return json({ job: updated as JobRow })

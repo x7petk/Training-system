@@ -1,4 +1,4 @@
-import type { AiVideoJob, AiVideoSeconds, AiVideoSize } from '../features/agents/aiVideoCreator/types'
+import type { AiVideoJob, AiVideoModel, AiVideoSeconds, AiVideoSize } from '../features/agents/aiVideoCreator/types'
 
 async function postAiVideoCreator(
   accessToken: string,
@@ -44,7 +44,15 @@ async function postAiVideoCreator(
 
 export async function invokeAiVideoCreate(
   accessToken: string,
-  input: { id: string; prompt: string; seconds: AiVideoSeconds; size: AiVideoSize; imagePath: string },
+  input: {
+    id: string
+    prompt: string
+    seconds: AiVideoSeconds
+    size: AiVideoSize
+    model: AiVideoModel
+    imagePath?: string
+    imagePaths: string[]
+  },
 ) {
   return postAiVideoCreator(accessToken, { action: 'create', ...input })
 }

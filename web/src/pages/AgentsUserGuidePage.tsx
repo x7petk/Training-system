@@ -34,7 +34,7 @@ const value = [
   'Road Map Builder drafts Now / Next / Later, quarterly, or Gantt views you can save and export.',
   'KPI Cascade and Forum Cascade make trees you can govern instead of slides that drift.',
   'Standard Work Process links roles and systems to how work should run, using the same cascade language.',
-  'AI Video Creator turns a still picture plus your description into a short Sora clip, then keeps it in your history.',
+  'AI Video Creator turns one still — or several in order — plus your description into a short Sora clip, then keeps it in your history.',
 ]
 
 const functionality = [
@@ -65,8 +65,8 @@ const functionality = [
   {
     title: 'AI Video Creator (live)',
     body: [
-      'Upload a JPG, PNG, or WEBP. Write what should happen. Pick duration (4 / 8 / 12 seconds) and shape (landscape or portrait).',
-      'Sora uses the picture as the first frame. Rendering takes a minute or two. Finished MP4s stay under Your videos for replay and download. Clips belong to your login.',
+      'Upload one or more stills in scene order: from this computer, Take photo / Photo library on a phone, or From phone (QR/link) to send camera-roll pictures into the same login. Write what should happen. Pick Sora or Sora Pro, duration (4 / 8 / 12 seconds per scene), and shape (landscape or portrait).',
+      'Each picture becomes its own Sora clip (first frame). Several pictures are then joined into one video. Finished files stay under Your videos for replay and download. Clips belong to your login.',
     ],
   },
   {

@@ -19,8 +19,8 @@ function loadImage(file: File): Promise<HTMLImageElement> {
 }
 
 export async function resizeImageToVideoFrame(file: File, size: string): Promise<Blob> {
-  if (!file.type.startsWith('image/')) {
-    throw new Error('Please upload a picture (JPG, PNG, or WEBP).')
+  if (!file.type.startsWith('image/') && !/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name)) {
+    throw new Error('Please upload a picture (JPG, PNG, WEBP, or a phone photo).')
   }
   if (file.size > MAX_SOURCE_BYTES) {
     throw new Error('Picture is too large. Please use a file under 12 MB.')

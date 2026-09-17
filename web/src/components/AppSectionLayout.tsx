@@ -33,6 +33,19 @@ function isNavGroup(entry: SectionNavEntry): entry is SectionNavGroup {
   return 'type' in entry && entry.type === 'group'
 }
 
+function flattenNavItems(entries: SectionNavEntry[]): SectionNavItem[] {
+  return entries.flatMap((entry) => (isNavGroup(entry) ? entry.items : [entry]))
+}
+
+function selectedNavTo(pathname: string, items: SectionNavItem[]): string {
+  const exact = items.find((item) => item.to === pathname)
+  if (exact) return exact.to
+  const nested = items
+    .filter((item) => pathname === item.to || pathname.startsWith(`${item.to}/`))
+    .sort((a, b) => b.to.length - a.to.length)[0]
+  return nested?.to ?? items[0]?.to ?? ''
+}
+
 type AppSectionLayoutProps = {
   storageKey: string
   title: string
@@ -73,6 +86,8 @@ export function AppSectionLayout({
     location.pathname.includes('/dds-process/pdca') ||
     /\/problem-solve\/bde\/?$/.test(location.pathname) ||
     location.pathname.includes('/problem-solve/bde/reports')
+  const flatNavItems = flattenNavItems(navItems)
+  const mobileNavValue = selectedNavTo(location.pathname, flatNavItems)
   const [desktopCollapsed, setDesktopCollapsed] = useState(
     () => typeof window !== 'undefined' && window.localStorage.getItem(storageKey) === '1',
   )
@@ -102,8 +117,8 @@ export function AppSectionLayout({
         }`}
       >
         <div
-          className={`flex h-14 items-center border-b border-border md:h-16 ${
-            desktopCollapsed ? 'px-2' : 'pl-4 pr-2'
+          className={`flex h-12 items-center border-b border-border md:h-16 ${
+            desktopCollapsed ? 'px-2' : 'pl-3 pr-2 md:pl-4'
           }`}
         >
           <Link
@@ -111,16 +126,26 @@ export function AppSectionLayout({
             className={`flex min-w-0 flex-1 items-center no-underline ${desktopCollapsed ? 'justify-center' : 'gap-2'}`}
             title="All apps"
           >
-            <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${headerIconClass}`}>
+            <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg md:size-9 ${headerIconClass}`}>
               <HeaderIcon className="size-4" aria-hidden />
             </span>
             {!desktopCollapsed ? (
               <div className="min-w-0">
                 <p className="truncate font-display text-sm font-semibold tracking-tight text-fg">{title}</p>
-                {subtitle ? <p className="truncate text-xs text-muted">{subtitle}</p> : null}
+                {subtitle ? <p className="hidden truncate text-xs text-muted md:block">{subtitle}</p> : null}
               </div>
             ) : null}
           </Link>
+          <button
+            type="button"
+            onClick={() => {
+              void signOut().then(() => navigate('/login'))
+            }}
+            className="rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg md:hidden"
+            aria-label="Sign out"
+          >
+            <LogOut className="size-4" />
+          </button>
           <button
             type="button"
             onClick={toggleDesktopSidebar}
@@ -132,7 +157,28 @@ export function AppSectionLayout({
           </button>
         </div>
 
-        <nav className="flex gap-1 p-2 md:flex-col" aria-label={`${title} navigation`}>
+        {flatNavItems.length > 0 ? (
+          <div className="space-y-1 border-b border-border px-2 py-2 md:hidden">
+            <label htmlFor={`${storageKey}-mobile-nav`} className="sr-only">
+              {title} tool
+            </label>
+            <select
+              id={`${storageKey}-mobile-nav`}
+              value={mobileNavValue}
+              onChange={(e) => navigate(e.target.value)}
+              className="min-h-11 w-full rounded-lg border border-border bg-canvas px-3 text-base font-medium text-fg"
+            >
+              {flatNavItems.map((item) => (
+                <option key={item.to} value={item.to}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            {navFooter}
+          </div>
+        ) : null}
+
+        <nav className="hidden gap-1 p-2 md:flex md:flex-col" aria-label={`${title} navigation`}>
           {navItems.map((entry, entryIdx) => {
             if (isNavGroup(entry)) {
               return (
@@ -208,21 +254,8 @@ export function AppSectionLayout({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-border bg-surface-raised/50 px-4 md:hidden">
-          <p className="truncate text-sm text-muted">{user?.email}</p>
-          <button
-            type="button"
-            onClick={() => {
-              void signOut().then(() => navigate('/login'))
-            }}
-            className="rounded-lg p-2 text-muted hover:bg-black/[0.06] hover:text-fg"
-            aria-label="Sign out"
-          >
-            <LogOut className="size-4" />
-          </button>
-        </header>
         <main
-          className={`flex min-h-0 flex-1 flex-col p-4 md:p-8 ${onePageOutlet ? 'overflow-hidden' : ''}`}
+          className={`flex min-h-0 flex-1 flex-col p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-8 ${onePageOutlet ? 'overflow-hidden' : ''}`}
         >
           <div
             className={`mx-auto flex w-full max-w-7xl flex-col ${

@@ -1,9 +1,15 @@
 export const AI_VIDEO_BUCKET = 'ai-video-creator'
+export const AI_VIDEO_MAX_IMAGES = 5
 
 export const AI_VIDEO_SECONDS = [
   { id: '4', label: '4 seconds' },
   { id: '8', label: '8 seconds' },
   { id: '12', label: '12 seconds' },
+] as const
+
+export const AI_VIDEO_MODELS = [
+  { id: 'sora-2', label: 'Sora', hint: 'Faster' },
+  { id: 'sora-2-pro', label: 'Sora Pro', hint: 'Higher quality' },
 ] as const
 
 export const AI_VIDEO_SIZES = [
@@ -14,6 +20,7 @@ export const AI_VIDEO_SIZES = [
 ] as const
 
 export type AiVideoSeconds = (typeof AI_VIDEO_SECONDS)[number]['id']
+export type AiVideoModel = (typeof AI_VIDEO_MODELS)[number]['id']
 export type AiVideoSize = (typeof AI_VIDEO_SIZES)[number]['id']
 export type AiVideoStatus = 'queued' | 'in_progress' | 'completed' | 'failed'
 
@@ -24,11 +31,15 @@ export type AiVideoJob = {
   prompt: string
   seconds: AiVideoSeconds
   size: AiVideoSize
+  model: AiVideoModel
   status: AiVideoStatus
   progress: number
   openai_video_id: string | null
   image_path: string | null
   video_path: string | null
+  image_paths: string[]
+  openai_video_ids: string[]
+  segment_paths: string[]
   error_message: string | null
   created_at: string
   updated_at: string
@@ -37,16 +48,51 @@ export type AiVideoJob = {
 export type AiVideoJobView = AiVideoJob & {
   imageUrl: string | null
   videoUrl: string | null
+  imageUrls: string[]
+  segmentUrls: string[]
 }
 
 export function isAiVideoSeconds(v: string): v is AiVideoSeconds {
   return AI_VIDEO_SECONDS.some((item) => item.id === v)
 }
 
+export function isAiVideoModel(v: string): v is AiVideoModel {
+  return AI_VIDEO_MODELS.some((item) => item.id === v)
+}
+
 export function isAiVideoSize(v: string): v is AiVideoSize {
   return AI_VIDEO_SIZES.some((item) => item.id === v)
 }
 
+export function videoModelMeta(model: string) {
+  return AI_VIDEO_MODELS.find((item) => item.id === model) ?? AI_VIDEO_MODELS[0]
+}
+
 export function videoSizeMeta(size: string) {
   return AI_VIDEO_SIZES.find((item) => item.id === size) ?? AI_VIDEO_SIZES[0]
+}
+
+export function asPathList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean)
+}
+
+export function jobSceneCount(job: Pick<AiVideoJob, 'image_paths' | 'openai_video_ids' | 'segment_paths'>): number {
+  return Math.max(job.image_paths.length, job.openai_video_ids.length, job.segment_paths.length, 1)
+}
+
+export function jobNeedsStitch(
+  job: Pick<AiVideoJob, 'video_path' | 'segment_paths' | 'status' | 'openai_video_ids' | 'image_paths'>,
+): boolean {
+  const expected = Math.max(job.openai_video_ids.length, job.image_paths.length, 0)
+  return (
+    job.status !== 'failed' &&
+    !job.video_path &&
+    expected >= 2 &&
+    job.segment_paths.length >= expected
+  )
+}
+
+export function jobTotalSeconds(job: Pick<AiVideoJob, 'seconds' | 'image_paths' | 'openai_video_ids' | 'segment_paths'>): number {
+  return Number(job.seconds) * jobSceneCount(job)
 }
