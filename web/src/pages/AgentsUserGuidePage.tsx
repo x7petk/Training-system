@@ -34,6 +34,7 @@ const value = [
   'Road Map Builder drafts Now / Next / Later, quarterly, or Gantt views you can save and export.',
   'KPI Cascade and Forum Cascade make trees you can govern instead of slides that drift.',
   'Standard Work Process links roles and systems to how work should run, using the same cascade language.',
+  'AI Video Studio turns one or more photos into video — browser slideshow or AI motion clips when Replicate is configured.',
 ]
 
 const functionality = [
@@ -60,6 +61,13 @@ const functionality = [
   {
     title: 'UX/UI expert (live enough to use)',
     body: 'Specialist critique surface for screens and interaction. Use it when you want structured UX notes, not a kanban.',
+  },
+  {
+    title: 'AI Video Studio (live)',
+    body: [
+      'Upload up to eight photos. Build slideshow runs entirely in the browser (WebM download).',
+      'Generate AI motion clips calls the ai-video-studio Edge Function (needs REPLICATE_API_TOKEN on Supabase). Each photo becomes a short motion clip; download links appear per clip.',
+    ],
   },
   {
     title: 'Placeholder tools',

@@ -12,10 +12,12 @@ import {
   Shield,
   Sparkles,
   Users,
+  Clapperboard,
 } from 'lucide-react'
 import type { SectionNavItem } from '../../components/AppSectionLayout'
 
 export const AGENTS_NAV_ITEMS: SectionNavItem[] = [
+  { to: '/agents/ai-video-studio', label: 'AI Video Studio', icon: Clapperboard, end: true },
   { to: '/agents/apps-team', label: 'Apps Team', icon: Users, end: true },
   { to: '/agents/problem-solve-advisor', label: 'Problem solve advisor', icon: Sparkles, end: true },
   { to: '/agents/planner', label: 'Planner', icon: ClipboardList, end: true },
