@@ -2,6 +2,7 @@ import {
   BadgeCheck,
   BarChart3,
   CalendarDays,
+  Compass,
   Gauge,
   HelpCircle,
   LayoutDashboard,
@@ -23,14 +24,15 @@ export function ProblemSolveLayout() {
   const { isAdmin, profileReady } = useAuth()
   const location = useLocation()
   const inUserGuide = location.pathname.startsWith('/problem-solve/user-guide')
+  const inNavigator = location.pathname.startsWith('/problem-solve/navigator')
 
   return (
     <Plan24WorkspaceProvider>
       <AppSectionLayout
         storageKey="problem-solve.sidebar-collapsed"
         title="Problem Solve"
-        subtitle="Problem solve"
-        mainTop={inUserGuide ? null : <Plan24ScopeBar />}
+        subtitle="Loss elimination navigator"
+        mainTop={inUserGuide || inNavigator ? null : <Plan24ScopeBar />}
         headerIconClass="bg-orange-500/15 text-orange-900 dark:text-orange-300"
         HeaderIcon={Lightbulb}
         navFooter={<UserGuideMobileNavLink to="/problem-solve/user-guide" />}
@@ -44,6 +46,7 @@ export function ProblemSolveLayout() {
           </div>
         }
         navItems={[
+          { to: '/problem-solve/navigator', label: 'Navigator', icon: Compass, end: true },
           { to: '/problem-solve/plan-24', label: 'Plan 24', icon: CalendarDays, end: true },
           { to: '/problem-solve/dds-actions', label: 'DDS actions', icon: ListTodo, end: true },
           { to: '/problem-solve/ips', label: 'IPS', icon: Sparkles, end: true },

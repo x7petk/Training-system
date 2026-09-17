@@ -10,8 +10,8 @@ import {
 } from '../components/userGuide/UserGuideKit'
 
 const why = [
-  'Problem Solve is where structured elimination of losses lives. Today the live engine is BDE — Breakdown Elimination — so a breakdown has a record, photos, AODC codes, actions, and reports instead of a verbal handoff at shift change.',
-  'Plan 24 and DDS actions are included so you can see the day grid and the action queue without leaving the app. Other methods (IPS, UPS, W-W, IDA, OPM, Safety, Quality) are reserved nav items; their screens are not live yet.',
+  'Problem Solve is where structured elimination of losses lives. The primary entry is Navigator — a chat-first Loss Elimination flow that classifies the loss, opens IPS / BDE / OPM style 6W-2H forms, runs evidence checks, then refocuses with AI experts before close-the-loop.',
+  'BDE remains the live record engine for breakdown elimination (photos, AODC, actions, reports). Plan 24 and DDS actions stay available in the same section. Dedicated IPS/UPS/IDA/OPM library screens will expand later; use Navigator to demo the full method flow today.',
 ]
 
 const principles = [
@@ -39,6 +39,14 @@ const value = [
 
 const functionality = [
   {
+    title: 'Navigator (Loss Elimination)',
+    body: [
+      'One chat box: describe the problem, attach photos/docs. AI asks only for missing facts (asset, loss type) then suggests the right initial method.',
+      'Skip AI anytime and pick the loss type manually. Forms use 6W-2H + checklist. Evidence hub shows mock historian/alarms/quality/CMMS/MES data.',
+      'After the form: AI refocus coach, expert panel, in-house vs escalate decision, action plan, and close-the-loop learning.',
+    ],
+  },
+  {
     title: 'Plan 24 / DDS actions',
     body: 'Same tools as RTT / DDS. Use them to see whether the breakdown sat on a timed check or already has a meeting action.',
   },
@@ -60,8 +68,8 @@ const functionality = [
     ],
   },
   {
-    title: 'Placeholders',
-    body: 'IPS, UPS, W-W, IDA, OPM, Safety, and Quality show a “coming later” page. They share the Plan 24 scope bar so future tools land in the same cell context. Do not enter production investigations there yet.',
+    title: 'Method library placeholders',
+    body: 'Dedicated IPS, UPS, W-W, IDA, OPM, Safety, and Quality library pages will expand later. Use Navigator for the end-to-end AI demo flow today; BDE remains the live breakdown record tool.',
   },
   {
     title: 'Admin',

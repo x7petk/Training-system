@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { problemSolveAiDevPlugin } from './vite.problem-solve-ai-plugin'
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(dir, '..')
@@ -105,7 +106,7 @@ export default defineConfig(({ mode }) => {
       : undefined
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), problemSolveAiDevPlugin(merged)],
     ...(Object.keys(envDefine).length ? { define: envDefine } : {}),
     server: advisorProxy ? { proxy: advisorProxy } : {},
     preview: advisorProxy ? { proxy: advisorProxy } : {},

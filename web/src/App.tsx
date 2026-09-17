@@ -38,6 +38,9 @@ const AgentsUserGuidePage = lazy(() =>
 const ProblemSolveUserGuidePage = lazy(() =>
   import('./pages/ProblemSolveUserGuidePage').then((m) => ({ default: m.ProblemSolveUserGuidePage })),
 )
+const ProblemSolveNavigatorPage = lazy(() =>
+  import('./pages/ProblemSolveNavigatorPage').then((m) => ({ default: m.ProblemSolveNavigatorPage })),
+)
 const BmsBrainUserGuidePage = lazy(() =>
   import('./pages/BmsBrainUserGuidePage').then((m) => ({ default: m.BmsBrainUserGuidePage })),
 )
@@ -410,7 +413,8 @@ export default function App() {
               </SectionAccessRoute>
             }
           >
-            <Route index element={<Navigate to="plan-24" replace />} />
+            <Route index element={<Navigate to="navigator" replace />} />
+            <Route path="navigator" element={<ProblemSolveNavigatorPage />} />
             <Route path="plan-24" element={<Plan24Page />} />
             <Route path="dds-actions" element={<DdsActionsPage />} />
             <Route path="ips" element={<ProblemSolvePlaceholderPage title="IPS" />} />
