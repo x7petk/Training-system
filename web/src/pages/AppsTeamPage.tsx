@@ -303,13 +303,13 @@ export function AppsTeamPage() {
   ])
 
   return (
-    <div className="flex flex-col gap-6 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Users className="h-5 w-5 text-sky-700" />
-          <div>
-            <h1 className="text-lg font-semibold text-fg">Apps Team</h1>
-            <p className="text-xs text-muted">
+    <div className="flex w-full flex-col gap-8 md:gap-10">
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <Users className="mt-0.5 h-5 w-5 shrink-0 text-sky-700" aria-hidden />
+          <div className="min-w-0">
+            <h1 className="font-display text-xl font-semibold tracking-tight text-fg sm:text-2xl">Apps Team</h1>
+            <p className="mt-1 text-sm text-muted">
               Chat only when the PM asks. Watch the board — the team runs itself.
               {pipelineBusy ? ' · Working…' : ''}
             </p>
@@ -318,21 +318,21 @@ export function AppsTeamPage() {
         <button
           type="button"
           onClick={() => void load()}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-fg"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-raised/50"
         >
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           Refresh
         </button>
-      </div>
+      </header>
 
       {(error || invokeError) && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-800">
           {error || invokeError}
         </div>
       )}
 
-      <div className="flex w-full flex-col gap-6">
-        <section className="w-full">
+      <div className="flex w-full flex-col gap-8 md:gap-10 lg:gap-12">
+        <section className="w-full min-w-0">
           <AppsTeamChat
             messages={messages}
             input={input}
@@ -342,7 +342,7 @@ export function AppsTeamPage() {
           />
         </section>
 
-        <div className={LIVE_BOARD_WRAPPER}>
+        <section className={`w-full min-w-0 ${LIVE_BOARD_WRAPPER}`}>
           <div className={LIVE_BOARD_HEADER}>
             <h2 className={LIVE_BOARD_TITLE}>Live board</h2>
             <span className={LIVE_BOARD_COUNT_BADGE}>{tickets.length} tickets</span>
@@ -353,12 +353,12 @@ export function AppsTeamPage() {
             onSelect={setSelectedId}
             variant="live-board"
           />
-        </div>
+        </section>
 
-        <section className="w-full rounded-xl border border-border bg-surface">
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-semibold text-fg">Information</h2>
-            <p className="text-xs text-muted">
+        <section className="w-full min-w-0 overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+          <div className="border-b border-border px-4 py-3.5 sm:px-5 sm:py-4">
+            <h2 className="text-base font-semibold text-fg">Information</h2>
+            <p className="mt-0.5 text-xs text-muted sm:text-sm">
               Requirements, progress, and agent activity for the selected ticket.
             </p>
           </div>
@@ -375,7 +375,7 @@ export function AppsTeamPage() {
               }}
             />
           ) : (
-            <div className="flex items-center justify-center px-4 py-12 text-sm text-muted">
+            <div className="flex items-center justify-center px-4 py-16 text-sm text-muted sm:py-20">
               Select a ticket to see requirements and handoffs.
             </div>
           )}
